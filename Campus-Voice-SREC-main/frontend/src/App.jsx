@@ -13,6 +13,8 @@ import AdminAllComplaints from './features/admin/pages/AdminAllComplaints';
 import AdminAuthorities from './features/admin/pages/AdminAuthorities';
 import AdminEscalations from './features/admin/pages/AdminEscalations';
 import AdminDepartments from './features/admin/pages/AdminDepartments';
+import AdminDepartmentsList from './features/admin/pages/AdminDepartmentsList';
+import AdminDepartmentDetail from './features/admin/pages/AdminDepartmentDetail';
 import AdminNotifications from './features/admin/pages/AdminNotifications';
 
 import AuthorityDashboard from './features/admin/pages/AuthorityDashboard';
@@ -132,6 +134,8 @@ export default function App() {
           <Route path="authorities" element={<AdminAuthorities />} />
           <Route path="escalations" element={<AdminEscalations />} />
           <Route path="departments" element={<AdminDepartments />} />
+          <Route path="departments/list" element={<AdminDepartmentsList />} />
+          <Route path="departments/:deptCode" element={<AdminDepartmentDetail />} />
           <Route path="notifications" element={<AdminNotifications />} />
           {/* Reuse AuthorityProfile for Admin Profile for now or create new */}
           <Route path="profile" element={<AuthorityProfile />} />

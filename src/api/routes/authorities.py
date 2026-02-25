@@ -628,7 +628,7 @@ async def escalate_complaint(
         await db.flush()
         await db.commit()
         
-        # ✅ Create notifications
+        # Bug 6 fix: Notify both student and NEW authority on escalation.
         # Notify student
         await notification_service.create_notification(
             db=db,
@@ -638,15 +638,20 @@ async def escalate_complaint(
             notification_type="complaint_escalated",
             message=f"Your complaint has been escalated to {next_authority.name}"
         )
-        
-        # Notify new authority
+
+        # Bug 6 fix: Notify NEW authority with correct type "escalation" and
+        # include the previous authority's name in the message.
         await notification_service.create_notification(
             db=db,
             recipient_type="Authority",
             recipient_id=str(next_authority.id),
             complaint_id=complaint_id,
-            notification_type="complaint_assigned",
-            message=f"Escalated complaint assigned: {complaint.rephrased_text[:100]}"
+            notification_type="escalation",
+            message=(
+                f"Complaint escalated to you from {current_authority.name}. "
+                f"Category: {complaint.category.name if complaint.category else 'Unknown'}. "
+                f"Issue: {(complaint.rephrased_text or complaint.original_text)[:80]}..."
+            )
         )
         
         logger.info(

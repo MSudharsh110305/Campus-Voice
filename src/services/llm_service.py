@@ -145,20 +145,69 @@ class LLMService:
             return self._fallback_categorization(text, context)
     
     def _build_categorization_prompt(self, text: str, context: Dict[str, str]) -> str:
-        """Build prompt for categorization with department detection"""
-        gender = context.get('gender', 'Unknown')
-        stay_type = context.get('stay_type', 'Unknown')
-        department = context.get('department', 'Unknown')
+        """
+        Build prompt for categorization with department detection.
+
+        Student metadata (gender, stay_type, department) is passed as SUPPLEMENTARY
+        context but the LLM is explicitly instructed to treat complaint text as the
+        PRIMARY signal. Metadata is only a tie-breaker for genuinely ambiguous text —
+        never an override when the complaint content is clear.
+        """
+        department_names = (
+            "Computer Science & Engineering (CSE), "
+            "Electronics & Communication Engineering (ECE), "
+            "Robotics and Automation (RAA), "
+            "Mechanical Engineering (MECH), "
+            "Electrical & Electronics Engineering (EEE), "
+            "Electronics & Instrumentation Engineering (EIE), "
+            "Biomedical Engineering (BIO), "
+            "Aeronautical Engineering (AERO), "
+            "Civil Engineering (CIVIL), "
+            "Information Technology (IT), "
+            "Management Studies (MBA), "
+            "Artificial Intelligence and Data Science (AIDS), "
+            "M.Tech in Computer Science and Engineering (MTECH_CSE)"
+        )
+
+        # Build supplementary context block from whatever is available
+        student_gender = context.get("gender", "")
+        student_stay = context.get("stay_type", "")
+        student_dept = context.get("department", "")
+        supplementary_lines = []
+        if student_gender:
+            supplementary_lines.append(f"  • Student gender: {student_gender}")
+        if student_stay:
+            supplementary_lines.append(f"  • Student stay type: {student_stay}")
+        if student_dept:
+            supplementary_lines.append(f"  • Student department: {student_dept}")
+        supplementary_block = "\n".join(supplementary_lines) if supplementary_lines else "  (not provided)"
 
         return f"""You are a complaint routing system at SREC engineering college.
 
-Student context (Gender used ONLY for Men's vs Women's Hostel choice):
-- Gender: {gender}
-- Stay Type: {stay_type}
-- Home Department: {department}
+PRIMARY RULE — Use the complaint TEXT as your main signal:
+Categorise based on what the complaint is ABOUT, not on who submitted it.
+A hostel student complaining about a classroom → Department/General, NOT hostel.
+A day scholar complaining about mess food → Men's Hostel or Women's Hostel (text-driven).
 
-Complaint:
+SUPPLEMENTARY CONTEXT (use ONLY as a tie-breaker when complaint text is ambiguous):
+{supplementary_block}
+
+HOW TO USE SUPPLEMENTARY CONTEXT:
+✅ USE IT when the complaint text alone is genuinely ambiguous — e.g. student says "the mess food
+   is bad" without naming a hostel → use gender to determine Men's vs Women's Hostel.
+✅ USE IT when the complaint mentions "my department lab" without naming the department → use
+   student's department code to fill in the target_department field.
+✅ USE IT when the complaint says "our hostel" without specifying gender → use student gender.
+❌ NEVER use it to override clear textual evidence. If a hostel student says "the projector
+   in the CSE lab is broken", classify as Department regardless of their stay_type.
+❌ NEVER default to hostel just because the student is a hostel resident.
+❌ NEVER default to the student's own department just because they are in that department —
+   only use the department list to detect if the complaint names a specific department.
+
+Complaint text:
 "{text}"
+
+Available departments: {department_names}
 
 ROUTING DECISION — follow steps in order, stop at first match:
 
@@ -175,24 +224,37 @@ STEP 2 — Check for ACADEMIC INFRASTRUCTURE issue → "Department":
 Does the complaint mention a problem with EQUIPMENT or FACILITIES in academic areas: lab equipment not working, computer lab issue, projector/AV system fault, seminar hall problem, printer issue (academic use), software license missing, IDE/software not working, classroom infrastructure (broken furniture/AC/fan), faculty/HOD request, curriculum/timetable/project submission, department office service, IT equipment in academic building?
 NOTE: If the complaint is about STUDENT BEHAVIOR in these spaces (not the infrastructure itself), use STEP 1 instead.
 → YES → Category = "Department"
-CRITICAL: A hostel resident complaining about a lab/projector/seminar hall = "Department", NOT hostel category.
 
 STEP 3 — Check for HOSTEL FACILITY → hostel category:
-Is the issue physically INSIDE a hostel building: hostel rooms, hostel mess food, hostel mess hygiene, hostel laundry room, hostel bathrooms/toilets, hostel water supply, hostel electricity/power outage in hostel block, hostel maintenance (wiring, plumbing inside hostel), hostel warden office, hostel security/gate, hostel corridor/staircase/common room?
-IMPORTANT — these are NOT hostel complaints even if reported by a hosteller:
-• Outdoor trees, campus roads, drainage, campus grounds, open areas
-• Campus canteen (not mess), campus library, campus wifi
-• Academic labs, classrooms, sports grounds, auditorium
-→ YES (strictly inside hostel building/block) → Male student → "Men's Hostel" | Female student → "Women's Hostel"
+Is the issue about something physically INSIDE a hostel building?
+Strong hostel indicators: "hostel", "hostel room", "hostel mess", "mess food", "hostel bathroom",
+"hostel water", "hostel electricity", "hostel warden", "hostel corridor", "hostel gate",
+"dorm", "boarding", "my room" (when student is a hostel resident and text clearly implies hostel context).
+
+IMPORTANT RULES FOR HOSTEL CLASSIFICATION:
+• The word "room" alone does NOT indicate a hostel complaint. "Room in block C" means
+  a classroom or common area — classify as Department or General, NOT hostel.
+• "AC", "fan", "lights" alone do NOT indicate hostel — they appear in classrooms too.
+• These are NEVER hostel complaints even if reported by a hostel resident:
+  - Lab equipment, classrooms, projectors, computers, academic facilities
+  - Campus canteen (not mess), campus library, campus wifi, sports grounds
+  - Outdoor trees, campus roads, drainage, campus grounds, open areas
+  - Faculty/HOD issues, timetable, exams, curriculum
+
+For hostel complaints, determine gender using this priority order:
+1. Explicit mention in text: "men's hostel", "boys' hostel" → "Men's Hostel"; "women's hostel", "girls' hostel", "ladies' hostel" → "Women's Hostel"
+2. No explicit gender in text → use student's gender from supplementary context (Male → "Men's Hostel", Female → "Women's Hostel")
+3. No text mention and no supplementary context → default to "Men's Hostel"
 
 STEP 4 — Campus-wide facility → "General":
-All campus outdoor/infrastructure issues NOT inside a hostel building and NOT academic and NOT behavioral: fallen trees, campus roads/drainage, parking, sports courts/grounds, campus wifi/internet, auditorium, open drinking water stations, bus/transport, campus gates, campus canteen, campus library building, general campus cleanliness, streetlights.
+All campus outdoor/infrastructure issues NOT inside a hostel building and NOT academic and NOT behavioral: fallen trees, campus roads/drainage, parking, sports courts/grounds, campus wifi/internet, auditorium, open drinking water stations, bus/transport, campus gates, campus canteen, campus library building, general campus cleanliness, streetlights, rooms/areas that are not in a hostel building.
 
 DEPARTMENT DETECTION (when category = "Department"):
 Valid codes: CSE, ECE, MECH, CIVIL, EEE, IT, BIO, AERO, RAA, EIE, MBA, AIDS, MTECH_CSE
 - If complaint names a specific dept/lab (e.g. "ECE lab", "CSE printer") → use that dept code
-- Cross-dept OK: ECE student complaining about CSE lab → target_department = "CSE"
-- Default: use student's home department ({department})
+- If complaint says "my department" or "our department" without naming it → use student's department from supplementary context
+- If no department context at all → use "CSE" as the default
+- NEVER assign a department solely because the student belongs to it when the complaint is about a different area
 
 PRIORITY:
 - Critical: immediate safety danger, violence, or injury risk
@@ -332,17 +394,17 @@ JSON:"""
         else:
             selected_category = "General"
 
-        # Map generic "Hostel" to gender-specific category using student context
-        # ✅ CRITICAL FIX: Map by gender ONLY - don't check stay_type here
-        # Validation in complaint_service will reject Day Scholar hostel complaints
+        # Map generic "Hostel" keyword match to a gender-specific hostel category.
+        # Priority: (1) explicit gender words in text, (2) student's gender from context,
+        # (3) default to Men's Hostel.
         if selected_category == "Hostel":
-            if context:
-                gender = context.get("gender", "")
-                # Map to gender-specific hostel category based on gender alone
-                if gender == "Female":
-                    selected_category = "Women's Hostel"
-                else:
-                    selected_category = "Men's Hostel"
+            text_lower_check = text.lower()
+            if any(w in text_lower_check for w in ["women", "women's", "girls", "ladies", "female"]):
+                selected_category = "Women's Hostel"
+            elif any(w in text_lower_check for w in ["men", "men's", "boys", "male", "gents"]):
+                selected_category = "Men's Hostel"
+            elif context and context.get("gender", "").lower() in ("female", "f"):
+                selected_category = "Women's Hostel"
             else:
                 selected_category = "Men's Hostel"
 
@@ -414,15 +476,19 @@ JSON:"""
         wait=wait_exponential(multiplier=1, min=1, max=60),
         retry=retry_if_exception_type((httpx.HTTPError, TimeoutError))
     )
-    async def rephrase_complaint(self, text: str) -> str:
+    async def rephrase_complaint(self, text: str) -> Optional[str]:
         """
         Rephrase complaint to be professional and clear.
-        
+
+        Bug 3 fix: Returns None if the text appears to be gibberish/meaningless,
+        so the caller can treat it as a spam indicator and stop processing.
+        Returns the original text (not None) if the Groq client is unavailable.
+
         Args:
             text: Original complaint text
-        
+
         Returns:
-            Rephrased text
+            Rephrased text string, or None if text is gibberish/meaningless
         """
         if not text or len(text.strip()) < 10:
             logger.warning("Text too short for rephrasing, returning original")
@@ -433,7 +499,7 @@ JSON:"""
             return text
 
         prompt = self._build_rephrasing_prompt(text)
-        
+
         try:
             response = await asyncio.to_thread(
                 self.groq_client.chat.completions.create,
@@ -443,32 +509,48 @@ JSON:"""
                 max_tokens=200,
                 timeout=self.timeout
             )
-            
+
             rephrased = response.choices[0].message.content.strip()
-            
+
             # Remove any markdown formatting
             rephrased = rephrased.replace("**", "").replace("*", "")
-            
+
+            # Bug 3 fix: If the LLM signals gibberish/no-content (returns the
+            # sentinel "GIBBERISH" or empty/too-short output), return None so the
+            # submission pipeline can reject the complaint as spam.
+            if rephrased.upper().startswith("GIBBERISH") or rephrased.upper().startswith("NO_CONTENT"):
+                logger.warning(f"Rephraser detected gibberish input for text: {text[:60]!r}")
+                return None
+
             # If rephrased text is too short or looks invalid, return original
             if len(rephrased) < 20 or rephrased.startswith("Error"):
                 logger.warning("Rephrased text looks invalid, returning original")
                 return text
-            
+
             logger.info(f"Rephrasing successful (Original: {len(text)} chars → Rephrased: {len(rephrased)} chars)")
             return rephrased
-            
+
         except Exception as e:
             logger.error(f"LLM rephrasing error: {e}")
             return text  # Return original if rephrasing fails
-    
+
     def _build_rephrasing_prompt(self, text: str) -> str:
-        """Build prompt for rephrasing"""
+        """Build prompt for rephrasing.
+
+        Bug 3 fix: Adds explicit instructions to return the sentinel 'GIBBERISH'
+        instead of inventing content when the input has no coherent meaning.
+        """
         return f"""Rephrase this student complaint into 1-2 short, clear sentences. Keep the original meaning intact.
 
 Original:
 "{text}"
 
-Rules:
+IMPORTANT — Gibberish guard:
+If the text has NO coherent meaning (random characters, keyboard mashing, meaningless word
+sequences with no identifiable issue), respond with exactly: GIBBERISH
+Do NOT invent or fabricate a complaint from meaningless input.
+
+Rules (when text IS a real complaint):
 - Output 1-2 concise sentences ONLY (max 50 words)
 - Preserve the core issue and key details
 - Fix grammar and spelling
@@ -477,7 +559,7 @@ Rules:
 - Do NOT use bullet points or structured format
 - Do NOT start with "The student" or "I would like to"
 
-Provide ONLY the rephrased text:"""
+Provide ONLY the rephrased text (or GIBBERISH if applicable):"""
     
     # ==================== SPAM DETECTION ====================
     
@@ -557,27 +639,38 @@ Provide ONLY the rephrased text:"""
             }
     
     def _build_spam_detection_prompt(self, text: str) -> str:
-        """Build prompt for spam detection"""
-        return f"""Detect if this complaint is spam, abusive, or not genuine.
+        """Build prompt for spam detection.
+
+        Bug 3 fix: Explicitly instructs the LLM to flag gibberish/random text as
+        spam rather than treating it as a complaint with meaning.
+        """
+        return f"""Detect if this complaint is spam, abusive, meaningless, or not genuine.
 
 Complaint Text:
 "{text}"
 
-Spam Indicators:
+SPAM — mark is_spam=true for ANY of these:
+- Random characters, keyboard mashing (e.g. "asdfgh jkl qwert uiop")
+- Gibberish: meaningless word sequences with no coherent subject or issue
+- Text that has no identifiable complaint or problem being reported
 - Abusive, profane, or offensive language
-- No actual issue or concern described
-- Joke, prank, or sarcastic complaint
-- Repeated gibberish or random characters
-- Personal attack targeting specific individuals by name
-- Test or dummy content (e.g., "test", "asdf")
+- Joke, prank, or clearly sarcastic complaint with no real issue
+- Purely personal attacks targeting specific individuals by name with no campus issue
+- Test or dummy content (e.g. "test", "asdf", "testing 123")
 - Advertisement or promotional content
-- Completely irrelevant to campus issues
+- Completely irrelevant to campus life (e.g. celebrity news, personal life unrelated to college)
 
-NOT Spam:
-- Valid concerns expressed with emotion or frustration
-- Complaints mentioning authorities in professional context
-- Legitimate issues with informal language
-- Constructive criticism
+IMPORTANT — gibberish rule:
+If the text consists of random characters, meaningless sequences, keyboard mashing,
+or words arranged with no coherent meaning or identifiable problem, mark is_spam=true
+with reason="gibberish". A complaint must describe a real, identifiable issue.
+
+NOT Spam (do NOT flag these):
+- Complaints with spelling errors, typos, or grammatical mistakes — these are still valid
+- Valid concerns expressed with frustration or informal/casual language
+- Complaints mentioning authorities in a professional or complaint context
+- Short complaints that still describe a real issue (e.g. "AC broken in lab")
+- Complaints in mixed Tamil/English (code-switching) that describe a real issue
 
 Respond ONLY with valid JSON (no markdown):
 {{

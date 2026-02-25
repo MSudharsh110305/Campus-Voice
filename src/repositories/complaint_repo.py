@@ -325,10 +325,14 @@ class ComplaintRepository(BaseRepository[Complaint]):
         general_id = general_result.scalar()
         disciplinary_id = disciplinary_result.scalar()
 
-        # ✅ UPDATED: Only Public visibility (Department removed)
+        # Bug 4 fix: Exclude Spam complaints from the public feed in addition to Closed.
+        # Spam complaints (flagged by authority or auto-detected) must never be visible
+        # in any public or department feed.
         conditions = [
             Complaint.visibility == "Public",
-            Complaint.status != "Closed"
+            Complaint.status != "Closed",
+            Complaint.status != "Spam",
+            Complaint.is_marked_as_spam == False,
         ]
 
         # Collect hostel category IDs
@@ -377,10 +381,16 @@ class ComplaintRepository(BaseRepository[Complaint]):
                 conditions.append(Complaint.category_id != mens_hostel_id)
             # For "Other" gender, show both hostel categories
 
+        # Bug 1 fix: Hostel complaints must be visible to ALL same-gender hostel
+        # students regardless of department. The department filter must NOT apply to
+        # hostel-category complaints.
+        #
         # Students can see:
-        # 1. Complaints from their own department
-        # 2. General category complaints (visible to all)
-        # 3. Disciplinary Committee complaints (visible to all)
+        # 1. Men's Hostel complaints → any male hostel student (no dept restriction)
+        # 2. Women's Hostel complaints → any female hostel student (no dept restriction)
+        # 3. Complaints from their own department (Department category)
+        # 4. General category complaints (visible to all)
+        # 5. Disciplinary Committee complaints (visible to all)
         inter_dept_conditions = [
             Complaint.complaint_department_id == student_department_id
         ]
@@ -388,6 +398,19 @@ class ComplaintRepository(BaseRepository[Complaint]):
             inter_dept_conditions.append(Complaint.category_id == general_id)
         if disciplinary_id:
             inter_dept_conditions.append(Complaint.category_id == disciplinary_id)
+
+        # ✅ BUG 1 FIX: Hostel complaints are visible to all same-gender hostel students —
+        # no department restriction. Only add hostel pass-through for hostel students
+        # (day scholars are already excluded above via the category_id != hostel_id conditions).
+        if student_stay_type != "Day Scholar":
+            if student_gender == "Male" and mens_hostel_id:
+                inter_dept_conditions.append(Complaint.category_id == mens_hostel_id)
+            elif student_gender == "Female" and womens_hostel_id:
+                inter_dept_conditions.append(Complaint.category_id == womens_hostel_id)
+            elif student_gender not in ("Male", "Female"):
+                # "Other" gender hostel students: show both hostel categories
+                for hid in hostel_category_ids:
+                    inter_dept_conditions.append(Complaint.category_id == hid)
 
         conditions.append(or_(*inter_dept_conditions))
 

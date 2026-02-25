@@ -5,7 +5,7 @@ import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import authorityService from '../../../services/authority.service';
 import { VOTE_TYPES, COMPLAINT_CATEGORIES } from '../../../utils/constants';
-import { ThumbsUp, ThumbsDown, FileX, Clock, History, CheckCircle2, AlertCircle, ShieldAlert, FileText, ChevronRight } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, FileX, Clock, History, CheckCircle2, AlertCircle, ShieldAlert, FileText, ChevronRight, ShieldCheck } from 'lucide-react';
 import { Skeleton, Card, Badge, Button } from '../../../components/UI';
 import { format } from 'date-fns';
 
@@ -534,6 +534,20 @@ export default function ComplaintDetails() {
                                         <div className="text-sm font-mono font-bold text-gray-700">#{complaint.id?.toString().slice(-6).toUpperCase()}</div>
                                     </div>
                                 </div>
+
+                                {/* Assigned To — shown to complaint owner or when not private */}
+                                {complaint.assigned_authority_name && (isOwner || complaint.visibility !== 'Private') && (
+                                    <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm flex items-start gap-2.5">
+                                        <ShieldCheck size={16} className="text-srec-primary mt-0.5 flex-shrink-0" />
+                                        <div>
+                                            <div className="text-[10px] text-gray-400 uppercase font-bold mb-0.5">Assigned To</div>
+                                            <div className="text-sm font-bold text-gray-800">{complaint.assigned_authority_name}</div>
+                                            {complaint.assigned_authority_type && (
+                                                <div className="text-xs text-gray-500 mt-0.5">{complaint.assigned_authority_type}</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 

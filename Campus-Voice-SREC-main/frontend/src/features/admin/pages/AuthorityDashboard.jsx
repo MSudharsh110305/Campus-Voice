@@ -11,11 +11,9 @@ import AuthorityComplaintCard from '../components/AuthorityComplaintCard';
 import { STATUSES, VALID_STATUS_TRANSITIONS, REASON_REQUIRED_STATUSES } from '../../../utils/constants';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend,
+  ResponsiveContainer,
 } from 'recharts';
 import { LayoutDashboard, CheckCircle, Clock, AlertCircle, X, Download, TrendingUp } from 'lucide-react';
-
-const PIE_COLORS = ['#14532D', '#D4AF37', '#22C55E', '#EF4444', '#6366F1'];
 
 const ROLE_TITLES = {
   'Warden': 'Warden Dashboard',
@@ -245,13 +243,11 @@ export default function AuthorityDashboard() {
     : [];
 
   // --- Detailed stats for charts ---
-  const dsByCategory = detailedStats?.by_category || {};
   const dsByPriority = detailedStats?.by_priority || {};
   const weeklyTrend = detailedStats?.weekly_trend || [];
   const resolutionRate = detailedStats?.resolution_rate ?? null;
   const avgResolutionHours = detailedStats?.avg_resolution_hours ?? null;
 
-  const categoryPieData = Object.entries(dsByCategory).map(([name, value]) => ({ name, value }));
   const dashboardTitle = ROLE_TITLES[user?.authority_type] || `${user?.authority_type || 'Authority'} Dashboard`;
 
   const exportSections = [
@@ -267,12 +263,6 @@ export default function AuthorityDashboard() {
         { label: 'Avg Resolution Time', value: avgResolutionHours != null ? `${Math.round(avgResolutionHours)}h` : '—' },
       ],
     },
-    ...(categoryPieData.length > 0 ? [{
-      id: 'by_category',
-      label: 'Complaints by Category',
-      tableHeaders: ['Category', 'Count'],
-      tableRows: categoryPieData.map(d => [d.name, d.value]),
-    }] : []),
     ...(Object.keys(dsByPriority).length > 0 ? [{
       id: 'by_priority',
       label: 'Complaints by Priority',
@@ -382,62 +372,31 @@ export default function AuthorityDashboard() {
           )}
 
           {/* Charts */}
-          {(weeklyTrend.length > 0 || categoryPieData.length > 0) && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-              {/* Weekly Trend Area Chart */}
-              {weeklyTrend.length > 0 && (
-                <Card className="lg:col-span-2 p-6 shadow-sm border border-gray-100">
-                  <h3 className="text-base font-bold text-gray-900 mb-4 flex items-center gap-2">
-                    <TrendingUp size={18} className="text-srec-primary" />
-                    Weekly Complaint Trend
-                  </h3>
-                  <div className="h-48 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={weeklyTrend}>
-                        <defs>
-                          <linearGradient id="authColorCount" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#14532D" stopOpacity={0.15} />
-                            <stop offset="95%" stopColor="#14532D" stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                        <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 11 }} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 11 }} />
-                        <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                        <Area type="monotone" dataKey="count" stroke="#14532D" strokeWidth={2.5} fillOpacity={1} fill="url(#authColorCount)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Card>
-              )}
-
-              {/* Category Pie */}
-              {categoryPieData.length > 0 && (
-                <Card className="p-6 shadow-sm border border-gray-100">
-                  <h3 className="text-base font-bold text-gray-900 mb-4">By Category</h3>
-                  <div className="h-48 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={categoryPieData}
-                          cx="50%"
-                          cy="45%"
-                          innerRadius={40}
-                          outerRadius={65}
-                          paddingAngle={4}
-                          dataKey="value"
-                        >
-                          {categoryPieData.map((_, index) => (
-                            <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                        <Legend verticalAlign="bottom" height={36} iconSize={10} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Card>
-              )}
+          {weeklyTrend.length > 0 && (
+            <div className="mb-8">
+              <Card className="p-6 shadow-sm border border-gray-100">
+                <h3 className="text-base font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <TrendingUp size={18} className="text-srec-primary" />
+                  Weekly Complaint Trend
+                </h3>
+                <div className="h-48 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={weeklyTrend}>
+                      <defs>
+                        <linearGradient id="authColorCount" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#14532D" stopOpacity={0.15} />
+                          <stop offset="95%" stopColor="#14532D" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                      <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 11 }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 11 }} />
+                      <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                      <Area type="monotone" dataKey="count" stroke="#14532D" strokeWidth={2.5} fillOpacity={1} fill="url(#authColorCount)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
             </div>
           )}
 

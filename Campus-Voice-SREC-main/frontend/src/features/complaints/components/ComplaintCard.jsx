@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { StatusBadge, PriorityBadge } from '../../../components/UI';
 import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
-import { ThumbsUp, ThumbsDown, Sparkles, FileX } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, Sparkles, FileX, ShieldCheck } from 'lucide-react';
 import { Skeleton } from '../../../components/UI';
 
 import { VOTE_TYPES } from '../../../utils/constants';
@@ -24,7 +24,8 @@ export default function ComplaintCard({
   downvotes,
   timestamp,
   isOwner = false,
-  has_image = false
+  has_image = false,
+  assigned_authority_name = null
 }) {
   const { user } = useAuth();
   const [expanded, setExpanded] = useState(false);
@@ -45,7 +46,13 @@ export default function ComplaintCard({
   };
 
   // Fetch user's existing vote on mount - with delay to prevent rate limiting
+  // Skip fetching if user is the complaint owner
   useEffect(() => {
+    if (isOwner) {
+      setUserVote(null);
+      return;
+    }
+
     const fetchMyVote = async () => {
       try {
         const voteData = await complaintService.getMyVote(id);
@@ -58,7 +65,7 @@ export default function ComplaintCard({
     const delay = Math.random() * 500;
     const timer = setTimeout(fetchMyVote, delay);
     return () => clearTimeout(timer);
-  }, [id]);
+  }, [id, isOwner]);
 
   // Fetch image as blob on mount if exists - with delay to prevent rate limiting
   useEffect(() => {
@@ -222,11 +229,6 @@ export default function ComplaintCard({
                   {category}
                 </span>
               )}
-              {department_code && (
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                  {department_code}
-                </span>
-              )}
             </div>
             <StatusBadge status={status || 'Raised'} />
           </div>
@@ -254,6 +256,16 @@ export default function ComplaintCard({
                   {expanded ? 'Show less' : 'Read more'}
                 </button>
               )}
+            </div>
+          )}
+
+          {/* Handled by — only shown to the complaint owner */}
+          {isOwner && assigned_authority_name && (
+            <div className="flex items-center gap-1.5 mb-3 -mt-1">
+              <ShieldCheck size={13} className="text-gray-400 flex-shrink-0" />
+              <span className="text-xs text-gray-500">
+                Handled by: <span className="font-medium text-gray-700">{assigned_authority_name}</span>
+              </span>
             </div>
           )}
 

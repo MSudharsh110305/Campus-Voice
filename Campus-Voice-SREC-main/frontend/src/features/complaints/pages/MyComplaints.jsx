@@ -234,6 +234,7 @@ export default function MyComplaints() {
                   downvotes={c.downvotes}
                   timestamp={c.submitted_at || c.created_at}
                   isOwner={true}
+                  assigned_authority_name={c.assigned_authority_name || null}
                 />
               ))
             )}

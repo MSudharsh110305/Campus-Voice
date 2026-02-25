@@ -107,7 +107,11 @@ export default function AdminDepartments() {
     };
 
     const handleCategoryClick = (cat) => {
-        navigate(`/admin/complaints?category=${encodeURIComponent(cat.filterKey)}`);
+        if (cat.id === 'department') {
+            navigate('/admin/departments/list');
+        } else {
+            navigate(`/admin/complaints?category=${encodeURIComponent(cat.filterKey)}`);
+        }
     };
 
     return (

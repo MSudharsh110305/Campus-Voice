@@ -121,10 +121,11 @@ class ComplaintService:
                     "Male students cannot submit complaints about women's hostel facilities"
                 )
 
-        # Build context for LLM
+        # Build context for LLM.
+        # Bug 2 fix: Only pass department code so the LLM fallback can detect
+        # cross-department targets. Gender and stay_type are intentionally excluded
+        # from the LLM prompt to prevent hostel-bias in categorisation.
         context = {
-            "gender": student.gender or "Unknown",
-            "stay_type": student.stay_type or "Unknown",
             "department": student.department.code if (student.department and hasattr(student.department, 'code')) else "Unknown"
         }
 
@@ -164,6 +165,20 @@ class ComplaintService:
                 else:
                     error_msg = f"Complaint marked as spam/abusive: {spam_reason}"
 
+                # Bug 4 fix: Notify the student that their submission was flagged as spam.
+                # Complaint is never created, so we send a notification without a complaint_id.
+                try:
+                    await notification_service.create_notification(
+                        self.db,
+                        recipient_type="Student",
+                        recipient_id=student_roll_no,
+                        complaint_id=None,
+                        notification_type="complaint_spam",
+                        message=f"Your complaint submission was flagged as spam and was not published. Reason: {spam_reason}"
+                    )
+                except Exception as _notif_err:
+                    logger.warning(f"Failed to send spam rejection notification: {_notif_err}")
+
                 # ✅ CRITICAL: Raise error (don't create complaint)
                 raise ValueError(error_msg)
 
@@ -171,31 +186,10 @@ class ComplaintService:
             categorization = await llm_service.categorize_complaint(original_text, context)
             llm_failed = False
 
-            # ✅ FIX: If hostel student submits hostel-related complaint but LLM
-            # miscategorized it (e.g., as "General"), force-correct the category.
-            # This prevents day scholars from seeing hostel complaints in public feed.
+            # Bug 2 fix: Do NOT force-correct hostel category based on student
+            # stay_type. The LLM prompt now categorises purely on complaint text.
+            # Only apply the academic override (keyword-based deterministic safety net).
             ai_category = categorization.get("category")
-            HOSTEL_KEYWORDS = [
-                "hostel", "mess", "warden", "dorm", "bunk",
-                "hostel room", "my room", "our room", "the room",
-                "bathroom", "water supply", "electricity in",
-                "air conditioning", "ceiling fan", "hostel fan",
-                "toilet", "shower", "dining hall", "laundry",
-                "curfew", "common room",
-            ]
-            if (student.stay_type == "Hostel" and
-                    ai_category not in ("Men's Hostel", "Women's Hostel") and
-                    any(kw in original_text.lower() for kw in HOSTEL_KEYWORDS)):
-                corrected = "Women's Hostel" if student.gender == "Female" else "Men's Hostel"
-                logger.info(
-                    f"LLM miscategorized hostel complaint as '{ai_category}' for hostel "
-                    f"student {student_roll_no}. Correcting to '{corrected}'."
-                )
-                categorization["category"] = corrected
-                ai_category = corrected
-
-            # Re-apply academic override: if text has unambiguous academic keywords,
-            # never force hostel category (handles "ac" false matches etc.)
             categorization = llm_service._apply_academic_override(original_text, categorization)
             ai_category = categorization.get("category")
 
@@ -216,8 +210,17 @@ class ComplaintService:
                         "Male students should use Men's Hostel category for hostel complaints"
                     )
 
-            # 3. Rephrase for professionalism
+            # 3. Rephrase for professionalism.
+            # Bug 3 fix: rephrase_complaint returns None when it detects gibberish.
+            # Treat None as a spam signal and reject the complaint immediately.
             rephrased_text = await llm_service.rephrase_complaint(original_text)
+            if rephrased_text is None:
+                logger.warning(
+                    f"Rephraser returned None (gibberish detected) for {student_roll_no}"
+                )
+                raise ValueError(
+                    "Complaint marked as spam/abusive: Content appears to be meaningless or gibberish"
+                )
 
             # ✅ NEW: 4. Check if image is REQUIRED for this complaint
             image_requirement = await llm_service.check_image_requirement(
@@ -387,14 +390,19 @@ class ComplaintService:
                 complaint.assigned_at = current_time
                 await self.db.commit()
 
-                # Create notification for authority
+                # Bug 6 fix: Notify the assigned authority with category and student info.
+                _category_name = categorization.get("category", "Unknown")
                 await notification_service.create_notification(
                     self.db,
                     recipient_type="Authority",
                     recipient_id=str(authority.id),
                     complaint_id=complaint.id,
                     notification_type="complaint_assigned",
-                    message=f"New complaint assigned: {rephrased_text[:100]}..."
+                    message=(
+                        f"New complaint assigned to you: {_category_name} complaint "
+                        f"from student {student_roll_no}. "
+                        f"Issue: {rephrased_text[:80]}..."
+                    )
                 )
 
                 logger.info(f"Complaint {complaint.id} assigned to {authority.name}")
@@ -638,7 +646,23 @@ class ComplaintService:
             message=f"Your complaint status changed to '{_status_str}'" +
                     (f": {reason}" if reason else "")
         )
-        
+
+        # Bug 6 fix: If the status update was made by an admin (not the assigned authority),
+        # also notify the assigned authority so they are aware of the change.
+        if complaint.assigned_authority_id and complaint.assigned_authority_id != authority_id:
+            try:
+                await notification_service.create_notification(
+                    self.db,
+                    recipient_type="Authority",
+                    recipient_id=str(complaint.assigned_authority_id),
+                    complaint_id=complaint_id,
+                    notification_type="status_updated",
+                    message=f"Complaint status updated to '{_status_str}' by admin" +
+                            (f": {reason}" if reason else "")
+                )
+            except Exception as _notif_err:
+                logger.warning(f"Failed to send authority status notification: {_notif_err}")
+
         logger.info(
             f"Complaint {complaint_id} status updated by authority {authority_id}: "
             f"{old_status} → {new_status}"

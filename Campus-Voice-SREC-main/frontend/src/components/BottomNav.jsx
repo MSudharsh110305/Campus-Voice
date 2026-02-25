@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Home, FileText, User, Megaphone, Bell } from 'lucide-react';
+import { Home, FileText, User, Megaphone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 
@@ -34,13 +34,6 @@ export default function BottomNav() {
       icon: Megaphone,
       routes: ['/notices'],
       badge: unreadNoticeCount
-    },
-    {
-      path: '/notifications',
-      label: 'Alerts',
-      icon: Bell,
-      routes: ['/notifications'],
-      badge: unreadCount
     },
     {
       path: '/profile',

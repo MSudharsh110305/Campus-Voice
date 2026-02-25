@@ -97,6 +97,19 @@ const getEscalations = async () => {
     return await api('/admin/escalations');
 };
 
+// Department-specific queries
+const getStudentsByDepartment = async (departmentCode, skip = 0, limit = 200) => {
+    const params = new URLSearchParams({ skip, limit });
+    if (departmentCode) params.append('department_code', departmentCode);
+    return await api(`/admin/students?${params}`);
+};
+
+const getDepartmentComplaints = async (departmentCode, skip = 0, limit = 50) => {
+    const params = new URLSearchParams({ skip, limit, category_name: 'Department' });
+    if (departmentCode) params.append('department_code', departmentCode);
+    return await api(`/admin/complaints?${params}`);
+};
+
 // Health Metrics
 const getHealthMetrics = async () => {
     return await api('/admin/health/metrics');
@@ -117,6 +130,8 @@ const adminService = {
     moderateImage,
     getEscalations,
     getHealthMetrics,
+    getStudentsByDepartment,
+    getDepartmentComplaints,
 };
 
 export default adminService;

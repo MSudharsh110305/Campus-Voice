@@ -195,10 +195,13 @@ async def get_complaints(
     )
 
     # Count using same visibility logic (✅ UPDATED: Only Public)
+    # Bug 4 fix: Exclude Spam from the count as well.
     from src.database.models import ComplaintCategory
     count_conditions = [
         Complaint.visibility == "Public",
-        Complaint.status != "Closed"
+        Complaint.status != "Closed",
+        Complaint.status != "Spam",
+        Complaint.is_marked_as_spam == False,
     ]
 
     # Get hostel category IDs for filtering
@@ -230,7 +233,10 @@ async def get_complaints(
         elif student.gender == "Female" and mens_hostel_id:
             count_conditions.append(Complaint.category_id != mens_hostel_id)
 
-    # ✅ UPDATED: Inter-department filtering (General and Disciplinary visible to all)
+    # ✅ BUG 1 FIX: Inter-department filtering.
+    # General and Disciplinary visible to all students.
+    # Department complaints: only same-dept students.
+    # Hostel complaints: visible to ALL same-gender hostel students (NO dept restriction).
     inter_dept_conditions = [
         Complaint.complaint_department_id == student.department_id
     ]
@@ -238,6 +244,18 @@ async def get_complaints(
         inter_dept_conditions.append(Complaint.category_id == general_id)
     if disciplinary_id:
         inter_dept_conditions.append(Complaint.category_id == disciplinary_id)
+
+    # Hostel students can see hostel complaints regardless of department
+    if student.stay_type != "Day Scholar":
+        if student.gender == "Male" and mens_hostel_id:
+            inter_dept_conditions.append(Complaint.category_id == mens_hostel_id)
+        elif student.gender == "Female" and womens_hostel_id:
+            inter_dept_conditions.append(Complaint.category_id == womens_hostel_id)
+        elif student.gender not in ("Male", "Female"):
+            if mens_hostel_id:
+                inter_dept_conditions.append(Complaint.category_id == mens_hostel_id)
+            if womens_hostel_id:
+                inter_dept_conditions.append(Complaint.category_id == womens_hostel_id)
 
     count_conditions.append(or_(*inter_dept_conditions))
 
@@ -305,6 +323,10 @@ async def get_complaint(
 
 # ==================== VOTING ====================
 
+# Sentinel string used by VoteService to identify own-complaint vote attempts.
+_OWN_COMPLAINT_VOTE_ERROR = "Cannot vote on your own complaint"
+
+
 @router.post(
     "/{complaint_id}/vote",
     response_model=VoteResponse,
@@ -319,20 +341,43 @@ async def vote_on_complaint(
 ):
     """
     Vote on a complaint.
-    
+
     - **vote_type**: Upvote or Downvote
-    
+
     Voting affects complaint priority and visibility.
+
+    Bug 5 fix: Ownership check happens before any DB write inside VoteService.
+    If the logged-in student owns the complaint, returns HTTP 403 with
+    {"error": "You cannot vote on your own complaint"} so the frontend can
+    show the message only to the complaint owner.
     """
+    # Bug 5 fix: Check complaint ownership BEFORE delegating to VoteService,
+    # so we can return the correct 403 with {"error": ...} without any DB write.
+    from src.repositories.complaint_repo import ComplaintRepository
+    complaint_repo = ComplaintRepository(db)
+    complaint = await complaint_repo.get(complaint_id)
+    if not complaint:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Complaint not found"
+        )
+    if complaint.student_roll_no == roll_no:
+        # Return 403 with "error" key (not "detail") so the frontend can
+        # distinguish this from other 403 errors.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "You cannot vote on your own complaint"}
+        )
+
     try:
         service = VoteService(db)
-        
+
         result = await service.add_vote(
             complaint_id=complaint_id,
             student_roll_no=roll_no,
             vote_type=data.vote_type
         )
-        
+
         return VoteResponse(
             complaint_id=complaint_id,
             upvotes=result["upvotes"],
@@ -341,7 +386,7 @@ async def vote_on_complaint(
             priority=result["priority"],
             user_vote=data.vote_type
         )
-        
+
     except Exception as e:
         logger.error(f"Vote error: {e}")
         raise HTTPException(
