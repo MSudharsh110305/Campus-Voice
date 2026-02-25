@@ -134,12 +134,9 @@ async def seed_authorities():
     print("\nSeeding authorities...")
     async with AsyncSessionLocal() as session:
         try:
-            result = await session.execute(text("SELECT COUNT(*) FROM authorities"))
-            count = result.scalar()
-
-            if count > 0:
-                print(f"  Authorities already exist ({count} records), skipping...")
-                return
+            # Fetch existing authority emails so we only insert missing accounts
+            result = await session.execute(text("SELECT email FROM authorities"))
+            existing_emails = {row[0] for row in result.fetchall()}
 
             # Get department IDs for HOD assignments
             dept_result = await session.execute(text("SELECT id, code FROM departments"))
@@ -276,16 +273,26 @@ async def seed_authorities():
                         "department_id": dept_id,
                     })
 
+            added = []
             for auth_data in authorities:
+                email = auth_data.get("email")
+                if email in existing_emails:
+                    print(f"    - Skipping existing authority: {email}")
+                    continue
+
                 password = auth_data.pop("password")
                 auth_data["password_hash"] = auth_service.hash_password(password)
                 authority = Authority(**auth_data)
                 session.add(authority)
+                added.append(auth_data)
 
-            await session.commit()
-            print(f"  Seeded {len(authorities)} authorities:")
-            for auth_data in authorities:
-                print(f"    - {auth_data.get('designation', '?')} ({auth_data.get('authority_type', '?')}): {auth_data.get('email', '?')}")
+            if added:
+                await session.commit()
+                print(f"  Seeded {len(added)} new authorities:")
+                for auth_data in added:
+                    print(f"    - {auth_data.get('designation', '?')} ({auth_data.get('authority_type', '?')}): {auth_data.get('email', '?')}")
+            else:
+                print("  No new authorities to seed; all configured accounts already exist.")
 
         except Exception as e:
             await session.rollback()
