@@ -247,12 +247,10 @@ class Complaint(Base):
 
     @property
     def assigned_authority_name(self) -> str | None:
-        """Return the name of the assigned authority if loaded"""
-        try:
-            auth = object.__getattribute__(self, 'assigned_authority')
-            return auth.name if auth is not None else None
-        except Exception:
-            return None
+        """Return the name of the assigned authority if eagerly loaded.
+        Uses __dict__ to avoid triggering lazy load in async context."""
+        auth = self.__dict__.get('assigned_authority')
+        return auth.name if auth is not None else None
 
 
 class AuthorityUpdate(Base):
