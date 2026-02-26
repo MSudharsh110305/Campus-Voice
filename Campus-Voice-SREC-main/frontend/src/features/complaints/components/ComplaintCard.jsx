@@ -9,30 +9,30 @@ import {
 import { Skeleton } from '../../../components/UI';
 import { VOTE_TYPES } from '../../../utils/constants';
 
-// Status config: color + label
+// Status config: dot color, label, badge style
 const STATUS_CFG = {
-  Raised:      { dot: 'bg-blue-400',   text: 'text-blue-600',   label: 'Raised' },
-  'In Progress':{ dot: 'bg-amber-400',  text: 'text-amber-600',  label: 'In Progress' },
-  Resolved:    { dot: 'bg-green-500',  text: 'text-green-700',  label: 'Resolved' },
-  Closed:      { dot: 'bg-gray-400',   text: 'text-gray-500',   label: 'Closed' },
-  Spam:        { dot: 'bg-red-400',    text: 'text-red-600',    label: 'Spam' },
+  Raised:        { dot: 'bg-blue-400',    badge: 'bg-blue-50 text-blue-700 border border-blue-100',   label: 'Raised' },
+  'In Progress': { dot: 'bg-amber-400',   badge: 'bg-amber-50 text-amber-700 border border-amber-100', label: 'In Progress' },
+  Resolved:      { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border border-emerald-100', label: 'Resolved' },
+  Closed:        { dot: 'bg-gray-400',    badge: 'bg-gray-100 text-gray-500 border border-gray-200',   label: 'Closed' },
+  Spam:          { dot: 'bg-red-400',     badge: 'bg-red-50 text-red-700 border border-red-100',       label: 'Spam' },
 };
 
-// Priority config
+// Priority config — gradient bar + label + accent color
 const PRIORITY_CFG = {
-  Critical: { bar: 'bg-red-500',    label: 'Critical', text: 'text-red-600' },
-  High:     { bar: 'bg-orange-400', label: 'High',     text: 'text-orange-600' },
-  Medium:   { bar: 'bg-amber-400',  label: 'Medium',   text: 'text-amber-600' },
-  Low:      { bar: 'bg-gray-300',   label: 'Low',      text: 'text-gray-400' },
+  Critical: { bar: 'from-red-500 to-rose-400',     label: 'Critical', accent: 'text-red-600',    pill: 'bg-red-50 text-red-700 border border-red-100' },
+  High:     { bar: 'from-orange-500 to-amber-400', label: 'High',     accent: 'text-orange-600', pill: 'bg-orange-50 text-orange-700 border border-orange-100' },
+  Medium:   { bar: 'from-amber-400 to-yellow-300', label: 'Medium',   accent: 'text-amber-600',  pill: 'bg-amber-50 text-amber-700 border border-amber-100' },
+  Low:      { bar: 'from-gray-300 to-gray-200',    label: 'Low',      accent: 'text-gray-400',   pill: 'bg-gray-50 text-gray-500 border border-gray-200' },
 };
 
-// Category background accent
+// Category chip colors — richer green palette for hostel
 const CATEGORY_COLOR = {
-  'Men\'s Hostel':    'bg-blue-50 text-blue-700 border-blue-100',
-  'Women\'s Hostel':  'bg-pink-50 text-pink-700 border-pink-100',
-  'General':          'bg-gray-50 text-gray-600 border-gray-200',
-  'Department':       'bg-violet-50 text-violet-700 border-violet-100',
-  'Disciplinary Committee': 'bg-red-50 text-red-700 border-red-100',
+  "Men's Hostel":          'bg-emerald-50 text-emerald-800 border border-emerald-200',
+  "Women's Hostel":        'bg-pink-50 text-pink-800 border border-pink-200',
+  'General':               'bg-slate-50 text-slate-700 border border-slate-200',
+  'Department':            'bg-violet-50 text-violet-800 border border-violet-200',
+  'Disciplinary Committee':'bg-rose-50 text-rose-800 border border-rose-200',
 };
 
 const timeAgo = (ts) => {
@@ -40,24 +40,22 @@ const timeAgo = (ts) => {
   const diff = Date.now() - new Date(ts).getTime();
   const m = Math.floor(diff / 60000);
   if (m < 1) return 'just now';
-  if (m < 60) return `${m}m`;
+  if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
+  if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d`;
+  if (d === 1) return 'Yesterday';
+  if (d < 7) return `${d}d ago`;
   return new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 };
 
 export default function ComplaintCard({
   id,
-  title,
   desc,
   summary,
   rephrased_text,
   category,
   department_code,
-  img,
-  author,
   status,
   priority,
   upvotes,
@@ -159,31 +157,33 @@ export default function ComplaintCard({
 
   const sc = STATUS_CFG[status] || STATUS_CFG['Raised'];
   const pc = PRIORITY_CFG[priority] || PRIORITY_CFG['Low'];
-  const catColor = CATEGORY_COLOR[category] || 'bg-gray-50 text-gray-600 border-gray-200';
+  const catColor = CATEGORY_COLOR[category] || 'bg-slate-50 text-slate-700 border border-slate-200';
 
   return (
     <Link to={`/complaint/${id}`} className="block group">
-      <div className={`bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm group-hover:shadow-md group-hover:-translate-y-0.5 transition-all duration-200 ${priority === 'Critical' ? 'border-t-2 border-t-red-400' : ''}`}>
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm group-hover:shadow-md group-hover:-translate-y-0.5 transition-all duration-200">
 
-        {/* Priority accent bar (top) */}
-        <div className={`h-0.5 w-full ${pc.bar}`} />
+        {/* Priority gradient accent bar */}
+        <div className={`h-[3px] w-full bg-gradient-to-r ${pc.bar}`} />
 
-        <div className="p-3">
-          {/* Row 1: category tag + status pill + timestamp */}
-          <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+        <div className="p-3.5">
+          {/* Row 1: category tag + status badge + timestamp */}
+          <div className="flex items-center gap-1.5 mb-2.5 flex-wrap">
             {category && (
-              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold border ${catColor}`}>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold ${catColor}`}>
                 {category}
               </span>
             )}
-            <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${sc.text}`}>
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${sc.badge}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${sc.dot} inline-block`} />
               {sc.label}
             </span>
             {priority && priority !== 'Low' && (
-              <span className={`text-[10px] font-semibold ${pc.text}`}>· {pc.label}</span>
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${pc.pill}`}>
+                {pc.label}
+              </span>
             )}
-            <span className="text-[10px] text-gray-300 ml-auto flex items-center gap-0.5">
+            <span className="text-[10px] text-gray-300 ml-auto flex items-center gap-0.5 flex-shrink-0">
               <Clock size={9} />
               {timeAgo(timestamp)}
             </span>
@@ -197,16 +197,18 @@ export default function ComplaintCard({
                 {bodyText}
               </p>
 
-              {/* Assigned authority (owner only) */}
-              {isOwner && assigned_authority_name && (
+              {/* Assigned authority — visible to all */}
+              {assigned_authority_name && (
                 <div className="flex items-center gap-1 mt-1.5">
-                  <ShieldCheck size={10} className="text-green-500 flex-shrink-0" />
-                  <span className="text-[10px] text-gray-500 truncate">{assigned_authority_name}</span>
+                  <ShieldCheck size={10} className="text-emerald-600 flex-shrink-0" />
+                  <span className="text-[10px] text-emerald-700 font-medium truncate">
+                    {assigned_authority_name}
+                  </span>
                 </div>
               )}
 
-              {/* Department code (if present) */}
-              {department_code && !isOwner && (
+              {/* Department code (if present and no authority shown) */}
+              {department_code && !assigned_authority_name && !isOwner && (
                 <div className="flex items-center gap-1 mt-1">
                   <Building2 size={10} className="text-gray-300 flex-shrink-0" />
                   <span className="text-[10px] text-gray-400">{department_code}</span>
@@ -216,7 +218,7 @@ export default function ComplaintCard({
 
             {/* Thumbnail */}
             {has_image && (
-              <div className="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
+              <div className="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 ring-1 ring-gray-200">
                 {imageLoading ? (
                   <Skeleton className="w-full h-full" />
                 ) : imageUrl ? (
@@ -231,16 +233,16 @@ export default function ComplaintCard({
           </div>
 
           {/* Row 3: vote buttons (always full-width below content) */}
-          <div className="flex items-center mt-2.5 pt-2 border-t border-gray-50">
+          <div className="flex items-center mt-3 pt-2.5 border-t border-gray-50">
             {!isOwner ? (
               <div className="flex items-center gap-1.5 ml-auto" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
                 <button
                   onClick={e => handleVote(e, VOTE_TYPES.UPVOTE)}
                   disabled={isVoting}
-                  className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all active:scale-95 ${
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all duration-150 active:scale-95 ${
                     userVote === VOTE_TYPES.UPVOTE
-                      ? 'bg-srec-primary text-white shadow-sm'
-                      : 'bg-gray-50 text-gray-400 border border-gray-200 hover:border-srec-primary/40 hover:text-srec-primary hover:bg-srec-primary/5'
+                      ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-200'
+                      : 'bg-gray-50 text-gray-400 border border-gray-200 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50'
                   }`}
                 >
                   <ThumbsUp size={11} className={userVote === VOTE_TYPES.UPVOTE ? 'fill-current' : ''} />
@@ -249,10 +251,10 @@ export default function ComplaintCard({
                 <button
                   onClick={e => handleVote(e, VOTE_TYPES.DOWNVOTE)}
                   disabled={isVoting}
-                  className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all active:scale-95 ${
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all duration-150 active:scale-95 ${
                     userVote === VOTE_TYPES.DOWNVOTE
-                      ? 'bg-srec-danger text-white shadow-sm'
-                      : 'bg-gray-50 text-gray-400 border border-gray-200 hover:border-red-300 hover:text-srec-danger hover:bg-red-50'
+                      ? 'bg-rose-500 text-white shadow-sm shadow-rose-200'
+                      : 'bg-gray-50 text-gray-400 border border-gray-200 hover:border-rose-300 hover:text-rose-600 hover:bg-rose-50'
                   }`}
                 >
                   <ThumbsDown size={11} className={userVote === VOTE_TYPES.DOWNVOTE ? 'fill-current' : ''} />
@@ -265,7 +267,7 @@ export default function ComplaintCard({
           </div>
 
           {voteError && (
-            <div className="flex items-center gap-1 mt-1.5 text-[10px] text-red-500">
+            <div className="flex items-center gap-1 mt-1.5 text-[10px] text-rose-500">
               <AlertCircle size={10} />
               {voteError}
             </div>

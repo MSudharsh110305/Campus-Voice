@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import adminService from '../../../services/admin.service';
 import { DEPARTMENTS } from '../../../utils/constants';
@@ -9,32 +9,37 @@ function DepartmentCard({ dept, complaintCount, studentCount, onClick }) {
     return (
         <div
             onClick={onClick}
-            className="bg-white rounded-2xl p-6 border border-gray-100 hover:border-srec-primary/30 hover:shadow-lg hover:scale-[1.02] transition-all duration-200 cursor-pointer group"
+            className="bg-white rounded-2xl border border-gray-100 hover:border-emerald-200 hover:shadow-lg hover:shadow-emerald-50 hover:scale-[1.02] transition-all duration-200 cursor-pointer group overflow-hidden"
         >
-            <div className="flex items-start justify-between mb-4">
-                <div className="w-12 h-12 rounded-xl bg-srec-primary/10 flex items-center justify-center text-srec-primary">
-                    <Building2 size={22} />
-                </div>
-                <ChevronRight size={18} className="text-gray-300 group-hover:text-srec-primary group-hover:translate-x-1 transition-all duration-200 mt-1" />
-            </div>
+            {/* Top accent strip */}
+            <div className="h-1 w-full bg-gradient-to-r from-srec-primary via-emerald-600 to-green-500" />
 
-            <div className="mb-1">
-                <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-srec-primary/10 text-srec-primary mb-2">
-                    {dept.code}
-                </span>
-            </div>
-            <h3 className="text-base font-bold text-gray-900 mb-1 leading-snug">{dept.name}</h3>
-
-            <div className="flex items-center gap-4 pt-4 border-t border-gray-100 mt-4">
-                <div className="flex items-center gap-1.5 text-sm text-gray-500">
-                    <FileText size={14} className="text-gray-400" />
-                    <span className="font-semibold text-gray-700">{complaintCount ?? '—'}</span>
-                    <span className="text-xs">complaints</span>
+            <div className="p-5">
+                <div className="flex items-start justify-between mb-3">
+                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-srec-primary/10 to-emerald-50 flex items-center justify-center text-srec-primary border border-emerald-100">
+                        <Building2 size={20} />
+                    </div>
+                    <ChevronRight size={16} className="text-gray-300 group-hover:text-srec-primary group-hover:translate-x-1 transition-all duration-200 mt-1" />
                 </div>
-                <div className="flex items-center gap-1.5 text-sm text-gray-500">
-                    <Users size={14} className="text-gray-400" />
-                    <span className="font-semibold text-gray-700">{studentCount ?? '—'}</span>
-                    <span className="text-xs">students</span>
+
+                <div className="mb-1">
+                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 mb-2">
+                        {dept.code}
+                    </span>
+                </div>
+                <h3 className="text-sm font-bold text-gray-900 leading-snug">{dept.name}</h3>
+
+                <div className="flex items-center gap-3 pt-3.5 border-t border-gray-50 mt-3.5">
+                    <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1">
+                        <FileText size={12} className="text-amber-600" />
+                        <span className="font-bold text-amber-700 text-sm">{complaintCount ?? '—'}</span>
+                        <span className="text-[10px] text-amber-600">issues</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-1">
+                        <Users size={12} className="text-blue-600" />
+                        <span className="font-bold text-blue-700 text-sm">{studentCount ?? '—'}</span>
+                        <span className="text-[10px] text-blue-600">students</span>
+                    </div>
                 </div>
             </div>
         </div>

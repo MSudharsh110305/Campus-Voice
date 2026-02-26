@@ -184,30 +184,30 @@ export default function AdminEscalations() {
             )}
 
             {/* Section 2: Critical (not yet escalated) */}
-            {data && (summary.critical_count || 0) > 0 && (
+            {data && (
                 <Section
                     title="Critical Issues"
                     subtitle="High-severity — act immediately"
                     icon={AlertTriangle}
                     iconBg="bg-red-50 text-srec-danger"
                     count={summary.critical_count || 0}
-                    emptyText=""
+                    emptyText="No critical complaints right now."
                 >
-                    {data.critical.map(c => <EscalationCard key={c.id} complaint={c} />)}
+                    {(data.critical || []).map(c => <EscalationCard key={c.id} complaint={c} />)}
                 </Section>
             )}
 
             {/* Section 3: Overdue */}
-            {data && (summary.overdue_count || 0) > 0 && (
+            {data && (
                 <Section
                     title="Overdue Complaints"
                     subtitle={`Open > ${summary.escalation_threshold_days ?? 2} days`}
                     icon={Clock}
                     iconBg="bg-amber-50 text-amber-600"
                     count={summary.overdue_count || 0}
-                    emptyText=""
+                    emptyText="No overdue complaints right now."
                 >
-                    {data.overdue.map(c => <EscalationCard key={c.id} complaint={c} />)}
+                    {(data.overdue || []).map(c => <EscalationCard key={c.id} complaint={c} />)}
                 </Section>
             )}
         </div>

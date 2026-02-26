@@ -157,9 +157,10 @@ class ComplaintRepository(BaseRepository[Complaint]):
         conditions = [Complaint.student_roll_no == student_roll_no]
         if status:
             conditions.append(Complaint.status == status)
-        
+
         query = (
             select(Complaint)
+            .options(selectinload(Complaint.category), selectinload(Complaint.assigned_authority))
             .where(and_(*conditions))
             .order_by(desc(Complaint.submitted_at))
             .offset(skip)
@@ -416,7 +417,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
 
         query = (
             select(Complaint)
-            .options(selectinload(Complaint.category))
+            .options(selectinload(Complaint.category), selectinload(Complaint.assigned_authority))
             .where(and_(*conditions))
             .order_by(desc(Complaint.submitted_at))  # Newest first
             .offset(skip)

@@ -106,7 +106,7 @@ async def create_authority(
 async def list_authorities(
     current_authority_id: int = Depends(get_current_admin),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=500),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     db: AsyncSession = Depends(get_db)
 ):
@@ -264,7 +264,7 @@ async def delete_authority(
 async def list_students(
     current_authority_id: int = Depends(get_current_admin),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=500),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     department_id: Optional[int] = Query(None, description="Filter by department ID"),
     department_code: Optional[str] = Query(None, description="Filter by department code (e.g. CSE)"),

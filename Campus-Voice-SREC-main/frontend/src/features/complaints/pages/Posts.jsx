@@ -409,6 +409,7 @@ export default function Posts() {
                   upvotes={post.upvotes}
                   timestamp={post.submitted_at || post.created_at}
                   isOwner={true}
+                  assigned_authority_name={post.assigned_authority_name || null}
                 />
               ))
             )}

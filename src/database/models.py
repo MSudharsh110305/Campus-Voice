@@ -245,6 +245,15 @@ class Complaint(Base):
         """Check if complaint has an image attached"""
         return self.image_data is not None
 
+    @property
+    def assigned_authority_name(self) -> str | None:
+        """Return the name of the assigned authority if loaded"""
+        try:
+            auth = object.__getattribute__(self, 'assigned_authority')
+            return auth.name if auth is not None else None
+        except Exception:
+            return None
+
 
 class AuthorityUpdate(Base):
     """Authority update model - announcements and updates from authorities"""

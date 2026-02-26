@@ -120,25 +120,38 @@ export default function StudentHome() {
       <TopNav />
       <div className="animate-fadeIn max-w-3xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
 
-        {/* Clean greeting */}
-        <div className="mb-5">
-          <h2 className="text-xl font-bold text-gray-900 tracking-tight">
-            Hello, {firstName}
+        {/* Greeting banner */}
+        <div className="mb-5 rounded-2xl bg-gradient-to-br from-srec-primary via-green-800 to-emerald-700 px-5 py-4 shadow-md shadow-green-900/10 relative overflow-hidden">
+          {/* Decorative ring */}
+          <div className="absolute -top-6 -right-6 w-28 h-28 rounded-full bg-white/5 pointer-events-none" />
+          <div className="absolute -bottom-8 -right-2 w-20 h-20 rounded-full bg-white/5 pointer-events-none" />
+          <p className="text-green-200 text-xs font-medium mb-0.5 uppercase tracking-widest">SREC Campus Voice</p>
+          <h2 className="text-xl font-bold text-white tracking-tight">
+            Hello, {firstName} 👋
           </h2>
-          <p className="text-sm text-gray-400 mt-0.5">Here's what's happening on campus</p>
+          <p className="text-green-300 text-xs mt-1">Here's what's happening on campus today</p>
         </div>
 
         {/* Campus Feed heading + filter toggle */}
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-bold text-gray-900 tracking-tight">
-            Campus Feed
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-gray-900 tracking-tight">Campus Feed</h2>
+            {feed.length > 0 && !loading && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {feed.length}
+              </span>
+            )}
+          </div>
           <Button
             variant="ghost"
             onClick={() => setShowFilters(!showFilters)}
-            className={`gap-2 text-sm ${showFilters ? 'bg-srec-primary/10 text-srec-primary' : 'text-gray-500 hover:text-gray-900'}`}
+            className={`gap-1.5 text-xs font-semibold rounded-lg px-3 py-1.5 transition-all ${
+              showFilters
+                ? 'bg-srec-primary text-white shadow-sm'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
           >
-            <SlidersHorizontal size={16} />
+            <SlidersHorizontal size={14} />
             Filters
           </Button>
         </div>
@@ -197,13 +210,13 @@ export default function StudentHome() {
           </RaiseButton>
 
           {!loading && feed.length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-2xl border border-gray-100 shadow-sm">
-              <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-gray-50 flex items-center justify-center">
-                <Inbox size={26} className="text-gray-400" />
+            <div className="text-center py-14 bg-white rounded-2xl border border-gray-100 shadow-sm">
+              <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-emerald-50 flex items-center justify-center">
+                <Inbox size={24} className="text-emerald-400" />
               </div>
-              <p className="text-gray-700 text-base font-semibold">No posts yet</p>
+              <p className="text-gray-800 text-base font-semibold">No posts yet</p>
               <p className="text-gray-400 text-sm mt-1 max-w-xs mx-auto">
-                Be the first to raise a complaint
+                Be the first to raise a complaint for your campus
               </p>
             </div>
           ) : (
@@ -223,6 +236,7 @@ export default function StudentHome() {
                   upvotes={item.upvotes}
                   downvotes={item.downvotes}
                   timestamp={item.submitted_at}
+                  assigned_authority_name={item.assigned_authority_name || null}
                 />
               ))}
 
@@ -231,7 +245,7 @@ export default function StudentHome() {
                   <button
                     onClick={loadMore}
                     disabled={loadingMore}
-                    className="border border-gray-200 rounded-xl px-6 py-2 text-sm text-gray-600 hover:border-srec-primary hover:text-srec-primary transition-all duration-200"
+                    className="flex items-center gap-2 border border-emerald-200 bg-emerald-50 text-emerald-700 rounded-xl px-6 py-2 text-sm font-semibold hover:bg-emerald-100 hover:border-emerald-300 transition-all duration-200 disabled:opacity-50"
                   >
                     {loadingMore ? 'Loading...' : 'Load More'}
                   </button>

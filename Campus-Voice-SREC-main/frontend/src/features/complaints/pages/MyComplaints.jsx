@@ -103,26 +103,51 @@ export default function MyComplaints() {
       <TopNav />
       <main className="animate-fadeIn max-w-4xl mx-auto px-4 pt-4 pb-24">
 
+        {/* Page banner */}
+        <div className="mb-4 rounded-2xl bg-gradient-to-br from-srec-primary via-green-800 to-emerald-700 px-5 py-4 shadow-md shadow-green-900/10 relative overflow-hidden">
+          <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-white/5 pointer-events-none" />
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-green-200 text-[10px] font-semibold uppercase tracking-widest mb-0.5">My Activity</p>
+              <h1 className="text-xl font-bold text-white tracking-tight">My Complaints</h1>
+              <p className="text-green-300 text-xs mt-0.5">Track and manage your raised issues</p>
+            </div>
+            <Button
+              className={`flex items-center gap-1.5 text-xs font-semibold rounded-xl px-3 py-2 transition-all flex-shrink-0 ${
+                showFilters ? 'bg-white text-srec-primary shadow-sm' : 'bg-white/10 text-white border border-white/20 hover:bg-white/20'
+              }`}
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              <SlidersHorizontal size={14} />
+              Filters
+              {(filters.priority !== 'All' || filters.category_id !== 'All' || filters.search || filters.date_from || filters.date_to) && (
+                <span className="w-2 h-2 bg-amber-400 rounded-full" />
+              )}
+            </Button>
+          </div>
+        </div>
+
         {/* Stat Cards — clickable to filter */}
         <div className="grid grid-cols-3 gap-3 mb-4">
           <button
             onClick={() => { setActiveStatusTab('All'); setSkip(0); setSearchParams({}); }}
-            className={`rounded-xl p-3 text-center border transition-all ${activeStatusTab === 'All' ? 'bg-srec-primary text-white border-srec-primary shadow-sm' : 'bg-white border-gray-100 hover:border-srec-primary/40'}`}
+            className={`rounded-xl p-3 text-center border transition-all overflow-hidden relative ${activeStatusTab === 'All' ? 'bg-srec-primary text-white border-srec-primary shadow-sm' : 'bg-white border-gray-100 hover:border-srec-primary/40'}`}
           >
-            <div className={`flex items-center justify-center gap-1 mb-0.5 ${activeStatusTab === 'All' ? 'text-white/80' : 'text-gray-400'}`}>
+            {activeStatusTab === 'All' && <div className="absolute inset-0 bg-gradient-to-br from-srec-primary to-green-700 -z-0" />}
+            <div className={`relative flex items-center justify-center gap-1 mb-0.5 ${activeStatusTab === 'All' ? 'text-white/80' : 'text-gray-400'}`}>
               <FileText size={12} />
             </div>
-            <div className={`text-xl font-bold leading-none ${activeStatusTab === 'All' ? 'text-white' : 'text-gray-900'}`}>{stats?.total_complaints ?? 0}</div>
-            <div className={`text-[10px] mt-0.5 ${activeStatusTab === 'All' ? 'text-white/80' : 'text-gray-500'}`}>Total</div>
+            <div className={`relative text-xl font-bold leading-none ${activeStatusTab === 'All' ? 'text-white' : 'text-gray-900'}`}>{stats?.total_complaints ?? 0}</div>
+            <div className={`relative text-[10px] mt-0.5 ${activeStatusTab === 'All' ? 'text-white/80' : 'text-gray-500'}`}>Total</div>
           </button>
           <button
             onClick={() => { setActiveStatusTab('Resolved'); setSkip(0); setSearchParams({ status: 'Resolved' }); }}
-            className={`rounded-xl p-3 text-center border transition-all ${activeStatusTab === 'Resolved' ? 'bg-green-600 text-white border-green-600 shadow-sm' : 'bg-white border-gray-100 hover:border-green-200'}`}
+            className={`rounded-xl p-3 text-center border transition-all ${activeStatusTab === 'Resolved' ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm' : 'bg-white border-gray-100 hover:border-emerald-200'}`}
           >
-            <div className={`flex items-center justify-center gap-1 mb-0.5 ${activeStatusTab === 'Resolved' ? 'text-white/80' : 'text-green-500'}`}>
+            <div className={`flex items-center justify-center gap-1 mb-0.5 ${activeStatusTab === 'Resolved' ? 'text-white/80' : 'text-emerald-500'}`}>
               <CheckCircle size={12} />
             </div>
-            <div className={`text-xl font-bold leading-none ${activeStatusTab === 'Resolved' ? 'text-white' : 'text-green-600'}`}>{stats?.resolved ?? 0}</div>
+            <div className={`text-xl font-bold leading-none ${activeStatusTab === 'Resolved' ? 'text-white' : 'text-emerald-700'}`}>{stats?.resolved ?? 0}</div>
             <div className={`text-[10px] mt-0.5 ${activeStatusTab === 'Resolved' ? 'text-white/80' : 'text-gray-500'}`}>Resolved</div>
           </button>
           <button
@@ -135,22 +160,6 @@ export default function MyComplaints() {
             <div className={`text-xl font-bold leading-none ${activeStatusTab === 'Raised' ? 'text-white' : 'text-amber-600'}`}>{(stats?.raised ?? 0) + (stats?.in_progress ?? 0)}</div>
             <div className={`text-[10px] mt-0.5 ${activeStatusTab === 'Raised' ? 'text-white/80' : 'text-gray-500'}`}>Pending</div>
           </button>
-        </div>
-
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-xl font-bold text-gray-900">My Complaints</h1>
-          <Button
-            variant={showFilters ? 'primary' : 'ghost'}
-            className="flex items-center gap-2 rounded-xl text-sm"
-            onClick={() => setShowFilters(!showFilters)}
-          >
-            <SlidersHorizontal size={16} />
-            <span className="hidden sm:inline">Filters</span>
-            {(filters.priority !== 'All' || filters.category_id !== 'All' || filters.search || filters.date_from || filters.date_to) && (
-              <span className="w-2 h-2 bg-srec-primary rounded-full" />
-            )}
-          </Button>
         </div>
 
         {/* Status pill tabs */}

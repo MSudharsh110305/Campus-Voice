@@ -14,26 +14,30 @@ import AdminComplaintCard from '../components/AdminComplaintCard';
 // Simple stats card for admin dashboard
 function StatCard({ label, value, icon: Icon, color = 'blue', sub, onClick }) {
   const colorMap = {
-    blue:   'bg-blue-50 text-blue-600',
-    green:  'bg-green-50 text-green-600',
-    red:    'bg-red-50 text-red-600',
-    amber:  'bg-amber-50 text-amber-600',
-    purple: 'bg-purple-50 text-purple-600',
+    blue:   { icon: 'bg-blue-50 text-blue-600 border border-blue-100',            bar: 'from-blue-400 to-blue-600',       link: 'text-blue-700' },
+    green:  { icon: 'bg-emerald-50 text-emerald-700 border border-emerald-100',   bar: 'from-emerald-500 to-green-600',   link: 'text-emerald-700' },
+    red:    { icon: 'bg-red-50 text-red-600 border border-red-100',               bar: 'from-red-400 to-rose-500',        link: 'text-red-600' },
+    amber:  { icon: 'bg-amber-50 text-amber-600 border border-amber-100',         bar: 'from-amber-400 to-orange-500',    link: 'text-amber-700' },
+    purple: { icon: 'bg-violet-50 text-violet-600 border border-violet-100',      bar: 'from-violet-400 to-purple-500',   link: 'text-violet-700' },
   };
+  const cfg = colorMap[color] || colorMap.blue;
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-2xl p-6 border border-gray-100 shadow-sm transition-all duration-200 ${onClick ? 'cursor-pointer hover:shadow-md hover:border-gray-200 group' : ''}`}
+      className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-200 ${onClick ? 'cursor-pointer hover:shadow-md hover:border-gray-200 group' : ''}`}
     >
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-medium text-gray-500">{label}</span>
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${colorMap[color] || colorMap.blue} ${onClick ? 'group-hover:scale-110 transition-transform duration-200' : ''}`}>
-          <Icon size={20} />
+      <div className={`h-1 w-full bg-gradient-to-r ${cfg.bar}`} />
+      <div className="p-5">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-medium text-gray-500">{label}</span>
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${cfg.icon} ${onClick ? 'group-hover:scale-110 transition-transform duration-200' : ''}`}>
+            <Icon size={20} />
+          </div>
         </div>
+        <p className="text-3xl font-bold text-gray-900">{value ?? '—'}</p>
+        {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+        {onClick && <p className={`text-xs mt-2 opacity-0 group-hover:opacity-100 transition-opacity font-semibold ${cfg.link}`}>View details →</p>}
       </div>
-      <p className="text-3xl font-bold text-gray-900">{value ?? '—'}</p>
-      {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
-      {onClick && <p className="text-xs text-srec-primary mt-2 opacity-0 group-hover:opacity-100 transition-opacity font-medium">View details →</p>}
     </div>
   );
 }

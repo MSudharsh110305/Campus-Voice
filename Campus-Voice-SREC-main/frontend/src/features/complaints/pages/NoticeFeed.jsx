@@ -85,18 +85,22 @@ export default function NoticeFeed() {
         <div className="min-h-screen bg-srec-background">
             <TopNav />
             <div className="max-w-2xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
-                {/* Header */}
-                <div className="flex items-center justify-between mb-5">
-                    <div>
-                        <h1 className="text-xl font-bold text-gray-900">Notice Board</h1>
-                        <p className="text-xs text-gray-400 mt-0.5">Official campus announcements</p>
+                {/* Header banner */}
+                <div className="mb-5 rounded-2xl bg-gradient-to-br from-srec-primary via-green-800 to-emerald-700 px-5 py-4 shadow-md shadow-green-900/10 relative overflow-hidden">
+                    <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-white/5 pointer-events-none" />
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-green-200 text-[10px] font-semibold uppercase tracking-widest mb-0.5">SREC Campus Voice</p>
+                            <h1 className="text-xl font-bold text-white tracking-tight">Notice Board</h1>
+                            <p className="text-green-300 text-xs mt-0.5">Official campus announcements</p>
+                        </div>
+                        <button
+                            onClick={() => fetchNotices(true)}
+                            className="p-2.5 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                        >
+                            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                        </button>
                     </div>
-                    <button
-                        onClick={() => fetchNotices(true)}
-                        className="p-2 rounded-xl text-gray-400 hover:text-srec-primary hover:bg-srec-primary/5 transition-colors"
-                    >
-                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                    </button>
                 </div>
 
                 {error && (
