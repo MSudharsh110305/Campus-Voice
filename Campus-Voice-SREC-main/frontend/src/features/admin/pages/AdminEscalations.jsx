@@ -27,7 +27,7 @@ function EscalationCard({ complaint }) {
 
     return (
         <div
-            onClick={() => navigate(`/admin/complaints?search=${encodeURIComponent(complaint.rephrased_text?.slice(0, 30) || '')}`)}
+            onClick={() => navigate(`/complaint/${complaint.id}`)}
             className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md hover:border-srec-primary/20 transition-all cursor-pointer group"
         >
             <div className="flex items-start justify-between gap-3 mb-2">

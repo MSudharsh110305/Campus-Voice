@@ -5,7 +5,7 @@ import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import authorityService from '../../../services/authority.service';
 import { VOTE_TYPES, COMPLAINT_CATEGORIES } from '../../../utils/constants';
-import { ThumbsUp, ThumbsDown, FileX, Clock, History, CheckCircle2, AlertCircle, ShieldAlert, FileText, ChevronRight, ShieldCheck } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, FileX, Clock, History, CheckCircle2, AlertCircle, ShieldAlert, FileText, ChevronRight, ShieldCheck, Send } from 'lucide-react';
 import { Skeleton, Card, Badge, Button } from '../../../components/UI';
 import { format } from 'date-fns';
 
@@ -31,6 +31,16 @@ export default function ComplaintDetails() {
     const [timeline, setTimeline] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [loadingTimeline, setLoadingTimeline] = useState(false);
+
+    // Authority/Admin action panel state
+    const [newStatus, setNewStatus] = useState('');
+    const [statusReason, setStatusReason] = useState('');
+    const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+    const [statusUpdateMsg, setStatusUpdateMsg] = useState(null);
+    const [updateNote, setUpdateNote] = useState('');
+    const [updateTitle, setUpdateTitle] = useState('');
+    const [isPostingUpdate, setIsPostingUpdate] = useState(false);
+    const [postUpdateMsg, setPostUpdateMsg] = useState(null);
 
     const fetchHistory = async () => {
         try {
@@ -204,6 +214,46 @@ export default function ComplaintDetails() {
             }
         } finally {
             setIsVoting(false);
+        }
+    };
+
+    // Handler: authority/admin status update
+    const handleStatusUpdate = async (e) => {
+        e.preventDefault();
+        if (!newStatus) return;
+        setIsUpdatingStatus(true);
+        setStatusUpdateMsg(null);
+        try {
+            await authorityService.updateComplaintStatus(id, newStatus, statusReason || null);
+            setComplaint(prev => ({ ...prev, status: newStatus }));
+            setStatusUpdateMsg({ type: 'success', text: `Status updated to "${newStatus}" successfully.` });
+            setNewStatus('');
+            setStatusReason('');
+            setTimeout(fetchHistory, 500);
+        } catch (err) {
+            const msg = err?.response?.data?.detail || err.message || 'Failed to update status';
+            setStatusUpdateMsg({ type: 'error', text: typeof msg === 'object' ? JSON.stringify(msg) : msg });
+        } finally {
+            setIsUpdatingStatus(false);
+        }
+    };
+
+    // Handler: authority/admin post update note
+    const handlePostUpdate = async (e) => {
+        e.preventDefault();
+        if (!updateNote.trim()) return;
+        setIsPostingUpdate(true);
+        setPostUpdateMsg(null);
+        try {
+            await authorityService.postUpdate(id, updateTitle || 'Update', updateNote);
+            setPostUpdateMsg({ type: 'success', text: 'Update posted. Student has been notified.' });
+            setUpdateTitle('');
+            setUpdateNote('');
+        } catch (err) {
+            const msg = err?.response?.data?.detail || err.message || 'Failed to post update';
+            setPostUpdateMsg({ type: 'error', text: typeof msg === 'object' ? JSON.stringify(msg) : msg });
+        } finally {
+            setIsPostingUpdate(false);
         }
     };
 
@@ -710,6 +760,90 @@ export default function ComplaintDetails() {
                                             Escalated on {new Date(complaint.escalated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
                                         </p>
                                     )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ==================== AUTHORITY / ADMIN ACTION PANEL ==================== */}
+                        {isAuthorityOrAdmin && (
+                            <div className="mt-8 space-y-6">
+                                {/* Status Update */}
+                                <div className="p-5 bg-amber-50 border border-amber-200 rounded-2xl">
+                                    <h3 className="text-sm font-bold text-amber-900 mb-3 flex items-center gap-2">
+                                        <ShieldCheck size={16} /> Update Complaint Status
+                                    </h3>
+                                    <form onSubmit={handleStatusUpdate} className="space-y-3">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <select
+                                                value={newStatus}
+                                                onChange={e => setNewStatus(e.target.value)}
+                                                className="bg-white border border-amber-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                                                required
+                                            >
+                                                <option value="">— Select new status —</option>
+                                                {(['Raised','In Progress','Resolved','Closed','Spam'].filter(s => s !== complaint.status)).map(s => (
+                                                    <option key={s} value={s}>{s}</option>
+                                                ))}
+                                            </select>
+                                            <input
+                                                type="text"
+                                                placeholder="Reason (required for Closed/Spam)"
+                                                value={statusReason}
+                                                onChange={e => setStatusReason(e.target.value)}
+                                                className="bg-white border border-amber-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                                            />
+                                        </div>
+                                        <button
+                                            type="submit"
+                                            disabled={isUpdatingStatus || !newStatus}
+                                            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50"
+                                        >
+                                            <ShieldCheck size={14} />
+                                            {isUpdatingStatus ? 'Updating…' : 'Update Status'}
+                                        </button>
+                                        {statusUpdateMsg && (
+                                            <p className={`text-xs font-medium mt-1 ${statusUpdateMsg.type === 'success' ? 'text-green-700' : 'text-red-600'}`}>
+                                                {statusUpdateMsg.text}
+                                            </p>
+                                        )}
+                                    </form>
+                                </div>
+
+                                {/* Post a Note / Update to Student */}
+                                <div className="p-5 bg-blue-50 border border-blue-200 rounded-2xl">
+                                    <h3 className="text-sm font-bold text-blue-900 mb-3 flex items-center gap-2">
+                                        <Send size={16} /> Post Update to Student
+                                    </h3>
+                                    <form onSubmit={handlePostUpdate} className="space-y-3">
+                                        <input
+                                            type="text"
+                                            placeholder="Update title (e.g. 'Action taken')"
+                                            value={updateTitle}
+                                            onChange={e => setUpdateTitle(e.target.value)}
+                                            className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50"
+                                        />
+                                        <textarea
+                                            rows={3}
+                                            placeholder="Write a note for the student about what action has been taken or is in progress…"
+                                            value={updateNote}
+                                            onChange={e => setUpdateNote(e.target.value)}
+                                            className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50 resize-none"
+                                            required
+                                        />
+                                        <button
+                                            type="submit"
+                                            disabled={isPostingUpdate || !updateNote.trim()}
+                                            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50"
+                                        >
+                                            <Send size={14} />
+                                            {isPostingUpdate ? 'Posting…' : 'Send Note to Student'}
+                                        </button>
+                                        {postUpdateMsg && (
+                                            <p className={`text-xs font-medium mt-1 ${postUpdateMsg.type === 'success' ? 'text-green-700' : 'text-red-600'}`}>
+                                                {postUpdateMsg.text}
+                                            </p>
+                                        )}
+                                    </form>
                                 </div>
                             </div>
                         )}

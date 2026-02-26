@@ -16,6 +16,7 @@ export default function SubmitComplaint() {
   const [showCheckmark, setShowCheckmark] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [spamWarning, setSpamWarning] = useState(null);
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
@@ -41,7 +42,12 @@ export default function SubmitComplaint() {
       }
 
       // Submit to API
-      await complaintService.submitComplaint(formData);
+      const result = await complaintService.submitComplaint(formData);
+
+      // If complaint was saved but marked as spam, show a soft warning
+      if (result && result.is_spam) {
+        setSpamWarning(result.message || 'Your complaint was received but flagged as potential spam. You may contact admin if this is genuine.');
+      }
 
       // Show success animation
       setSubmitted(true);
@@ -127,16 +133,24 @@ export default function SubmitComplaint() {
           {/* Success Messages */}
           <div className="space-y-4 animate-fadeInDelay">
             <h2 className="text-2xl font-bold text-gray-900">
-              Complaint Submitted Successfully!
+              {spamWarning ? 'Complaint Received' : 'Complaint Submitted Successfully!'}
             </h2>
 
-            <p className="text-lg text-gray-700 leading-relaxed">
-              The complaint will be reviewed by AI and posted
-            </p>
-
-            <p className="text-base text-gray-600 leading-relaxed">
-              Thank you for your feedback. Your voice helps make SREC a better place.
-            </p>
+            {spamWarning ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-left">
+                <p className="text-sm font-semibold text-amber-800 mb-1">⚠️ Flagged as Potential Spam</p>
+                <p className="text-xs text-amber-700 leading-relaxed">{spamWarning}</p>
+              </div>
+            ) : (
+              <>
+                <p className="text-lg text-gray-700 leading-relaxed">
+                  The complaint will be reviewed by AI and posted
+                </p>
+                <p className="text-base text-gray-600 leading-relaxed">
+                  Thank you for your feedback. Your voice helps make SREC a better place.
+                </p>
+              </>
+            )}
           </div>
 
           {/* Loading indicator */}

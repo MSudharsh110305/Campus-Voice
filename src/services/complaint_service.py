@@ -132,55 +132,23 @@ class ComplaintService:
         # LLM Processing
         logger.info(f"Processing complaint for {student_roll_no}")
 
+        # Flag: set to True if spam is detected; complaint will be saved as spam
+        is_spam_complaint = False
+        spam_complaint_reason = None
+
         try:
             # 1. Check for spam FIRST (before processing)
             spam_check = await llm_service.detect_spam(original_text)
 
-            # ✅ NEW: REJECT spam complaints outright (don't create)
-            # Only reject if confidence is high enough (>= 0.85) to avoid blocking
-            # legitimate complaints with casual/misspelled language
-            SPAM_CONFIDENCE_THRESHOLD = 0.85
+            # Save as spam (not block) when LLM has high confidence
+            SPAM_CONFIDENCE_THRESHOLD = 0.75
             spam_confident = spam_check.get("confidence", 1.0) >= SPAM_CONFIDENCE_THRESHOLD
             if spam_check.get("is_spam") and spam_confident:
-                spam_reason = spam_check.get("reason", "Content flagged as spam or abusive")
+                spam_complaint_reason = spam_check.get("reason", "Content flagged as spam or abusive")
+                is_spam_complaint = True
                 logger.warning(
-                    f"Spam complaint rejected for {student_roll_no}: {spam_reason}"
+                    f"Spam complaint detected for {student_roll_no}: {spam_complaint_reason} — saving as spam"
                 )
-
-                # Log spam attempt for monitoring (optional)
-                spam_count = await spam_detection_service.get_spam_count(
-                    self.db, student_roll_no
-                )
-
-                # If multiple spam attempts, consider blacklisting
-                if spam_count >= 3:
-                    await spam_detection_service.add_to_blacklist(
-                        db=self.db,
-                        student_roll_no=student_roll_no,
-                        reason=f"Multiple spam attempts ({spam_count + 1} total)",
-                        is_permanent=False,
-                        ban_duration_days=7
-                    )
-                    error_msg = f"Complaint marked as spam/abusive: {spam_reason}. Account temporarily suspended due to multiple violations."
-                else:
-                    error_msg = f"Complaint marked as spam/abusive: {spam_reason}"
-
-                # Bug 4 fix: Notify the student that their submission was flagged as spam.
-                # Complaint is never created, so we send a notification without a complaint_id.
-                try:
-                    await notification_service.create_notification(
-                        self.db,
-                        recipient_type="Student",
-                        recipient_id=student_roll_no,
-                        complaint_id=None,
-                        notification_type="complaint_spam",
-                        message=f"Your complaint submission was flagged as spam and was not published. Reason: {spam_reason}"
-                    )
-                except Exception as _notif_err:
-                    logger.warning(f"Failed to send spam rejection notification: {_notif_err}")
-
-                # ✅ CRITICAL: Raise error (don't create complaint)
-                raise ValueError(error_msg)
 
             # 2. Categorize and get priority (✅ NOW INCLUDES department detection)
             categorization = await llm_service.categorize_complaint(original_text, context)
@@ -211,16 +179,16 @@ class ComplaintService:
                     )
 
             # 3. Rephrase for professionalism.
-            # Bug 3 fix: rephrase_complaint returns None when it detects gibberish.
-            # Treat None as a spam signal and reject the complaint immediately.
+            # If rephrase_complaint returns None (gibberish/repeated words), flag as spam
+            # but still save the complaint (using original_text as fallback).
             rephrased_text = await llm_service.rephrase_complaint(original_text)
             if rephrased_text is None:
                 logger.warning(
-                    f"Rephraser returned None (gibberish detected) for {student_roll_no}"
+                    f"Rephraser returned None (gibberish/repeated words) for {student_roll_no} — saving as spam"
                 )
-                raise ValueError(
-                    "Complaint marked as spam/abusive: Content appears to be meaningless or gibberish"
-                )
+                is_spam_complaint = True
+                spam_complaint_reason = spam_complaint_reason or "Content appears to be meaningless or contains repeated words"
+                rephrased_text = original_text  # Use original as fallback for storage
 
             # ✅ NEW: 4. Check if image is REQUIRED for this complaint
             image_requirement = await llm_service.check_image_requirement(
@@ -228,8 +196,8 @@ class ComplaintService:
                 category=categorization.get("category")
             )
 
-            # ✅ NEW: Enforce image requirement
-            if image_requirement.get("image_required") and not image_file:
+            # ✅ Enforce image requirement ONLY for non-spam complaints
+            if not is_spam_complaint and image_requirement.get("image_required") and not image_file:
                 reason = image_requirement.get("reasoning", "Visual evidence required")
                 suggested = image_requirement.get("suggested_evidence", "relevant photo")
                 error_msg = (
@@ -290,8 +258,8 @@ class ComplaintService:
         priority = categorization.get("priority", "Medium")
         priority_score = PRIORITY_SCORES.get(priority, 50.0)
 
-        # ✅ UPDATED: Spam is rejected before reaching this point, so status is always "Raised"
-        initial_status = "Raised"
+        # Status: Spam if flagged, otherwise Raised
+        initial_status = "Spam" if is_spam_complaint else "Raised"
 
         # ✅ FIXED: Use timezone-aware datetime
         current_time = datetime.now(timezone.utc)
@@ -325,6 +293,7 @@ class ComplaintService:
                 image_bytes = None
         
         # ✅ UPDATED: Create complaint with AI-determined category and target department
+        # Spam complaints are saved with is_marked_as_spam=True, status="Spam"
         complaint = await self.complaint_repo.create(
             student_roll_no=student_roll_no,
             category_id=category_id,
@@ -334,9 +303,9 @@ class ComplaintService:
             priority=priority,
             priority_score=priority_score,
             status=initial_status,
-            is_marked_as_spam=False,  # Spam complaints are rejected, never created
-            spam_reason=None,
-            complaint_department_id=target_department_id,  # ✅ CHANGED: Use AI-detected department
+            is_marked_as_spam=is_spam_complaint,
+            spam_reason=spam_complaint_reason if is_spam_complaint else None,
+            complaint_department_id=target_department_id,
             # ✅ NEW: Binary image fields
             image_data=image_bytes,
             image_mimetype=image_mimetype,
@@ -375,43 +344,82 @@ class ComplaintService:
                 logger.error(f"Image verification error: {e}")
                 image_verification_message = f"Verification error: {str(e)}"
         
-        # ✅ UPDATED: Route to appropriate authority using target department
+        # ✅ Route to appropriate authority (skip routing for spam complaints)
         authority = None
-        try:
-            authority = await authority_service.route_complaint(
-                self.db,
-                category_id,
-                target_department_id,  # ✅ CHANGED: Use AI-detected target department
-                categorization.get("is_against_authority", False)
-            )
-
-            if authority:
-                complaint.assigned_authority_id = authority.id
-                complaint.assigned_at = current_time
-                await self.db.commit()
-
-                # Bug 6 fix: Notify the assigned authority with category and student info.
-                _category_name = categorization.get("category", "Unknown")
+        if is_spam_complaint:
+            # Notify student that their complaint was saved but marked as spam
+            try:
                 await notification_service.create_notification(
                     self.db,
-                    recipient_type="Authority",
-                    recipient_id=str(authority.id),
+                    recipient_type="Student",
+                    recipient_id=student_roll_no,
                     complaint_id=complaint.id,
-                    notification_type="complaint_assigned",
+                    notification_type="complaint_spam",
                     message=(
-                        f"New complaint assigned to you: {_category_name} complaint "
-                        f"from student {student_roll_no}. "
-                        f"Issue: {rephrased_text[:80]}..."
+                        f"Your complaint was received but flagged as potential spam. "
+                        f"Reason: {spam_complaint_reason}. "
+                        f"You can dispute this by contacting admin if this is a genuine complaint."
                     )
                 )
+            except Exception as _notif_err:
+                logger.warning(f"Failed to send spam notification: {_notif_err}")
 
-                logger.info(f"Complaint {complaint.id} assigned to {authority.name}")
-            else:
-                logger.warning(f"No authority found for complaint {complaint.id}")
+            # Also notify admin about the spam submission
+            try:
+                from src.repositories.authority_repo import AuthorityRepository
+                authority_repo = AuthorityRepository(self.db)
+                admins = await authority_repo.get_by_type("Admin")
+                for admin in admins:
+                    await notification_service.create_notification(
+                        self.db,
+                        recipient_type="Authority",
+                        recipient_id=str(admin.id),
+                        complaint_id=complaint.id,
+                        notification_type="complaint_spam",
+                        message=(
+                            f"Spam complaint auto-detected from {student_roll_no}: "
+                            f"{spam_complaint_reason}. Text: {original_text[:80]}..."
+                        )
+                    )
+            except Exception as _admin_notif_err:
+                logger.warning(f"Failed to notify admin of spam: {_admin_notif_err}")
 
-        except Exception as e:
-            logger.error(f"Authority routing error: {e}")
-            # Continue without authority assignment
+        else:
+            try:
+                authority = await authority_service.route_complaint(
+                    self.db,
+                    category_id,
+                    target_department_id,
+                    categorization.get("is_against_authority", False)
+                )
+
+                if authority:
+                    complaint.assigned_authority_id = authority.id
+                    complaint.assigned_at = current_time
+                    await self.db.commit()
+
+                    # Notify the assigned authority
+                    _category_name = categorization.get("category", "Unknown")
+                    await notification_service.create_notification(
+                        self.db,
+                        recipient_type="Authority",
+                        recipient_id=str(authority.id),
+                        complaint_id=complaint.id,
+                        notification_type="complaint_assigned",
+                        message=(
+                            f"New complaint assigned to you: {_category_name} complaint "
+                            f"from student {student_roll_no}. "
+                            f"Issue: {rephrased_text[:80]}..."
+                        )
+                    )
+
+                    logger.info(f"Complaint {complaint.id} assigned to {authority.name}")
+                else:
+                    logger.warning(f"No authority found for complaint {complaint.id}")
+
+            except Exception as e:
+                logger.error(f"Authority routing error: {e}")
+                # Continue without authority assignment
 
         logger.info(
             f"Complaint {complaint.id} created successfully - "
@@ -425,7 +433,7 @@ class ComplaintService:
 
         return {
             "id": str(complaint.id),
-            "status": "Submitted",
+            "status": "Submitted" if not is_spam_complaint else "Spam",
             "rephrased_text": rephrased_text,
             "original_text": original_text,
             "priority": priority,
@@ -433,7 +441,13 @@ class ComplaintService:
             "assigned_authority": authority.name if authority else None,
             "assigned_authority_id": authority.id if authority else None,
             "created_at": current_time.isoformat(),
-            "message": "Complaint submitted successfully",
+            "is_spam": is_spam_complaint,
+            "spam_reason": spam_complaint_reason if is_spam_complaint else None,
+            "message": (
+                "Your complaint was received but flagged as potential spam. You may dispute this if it is genuine."
+                if is_spam_complaint
+                else "Complaint submitted successfully"
+            ),
             # ✅ NEW: AI-driven categorization information
             "category": categorization.get("category"),
             "target_department_id": target_department_id,

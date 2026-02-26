@@ -130,7 +130,7 @@ async def seed_categories():
 
 
 async def seed_authorities():
-    """Seed all authority accounts (matching connection.py exactly)."""
+    """Seed canonical authority accounts only."""
     print("\nSeeding authorities...")
     async with AsyncSessionLocal() as session:
         try:
@@ -147,7 +147,7 @@ async def seed_authorities():
                 {
                     "name": "Super Admin",
                     "email": "admin@srec.ac.in",
-                    "password": "Admin@SREC2024",
+                    "password": "Admin@123456",
                     "authority_type": "Admin",
                     "authority_level": 100,
                     "designation": "System Administrator",
@@ -156,8 +156,8 @@ async def seed_authorities():
                 # Administrative Officer (General complaints)
                 {
                     "name": "Dr. R. Krishnamurthy",
-                    "email": "adminofficer@srec.ac.in",
-                    "password": "AdminOfficer@2024",
+                    "email": "officer@srec.ac.in",
+                    "password": "Officer@1234",
                     "authority_type": "Admin Officer",
                     "authority_level": 50,
                     "designation": "Administrative Officer",
@@ -166,8 +166,8 @@ async def seed_authorities():
                 # Disciplinary Committee
                 {
                     "name": "Prof. S. Rajagopal",
-                    "email": "discipline@srec.ac.in",
-                    "password": "Discipline@2024",
+                    "email": "dc@srec.ac.in",
+                    "password": "Discip@12345",
                     "authority_type": "Disciplinary Committee",
                     "authority_level": 20,
                     "designation": "Disciplinary Committee Head",
@@ -176,47 +176,28 @@ async def seed_authorities():
                 # Senior Deputy Warden (shared for both hostels)
                 {
                     "name": "Dr. M. Subramanian",
-                    "email": "srdepwarden@srec.ac.in",
-                    "password": "SrDepWarden@2024",
+                    "email": "sdw@srec.ac.in",
+                    "password": "SeniorDW@123",
                     "authority_type": "Senior Deputy Warden",
                     "authority_level": 15,
                     "designation": "Senior Deputy Warden",
                     "department_id": None,
                 },
-                # Men's Hostel Deputy Wardens (2)
+                # Men's Hostel Deputy Warden
                 {
                     "name": "Mr. K. Venkatesh",
-                    "email": "mdeputywarden1@srec.ac.in",
-                    "password": "MDepWarden1@2024",
+                    "email": "dw.mens@srec.ac.in",
+                    "password": "MensDW@1234",
                     "authority_type": "Men's Hostel Deputy Warden",
                     "authority_level": 10,
-                    "designation": "Men's Hostel Deputy Warden – Block A & B",
+                    "designation": "Men's Hostel Deputy Warden",
                     "department_id": None,
                 },
-                {
-                    "name": "Mr. T. Arunkumar",
-                    "email": "mdeputywarden2@srec.ac.in",
-                    "password": "MDepWarden2@2024",
-                    "authority_type": "Men's Hostel Deputy Warden",
-                    "authority_level": 10,
-                    "designation": "Men's Hostel Deputy Warden – Block C & D",
-                    "department_id": None,
-                },
-                # Women's Hostel Deputy Warden
-                {
-                    "name": "Mrs. P. Saraswathi",
-                    "email": "fdeputywarden1@srec.ac.in",
-                    "password": "FDepWarden1@2024",
-                    "authority_type": "Women's Hostel Deputy Warden",
-                    "authority_level": 10,
-                    "designation": "Women's Hostel Deputy Warden – Block E & F",
-                    "department_id": None,
-                },
-                # Men's Hostel Wardens (3)
+                # Men's Hostel Wardens (2)
                 {
                     "name": "Mr. N. Selvakumar",
-                    "email": "mwarden1@srec.ac.in",
-                    "password": "MWarden1@2024",
+                    "email": "warden1.mens@srec.ac.in",
+                    "password": "MensW1@1234",
                     "authority_type": "Men's Hostel Warden",
                     "authority_level": 5,
                     "designation": "Men's Hostel Warden – Block A",
@@ -224,27 +205,28 @@ async def seed_authorities():
                 },
                 {
                     "name": "Mr. D. Murugesan",
-                    "email": "mwarden2@srec.ac.in",
-                    "password": "MWarden2@2024",
+                    "email": "warden2.mens@srec.ac.in",
+                    "password": "MensW2@1234",
                     "authority_type": "Men's Hostel Warden",
                     "authority_level": 5,
                     "designation": "Men's Hostel Warden – Block B",
                     "department_id": None,
                 },
+                # Women's Hostel Deputy Warden
                 {
-                    "name": "Mr. G. Ramesh",
-                    "email": "mwarden3@srec.ac.in",
-                    "password": "MWarden3@2024",
-                    "authority_type": "Men's Hostel Warden",
-                    "authority_level": 5,
-                    "designation": "Men's Hostel Warden – Block C",
+                    "name": "Mrs. P. Saraswathi",
+                    "email": "dw.womens@srec.ac.in",
+                    "password": "WomensDW@123",
+                    "authority_type": "Women's Hostel Deputy Warden",
+                    "authority_level": 10,
+                    "designation": "Women's Hostel Deputy Warden",
                     "department_id": None,
                 },
                 # Women's Hostel Wardens (2)
                 {
                     "name": "Mrs. L. Divya",
-                    "email": "fwarden1@srec.ac.in",
-                    "password": "FWarden1@2024",
+                    "email": "warden1.womens@srec.ac.in",
+                    "password": "WomensW1@123",
                     "authority_type": "Women's Hostel Warden",
                     "authority_level": 5,
                     "designation": "Women's Hostel Warden – Block E",
@@ -252,8 +234,8 @@ async def seed_authorities():
                 },
                 {
                     "name": "Mrs. B. Kavitha",
-                    "email": "fwarden2@srec.ac.in",
-                    "password": "FWarden2@2024",
+                    "email": "warden2.womens@srec.ac.in",
+                    "password": "WomensW2@123",
                     "authority_type": "Women's Hostel Warden",
                     "authority_level": 5,
                     "designation": "Women's Hostel Warden – Block F",
@@ -261,21 +243,21 @@ async def seed_authorities():
                 },
             ]
 
-            # HODs for all 13 departments
+            # HODs for all 13 departments — canonical passwords
             hod_data = [
-                ("CSE",       "Dr. A. Balasubramanian", "hod.cse@srec.ac.in",      "HodCSE@2024"),
-                ("ECE",       "Dr. V. Sundaram",        "hod.ece@srec.ac.in",      "HodECE@2024"),
-                ("MECH",      "Dr. P. Ganesan",         "hod.mech@srec.ac.in",     "HodMECH@2024"),
-                ("CIVIL",     "Dr. S. Murugan",         "hod.civil@srec.ac.in",    "HodCIVIL@2024"),
-                ("EEE",       "Dr. R. Jayakumar",       "hod.eee@srec.ac.in",      "HodEEE@2024"),
-                ("IT",        "Dr. K. Muthukumar",      "hod.it@srec.ac.in",       "HodIT@2024"),
-                ("BIO",       "Dr. N. Anbazhagan",      "hod.bio@srec.ac.in",      "HodBIO@2024"),
-                ("AERO",      "Dr. C. Senthilkumar",    "hod.aero@srec.ac.in",     "HodAERO@2024"),
-                ("RAA",       "Dr. M. Rajendran",       "hod.raa@srec.ac.in",      "HodRAA@2024"),
-                ("EIE",       "Dr. T. Sivasubramanian", "hod.eie@srec.ac.in",      "HodEIE@2024"),
-                ("MBA",       "Dr. R. Arumugam",        "hod.mba@srec.ac.in",      "HodMBA@2024"),
-                ("AIDS",      "Dr. S. Karthikeyan",     "hod.aids@srec.ac.in",     "HodAIDS@2024"),
-                ("MTECH_CSE", "Dr. V. Ramasamy",        "hod.mtechcse@srec.ac.in", "HodMTECH@2024"),
+                ("CSE",       "Dr. A. Balasubramanian", "hod.cse@srec.ac.in",      "HodCSE@123"),
+                ("ECE",       "Dr. V. Sundaram",        "hod.ece@srec.ac.in",      "HodECE@123"),
+                ("MECH",      "Dr. P. Ganesan",         "hod.mech@srec.ac.in",     "HodMECH@123"),
+                ("CIVIL",     "Dr. S. Murugan",         "hod.civil@srec.ac.in",    "HodCIVIL@123"),
+                ("EEE",       "Dr. R. Jayakumar",       "hod.eee@srec.ac.in",      "HodEEE@123"),
+                ("IT",        "Dr. K. Muthukumar",      "hod.it@srec.ac.in",       "HodIT@123"),
+                ("BIO",       "Dr. N. Anbazhagan",      "hod.bio@srec.ac.in",      "HodBIO@123"),
+                ("AERO",      "Dr. C. Senthilkumar",    "hod.aero@srec.ac.in",     "HodAERO@123"),
+                ("RAA",       "Dr. M. Rajendran",       "hod.raa@srec.ac.in",      "HodRAA@123"),
+                ("EIE",       "Dr. T. Sivasubramanian", "hod.eie@srec.ac.in",      "HodEIE@123"),
+                ("MBA",       "Dr. R. Arumugam",        "hod.mba@srec.ac.in",      "HodMBA@123"),
+                ("AIDS",      "Dr. S. Karthikeyan",     "hod.aids@srec.ac.in",     "HodAIDS@123"),
+                ("MTECH_CSE", "Dr. V. Ramasamy",        "hod.mtechcse@srec.ac.in", "HodMTECH_CSE@123"),
             ]
 
             for dept_code, name, email, password in hod_data:

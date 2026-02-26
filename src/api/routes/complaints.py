@@ -110,25 +110,13 @@ async def create_complaint(
         return ComplaintSubmitResponse(**result)
 
     except ValueError as e:
-        # ✅ NEW: ValueError indicates spam rejection or missing required image
+        # ValueError at this point means a hard block (image required but missing, or blacklisted)
         error_message = str(e)
         logger.warning(f"Complaint rejected for {roll_no}: {error_message}")
 
-        # Determine if it's spam or missing image
-        is_spam = "spam" in error_message.lower() or "abusive" in error_message.lower()
         is_missing_image = "image" in error_message.lower() and "required" in error_message.lower()
 
-        if is_spam:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "success": False,
-                    "error": "Complaint marked as spam/abusive",
-                    "reason": error_message,
-                    "is_spam": True
-                }
-            )
-        elif is_missing_image:
+        if is_missing_image:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
@@ -921,6 +909,86 @@ async def unflag_spam(
     return SuccessResponse(
         success=True,
         message="Spam flag removed"
+    )
+
+
+# ==================== SPAM APPEAL ====================
+
+@router.post(
+    "/{complaint_id}/appeal-spam",
+    response_model=SuccessResponse,
+    summary="Dispute spam classification",
+    description="Student disputes their complaint being marked as spam"
+)
+async def appeal_spam(
+    complaint_id: UUID,
+    reason: Optional[str] = None,
+    roll_no: str = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Student disputes spam classification. Notifies Admin and category authority for review.
+    Only the complaint owner can appeal, and only if complaint is spam.
+    """
+    from src.repositories.complaint_repo import ComplaintRepository
+    from src.repositories.authority_repo import AuthorityRepository
+    from src.services.notification_service import notification_service
+
+    complaint_repo = ComplaintRepository(db)
+    complaint = await complaint_repo.get(complaint_id)
+
+    if not complaint:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found")
+
+    if complaint.student_roll_no != roll_no:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your complaint")
+
+    if not complaint.is_marked_as_spam and complaint.status != "Spam":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Complaint is not marked as spam")
+
+    appeal_text = reason or "No reason provided"
+    preview = (complaint.original_text or "")[:100]
+    msg = (
+        f"Spam dispute from student {roll_no}: "
+        f"'{preview}{'...' if len(complaint.original_text or '') > 100 else ''}' "
+        f"— Reason: {appeal_text}"
+    )
+
+    # Notify all Admin users
+    try:
+        authority_repo = AuthorityRepository(db)
+        admins = await authority_repo.get_by_type("Admin")
+        for admin in admins:
+            await notification_service.create_notification(
+                db=db,
+                recipient_type="Authority",
+                recipient_id=str(admin.id),
+                complaint_id=complaint_id,
+                notification_type="spam_appeal",
+                message=msg
+            )
+    except Exception as e:
+        logger.warning(f"Failed to notify admin of spam appeal: {e}")
+
+    # Notify assigned authority if exists
+    if complaint.assigned_authority_id:
+        try:
+            await notification_service.create_notification(
+                db=db,
+                recipient_type="Authority",
+                recipient_id=str(complaint.assigned_authority_id),
+                complaint_id=complaint_id,
+                notification_type="spam_appeal",
+                message=msg
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify authority of spam appeal: {e}")
+
+    logger.info(f"Spam appeal submitted for complaint {complaint_id} by {roll_no}")
+
+    return SuccessResponse(
+        success=True,
+        message="Your dispute has been submitted. An admin will review it shortly."
     )
 
 

@@ -121,7 +121,8 @@ class ComplaintResponse(BaseModel):
     status: str
     assigned_authority_name: Optional[str] = None
     is_marked_as_spam: bool
-    
+    spam_reason: Optional[str] = None
+
     # ✅ NEW: Binary image storage fields (replaces image_url)
     has_image: bool = Field(
         default=False,
@@ -280,6 +281,10 @@ class ComplaintSubmitResponse(BaseModel):
         le=1.0,
         description="AI confidence score (0.0-1.0)"
     )
+
+    # ✅ Spam status
+    is_spam: bool = Field(default=False, description="Whether complaint was auto-detected as spam")
+    spam_reason: Optional[str] = Field(default=None, description="Reason for spam detection")
 
     # ✅ Image processing results
     has_image: bool = False

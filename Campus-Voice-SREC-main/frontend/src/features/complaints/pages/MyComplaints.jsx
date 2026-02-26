@@ -6,11 +6,11 @@ import studentService from '../../../services/student.service';
 import ComplaintCard from '../components/ComplaintCard';
 import { Select, Button, Skeleton, Card } from '../../../components/UI';
 import { STATUSES, PRIORITIES, CATEGORY_LIST, COMPLAINT_CATEGORIES } from '../../../utils/constants';
-import { FileX, Search, X, SlidersHorizontal, Calendar } from 'lucide-react';
+import { FileX, Search, X, SlidersHorizontal, Calendar, AlertTriangle } from 'lucide-react';
 import complaintService from '../../../services/complaint.service';
 import { Link, useSearchParams } from 'react-router-dom';
 
-const STATUS_TABS = ['All', 'Raised', 'In Progress', 'Resolved', 'Closed'];
+const STATUS_TABS = ['All', 'Raised', 'In Progress', 'Resolved', 'Closed', 'Spam'];
 
 export default function MyComplaints() {
   const { user } = useAuth();
@@ -74,6 +74,23 @@ export default function MyComplaints() {
       date_to: '',
     });
     setSkip(0);
+  };
+
+  const handleDisputeSpam = async (complaintId) => {
+    const reason = window.prompt('Why do you think this is not spam? (Optional — press OK to skip)');
+    if (reason === null) return; // user pressed Cancel
+    try {
+      const token = localStorage.getItem('token');
+      const url = `/api/complaints/${complaintId}/appeal-spam${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json().catch(() => ({}));
+      alert(data.message || (res.ok ? 'Dispute submitted successfully.' : 'Failed to submit dispute.'));
+    } catch {
+      alert('Failed to submit dispute. Please try again.');
+    }
   };
 
   return (
@@ -221,21 +238,40 @@ export default function MyComplaints() {
               </div>
             ) : (
               complaints.map((c) => (
-                <ComplaintCard
-                  key={c.id || c.complaint_id}
-                  id={c.id || c.complaint_id}
-                  desc={c.rephrased_text || c.original_text}
-                  category={c.category_name || COMPLAINT_CATEGORIES[c.category_id]}
-                  has_image={c.has_image}
-                  author={c.is_anonymous ? 'Anonymous' : (c.author || c.student_roll_no)}
-                  status={c.status}
-                  priority={c.priority}
-                  upvotes={c.upvotes}
-                  downvotes={c.downvotes}
-                  timestamp={c.submitted_at || c.created_at}
-                  isOwner={true}
-                  assigned_authority_name={c.assigned_authority_name || null}
-                />
+                <div key={c.id || c.complaint_id}>
+                  {/* Spam banner shown above the card for spam complaints */}
+                  {(c.is_marked_as_spam || c.status === 'Spam') && (
+                    <div className="mb-1 flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
+                      <div className="flex items-center gap-2 text-red-700">
+                        <AlertTriangle size={14} />
+                        <span className="text-xs font-semibold">Flagged as Spam</span>
+                        {c.spam_reason && (
+                          <span className="text-xs text-red-500 truncate max-w-[160px]">— {c.spam_reason}</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleDisputeSpam(c.id || c.complaint_id)}
+                        className="text-xs font-semibold text-red-700 border border-red-300 rounded-lg px-3 py-1 hover:bg-red-100 transition-colors flex-shrink-0"
+                      >
+                        Dispute
+                      </button>
+                    </div>
+                  )}
+                  <ComplaintCard
+                    id={c.id || c.complaint_id}
+                    desc={c.rephrased_text || c.original_text}
+                    category={c.category_name || COMPLAINT_CATEGORIES[c.category_id]}
+                    has_image={c.has_image}
+                    author={c.is_anonymous ? 'Anonymous' : (c.author || c.student_roll_no)}
+                    status={c.status}
+                    priority={c.priority}
+                    upvotes={c.upvotes}
+                    downvotes={c.downvotes}
+                    timestamp={c.submitted_at || c.created_at}
+                    isOwner={true}
+                    assigned_authority_name={c.assigned_authority_name || null}
+                  />
+                </div>
               ))
             )}
           </div>
