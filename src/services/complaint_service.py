@@ -150,62 +150,76 @@ class ComplaintService:
                     f"Spam complaint detected for {student_roll_no}: {spam_complaint_reason} — saving as spam"
                 )
 
-            # 2. Categorize and get priority (✅ NOW INCLUDES department detection)
-            categorization = await llm_service.categorize_complaint(original_text, context)
             llm_failed = False
+            if not is_spam_complaint:
+                # 2. Categorize and get priority (✅ NOW INCLUDES department detection)
+                categorization = await llm_service.categorize_complaint(original_text, context)
 
-            # Bug 2 fix: Do NOT force-correct hostel category based on student
-            # stay_type. The LLM prompt now categorises purely on complaint text.
-            # Only apply the academic override (keyword-based deterministic safety net).
-            ai_category = categorization.get("category")
-            categorization = llm_service._apply_academic_override(original_text, categorization)
-            ai_category = categorization.get("category")
+                # Bug 2 fix: Do NOT force-correct hostel category based on student
+                # stay_type. The LLM prompt now categorises purely on complaint text.
+                # Only apply the academic override (keyword-based deterministic safety net).
+                ai_category = categorization.get("category")
+                categorization = llm_service._apply_academic_override(original_text, categorization)
+                ai_category = categorization.get("category")
 
-            # Validate hostel category against student profile
-            if ai_category in ("Men's Hostel", "Women's Hostel"):
-                # Check stay type - Day scholars cannot submit hostel complaints
-                if student.stay_type == "Day Scholar":
-                    raise ValueError("Day scholars cannot submit hostel complaints")
+                # Validate hostel category against student profile
+                if ai_category in ("Men's Hostel", "Women's Hostel"):
+                    # Check stay type - Day scholars cannot submit hostel complaints
+                    if student.stay_type == "Day Scholar":
+                        raise ValueError("Day scholars cannot submit hostel complaints")
 
-                # Check gender restrictions
-                if ai_category == "Men's Hostel" and student.gender == "Female":
-                    raise ValueError(
-                        "Female students should use Women's Hostel category for hostel complaints"
+                    # Check gender restrictions
+                    if ai_category == "Men's Hostel" and student.gender == "Female":
+                        raise ValueError(
+                            "Female students should use Women's Hostel category for hostel complaints"
+                        )
+
+                    if ai_category == "Women's Hostel" and student.gender == "Male":
+                        raise ValueError(
+                            "Male students should use Men's Hostel category for hostel complaints"
+                        )
+
+                # 3. Rephrase for professionalism.
+                # If rephrase_complaint returns None (gibberish/repeated words), flag as spam
+                # but still save the complaint (using original_text as fallback).
+                rephrased_text = await llm_service.rephrase_complaint(original_text)
+                if rephrased_text is None:
+                    logger.warning(
+                        f"Rephraser returned None (gibberish/repeated words) for {student_roll_no} — saving as spam"
                     )
+                    is_spam_complaint = True
+                    spam_complaint_reason = "Content appears to be meaningless or contains repeated words"
+                    rephrased_text = original_text  # Use original as fallback for storage
 
-                if ai_category == "Women's Hostel" and student.gender == "Male":
-                    raise ValueError(
-                        "Male students should use Men's Hostel category for hostel complaints"
+                # 4. Check if image is REQUIRED for this complaint (only if still not spam)
+                if not is_spam_complaint:
+                    image_requirement = await llm_service.check_image_requirement(
+                        complaint_text=original_text,
+                        category=categorization.get("category")
                     )
-
-            # 3. Rephrase for professionalism.
-            # If rephrase_complaint returns None (gibberish/repeated words), flag as spam
-            # but still save the complaint (using original_text as fallback).
-            rephrased_text = await llm_service.rephrase_complaint(original_text)
-            if rephrased_text is None:
-                logger.warning(
-                    f"Rephraser returned None (gibberish/repeated words) for {student_roll_no} — saving as spam"
-                )
-                is_spam_complaint = True
-                spam_complaint_reason = spam_complaint_reason or "Content appears to be meaningless or contains repeated words"
-                rephrased_text = original_text  # Use original as fallback for storage
-
-            # ✅ NEW: 4. Check if image is REQUIRED for this complaint
-            image_requirement = await llm_service.check_image_requirement(
-                complaint_text=original_text,
-                category=categorization.get("category")
-            )
-
-            # ✅ Enforce image requirement ONLY for non-spam complaints
-            if not is_spam_complaint and image_requirement.get("image_required") and not image_file:
-                reason = image_requirement.get("reasoning", "Visual evidence required")
-                suggested = image_requirement.get("suggested_evidence", "relevant photo")
-                error_msg = (
-                    f"This complaint requires supporting images. {reason}. "
-                    f"Please upload at least one image showing {suggested}."
-                )
-                logger.warning(f"Image required but not provided for {student_roll_no}: {reason}")
-                raise ValueError(error_msg)
+                    if image_requirement.get("image_required") and not image_file:
+                        reason = image_requirement.get("reasoning", "Visual evidence required")
+                        suggested = image_requirement.get("suggested_evidence", "relevant photo")
+                        error_msg = (
+                            f"This complaint requires supporting images. {reason}. "
+                            f"Please upload at least one image showing {suggested}."
+                        )
+                        logger.warning(f"Image required but not provided for {student_roll_no}: {reason}")
+                        raise ValueError(error_msg)
+                else:
+                    image_requirement = {"image_required": False}
+            else:
+                # Spam detected early — skip ALL LLM processing, use safe defaults
+                logger.info(f"Skipping LLM pipeline for spam complaint from {student_roll_no}")
+                categorization = {
+                    "category": "General",
+                    "target_department": context.get("department", "CSE"),
+                    "priority": "Low",
+                    "confidence": 1.0,
+                    "is_against_authority": False,
+                }
+                rephrased_text = original_text
+                image_requirement = {"image_required": False}
 
         except ValueError:
             # Re-raise ValueError (spam rejection or missing image)

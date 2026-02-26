@@ -266,40 +266,55 @@ async def list_students(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
-    department_id: Optional[int] = Query(None, description="Filter by department"),
+    department_id: Optional[int] = Query(None, description="Filter by department ID"),
+    department_code: Optional[str] = Query(None, description="Filter by department code (e.g. CSE)"),
     db: AsyncSession = Depends(get_db)
 ):
     """
     ✅ NEW: List all students with optional filtering.
     """
     from sqlalchemy import select, func, and_
-    from src.database.models import Student
-    
+    from sqlalchemy.orm import selectinload
+    from src.database.models import Student, Department
+
     # Build conditions
     conditions = []
     if is_active is not None:
         conditions.append(Student.is_active == is_active)
     if department_id is not None:
         conditions.append(Student.department_id == department_id)
-    
-    # Get students
-    query = select(Student).order_by(Student.roll_no)
+    if department_code:
+        # Resolve code to ID via subquery
+        dept_id_subq = select(Department.id).where(Department.code == department_code).scalar_subquery()
+        conditions.append(Student.department_id == dept_id_subq)
+
+    # Get students with department loaded
+    query = select(Student).options(selectinload(Student.department)).order_by(Student.roll_no)
     if conditions:
         query = query.where(and_(*conditions))
     query = query.offset(skip).limit(limit)
-    
+
     result = await db.execute(query)
     students = result.scalars().all()
-    
+
     # Count
     count_query = select(func.count())
     if conditions:
         count_query = count_query.where(and_(*conditions))
     count_result = await db.execute(count_query.select_from(Student))
     total = count_result.scalar() or 0
-    
+
+    # Build response with department info populated
+    student_responses = []
+    for s in students:
+        profile = StudentProfile.model_validate(s)
+        if s.department:
+            profile.department_code = s.department.code
+            profile.department_name = s.department.name
+        student_responses.append(profile)
+
     return StudentListResponse(
-        students=[StudentProfile.model_validate(s) for s in students],
+        students=student_responses,
         total=total
     )
 
@@ -358,6 +373,7 @@ async def admin_list_complaints(
     priority: Optional[str] = Query(None),
     category_id: Optional[int] = Query(None),
     category_name: Optional[str] = Query(None),
+    department_code: Optional[str] = Query(None, description="Filter by department code (e.g. CSE)"),
     search: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
@@ -366,10 +382,10 @@ async def admin_list_complaints(
     current_authority_id: int = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all complaints with optional status, priority, category, date range, and search filters."""
+    """List all complaints with optional status, priority, category, department, date range, and search filters."""
     from sqlalchemy import select, func, and_, or_
     from sqlalchemy.orm import selectinload
-    from src.database.models import Complaint, ComplaintCategory
+    from src.database.models import Complaint, ComplaintCategory, Department
 
     conditions = []
     if status_filter:
@@ -383,6 +399,9 @@ async def admin_list_complaints(
             ComplaintCategory.name.ilike(f"%{category_name}%")
         ).scalar_subquery()
         conditions.append(Complaint.category_id.in_(cat_subq))
+    if department_code:
+        dept_id_subq = select(Department.id).where(Department.code == department_code).scalar_subquery()
+        conditions.append(Complaint.complaint_department_id == dept_id_subq)
     if search:
         conditions.append(or_(
             Complaint.rephrased_text.ilike(f"%{search}%"),

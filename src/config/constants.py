@@ -25,6 +25,10 @@ class DepartmentCode(str, Enum):
     MBA = "MBA"
     AIDS = "AIDS"
     MTECH_CSE = "MTECH_CSE"
+    ENG = "ENG"
+    PHY = "PHY"
+    CHEM = "CHEM"
+    MATH = "MATH"
 
 
 DEPARTMENTS: List[Dict[str, Any]] = [
@@ -41,6 +45,10 @@ DEPARTMENTS: List[Dict[str, Any]] = [
     {"code": "MBA", "name": "Management Studies", "hod_name": None, "hod_email": None},
     {"code": "AIDS", "name": "Artificial Intelligence and Data Science", "hod_name": None, "hod_email": None},
     {"code": "MTECH_CSE", "name": "M.Tech in Computer Science and Engineering", "hod_name": None, "hod_email": None},
+    {"code": "ENG", "name": "English", "hod_name": None, "hod_email": None},
+    {"code": "PHY", "name": "Physics", "hod_name": None, "hod_email": None},
+    {"code": "CHEM", "name": "Chemistry", "hod_name": None, "hod_email": None},
+    {"code": "MATH", "name": "Mathematics", "hod_name": None, "hod_email": None},
 ]
 
 

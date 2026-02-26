@@ -7,6 +7,7 @@ export default function AdminHeader({ onMenuClick }) {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const [menuOpen, setMenuOpen] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
     const menuRef = useRef(null);
 
     useEffect(() => {
@@ -15,6 +16,20 @@ export default function AdminHeader({ onMenuClick }) {
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    useEffect(() => {
+        const fetchUnread = () => {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+            fetch('/api/admin/notifications/unread-count', { headers: { Authorization: `Bearer ${token}` } })
+                .then(r => r.ok ? r.json() : null)
+                .then(data => { if (data) setUnreadCount(data.unread_count ?? data.count ?? 0); })
+                .catch(() => {});
+        };
+        fetchUnread();
+        const interval = setInterval(fetchUnread, 60000);
+        return () => clearInterval(interval);
     }, []);
 
     return (
@@ -37,7 +52,11 @@ export default function AdminHeader({ onMenuClick }) {
                     aria-label="Notifications"
                 >
                     <Bell size={20} />
-                    <span className="absolute top-2 right-2 w-2 h-2 bg-srec-danger rounded-full border border-white"></span>
+                    {unreadCount > 0 && (
+                        <span className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 bg-srec-danger text-white text-[9px] font-bold rounded-full flex items-center justify-center border border-white">
+                            {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                    )}
                 </button>
 
                 <div className="h-6 w-px bg-gray-200 mx-1"></div>

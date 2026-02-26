@@ -15,6 +15,10 @@ export const DEPARTMENTS = [
     { id: 11, code: 'MBA',       name: 'Management Studies' },
     { id: 12, code: 'AIDS',      name: 'Artificial Intelligence and Data Science' },
     { id: 13, code: 'MTECH_CSE', name: 'M.Tech in Computer Science and Engineering' },
+    { id: 14, code: 'ENG',       name: 'English' },
+    { id: 15, code: 'PHY',       name: 'Physics' },
+    { id: 16, code: 'CHEM',      name: 'Chemistry' },
+    { id: 17, code: 'MATH',      name: 'Mathematics' },
 ];
 
 // Convenience maps

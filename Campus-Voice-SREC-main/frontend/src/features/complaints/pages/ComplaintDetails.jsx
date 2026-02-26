@@ -5,7 +5,7 @@ import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import authorityService from '../../../services/authority.service';
 import { VOTE_TYPES, COMPLAINT_CATEGORIES } from '../../../utils/constants';
-import { ThumbsUp, ThumbsDown, FileX, Clock, History, CheckCircle2, AlertCircle, ShieldAlert, FileText, ChevronRight, ShieldCheck, Send } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, FileX, Clock, History, CheckCircle2, AlertCircle, ShieldAlert, FileText, ChevronRight, ShieldCheck, Send, MessageSquareWarning } from 'lucide-react';
 import { Skeleton, Card, Badge, Button } from '../../../components/UI';
 import { format } from 'date-fns';
 
@@ -41,6 +41,11 @@ export default function ComplaintDetails() {
     const [updateTitle, setUpdateTitle] = useState('');
     const [isPostingUpdate, setIsPostingUpdate] = useState(false);
     const [postUpdateMsg, setPostUpdateMsg] = useState(null);
+
+    // Spam dispute state
+    const [disputeReason, setDisputeReason] = useState('');
+    const [isDisputing, setIsDisputing] = useState(false);
+    const [disputeMsg, setDisputeMsg] = useState(null);
 
     const fetchHistory = async () => {
         try {
@@ -474,6 +479,56 @@ export default function ComplaintDetails() {
                             )}
                         </div>
 
+                        {/* ── Spam Dispute (owner only) ───────────────────────── */}
+                        {isOwner && (complaint.is_marked_as_spam || complaint.status === 'Spam') && (
+                            <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-xl">
+                                <div className="flex items-start gap-3 mb-3">
+                                    <MessageSquareWarning size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-sm font-semibold text-red-700">Your complaint was marked as spam</p>
+                                        <p className="text-xs text-red-500 mt-0.5">
+                                            {complaint.spam_reason || 'Our system detected this as spam.'}
+                                        </p>
+                                    </div>
+                                </div>
+                                {disputeMsg ? (
+                                    <div className={`text-xs px-3 py-2 rounded-lg font-medium ${disputeMsg.ok ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {disputeMsg.text}
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <p className="text-xs text-red-600 font-medium">Think this is a mistake? Dispute it:</p>
+                                        <textarea
+                                            value={disputeReason}
+                                            onChange={e => setDisputeReason(e.target.value)}
+                                            rows={2}
+                                            placeholder="Briefly explain why this is a genuine complaint (optional)"
+                                            className="w-full text-xs border border-red-200 rounded-lg px-3 py-2 bg-white text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
+                                        />
+                                        <button
+                                            disabled={isDisputing}
+                                            onClick={async () => {
+                                                setIsDisputing(true);
+                                                try {
+                                                    await complaintService.appealSpam(id, disputeReason);
+                                                    setDisputeMsg({ ok: true, text: 'Dispute submitted. An admin will review your complaint shortly.' });
+                                                } catch (e) {
+                                                    const msg = e?.response?.data?.detail || e?.message || 'Failed to submit dispute';
+                                                    setDisputeMsg({ ok: false, text: msg });
+                                                } finally {
+                                                    setIsDisputing(false);
+                                                }
+                                            }}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                                        >
+                                            <Send size={11} />
+                                            {isDisputing ? 'Submitting…' : 'Submit Dispute to Admin'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* LLM Failure Warning */}
                         {complaint.llm_failed && (
                             <div className="mb-8 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
@@ -707,32 +762,54 @@ export default function ComplaintDetails() {
                         </div>
 
                         {/* Image Verification Section */}
-                        {complaint.has_image && complaint.image_verification_status && (
-                            <div className="mt-8 p-6 bg-gradient-to-br from-blue-50 to-white rounded-xl border border-blue-100 shadow-sm">
-                                <h3 className="text-sm font-bold text-blue-900 mb-2">
-                                    Image Verification
-                                </h3>
-                                <div className="space-y-2 text-sm">
-                                    <p className="flex items-center gap-2">
-                                        <span className={`inline-block w-2 h-2 rounded-full ${complaint.image_verified ? 'bg-green-500' : 'bg-orange-500'}`}></span>
-                                        <span className="font-medium text-gray-700">Status:</span>
-                                        <span className={complaint.image_verified ? 'text-green-700' : 'text-orange-700'}>
-                                            {complaint.image_verification_status}
-                                        </span>
-                                    </p>
-                                    {complaint.image_verification_message && (
-                                        <p className="text-gray-600 leading-relaxed">
-                                            {complaint.image_verification_message}
-                                        </p>
+                        {complaint.has_image && complaint.image_verification_status && (() => {
+                            let verif = {};
+                            const raw = complaint.image_verification_status;
+                            try {
+                                verif = typeof raw === 'string' ? JSON.parse(raw) : (raw || {});
+                            } catch(e) { verif = {}; }
+                            const isJsonVerif = verif && (verif.is_relevant !== undefined || verif.is_abusive !== undefined);
+                            const isSimpleStatus = !isJsonVerif;
+                            return (
+                                <div className="mt-8 p-4 bg-gradient-to-br from-blue-50 to-white rounded-xl border border-blue-100 shadow-sm">
+                                    <h3 className="text-sm font-bold text-blue-900 mb-2">Image Verification</h3>
+                                    {isJsonVerif ? (
+                                        <div className="flex flex-wrap gap-2">
+                                            {verif.is_relevant === true && (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-50 text-green-700 border border-green-200 text-xs font-semibold">
+                                                    ✓ Image Relevant
+                                                </span>
+                                            )}
+                                            {verif.is_relevant === false && (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-semibold">
+                                                    ✗ Image Not Relevant
+                                                </span>
+                                            )}
+                                            {verif.is_abusive === true && (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-200 text-xs font-semibold">
+                                                    ⚠ Flagged Content
+                                                </span>
+                                            )}
+                                            {verif.confidence !== undefined && (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gray-50 text-gray-600 border border-gray-200 text-xs">
+                                                    Confidence: {Math.round((verif.confidence || 0) * 100)}%
+                                                </span>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-2 text-sm">
+                                            <span className={`inline-block w-2 h-2 rounded-full ${complaint.image_verified ? 'bg-green-500' : 'bg-orange-500'}`}></span>
+                                            <span className={complaint.image_verified ? 'text-green-700 font-medium' : 'text-orange-700 font-medium'}>
+                                                {raw}
+                                            </span>
+                                        </div>
                                     )}
-                                    {complaint.image_was_required && complaint.image_requirement_reasoning && (
-                                        <p className="text-xs text-gray-500 italic mt-2">
-                                            Image was required: {complaint.image_requirement_reasoning}
-                                        </p>
+                                    {complaint.image_verification_message && (
+                                        <p className="text-xs text-gray-500 mt-2 leading-relaxed">{complaint.image_verification_message}</p>
                                     )}
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
 
                         {/* Escalation Information */}
                         {complaint.escalation_level && complaint.escalation_level > 0 && (

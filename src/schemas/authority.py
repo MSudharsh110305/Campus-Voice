@@ -296,7 +296,9 @@ class AuthorityAnnouncementCreate(BaseModel):
     def validate_expires_at(cls, v: Optional[datetime]) -> Optional[datetime]:
         """Validate expiry date is in future"""
         if v is not None:
-            # ✅ FIXED: Use datetime.now(timezone.utc) instead of deprecated datetime.utcnow()
+            # Normalize naive datetime to UTC to avoid offset-naive vs offset-aware comparison error
+            if v.tzinfo is None:
+                v = v.replace(tzinfo=timezone.utc)
             if v <= datetime.now(timezone.utc):
                 raise ValueError("Expiry date must be in the future")
         return v
@@ -588,8 +590,11 @@ class NoticeCreate(BaseModel):
     @field_validator('expires_at')
     @classmethod
     def validate_expires_at(cls, v: Optional[datetime]) -> Optional[datetime]:
-        if v is not None and v <= datetime.now(timezone.utc):
-            raise ValueError("Expiry date must be in the future")
+        if v is not None:
+            if v.tzinfo is None:
+                v = v.replace(tzinfo=timezone.utc)
+            if v <= datetime.now(timezone.utc):
+                raise ValueError("Expiry date must be in the future")
         return v
 
     model_config = {

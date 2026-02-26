@@ -4,7 +4,7 @@ import BottomNav from '../../../components/BottomNav';
 import { Card, EliteButton, Badge } from '../../../components/UI';
 import { useAuth } from '../../../context/AuthContext';
 import studentService from '../../../services/student.service';
-import { Bell, Check, Trash2, Calendar, AlertCircle, MessageSquare, CheckCircle } from 'lucide-react';
+import { Bell, AlertCircle, MessageSquare, CheckCircle } from 'lucide-react';
 
 export default function Notifications() {
   const { user } = useAuth();
@@ -134,10 +134,11 @@ export default function Notifications() {
             notifications.map((n) => (
               <div
                 key={n.id}
+                onClick={() => !n.is_read && handleMarkRead(n.id)}
                 className={`flex items-start gap-0 rounded-xl border overflow-hidden transition-all duration-200 ${
                   n.is_read
                     ? 'bg-white border-gray-100'
-                    : 'bg-srec-primary/[0.04] border-srec-primary/15'
+                    : 'bg-srec-primary/[0.04] border-srec-primary/15 cursor-pointer hover:bg-srec-primary/[0.07]'
                 }`}
               >
                 {/* Left accent bar */}
@@ -156,31 +157,16 @@ export default function Notifications() {
                         Ref: {n.complaint_title}
                       </p>
                     )}
-                  </div>
-                </div>
-
-                {/* Right side: timestamp + actions */}
-                <div className="flex flex-col items-end gap-2 p-3 shrink-0">
-                  <span className="text-xs text-gray-400 whitespace-nowrap">
-                    {new Date(n.created_at).toLocaleDateString()}
-                  </span>
-                  <div className="flex gap-1">
-                    {!n.is_read && (
-                      <button
-                        onClick={() => handleMarkRead(n.id)}
-                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition-all active:scale-95"
-                        title="Mark as read"
-                      >
-                        <Check size={13} />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleDelete(n.id)}
-                      className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:bg-red-100 transition-all active:scale-95"
-                      title="Delete"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[11px] text-gray-400">
+                        {new Date(n.created_at).toLocaleDateString()}
+                      </span>
+                      {!n.is_read && (
+                        <span className="text-[10px] text-srec-primary font-semibold">
+                          • Tap to mark read
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

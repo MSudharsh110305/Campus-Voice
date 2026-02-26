@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Bell, User, Megaphone } from 'lucide-react';
+import { LayoutDashboard, User, Megaphone } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 
 const AuthoritySidebar = ({ className = '' }) => {
@@ -11,7 +11,6 @@ const AuthoritySidebar = ({ className = '' }) => {
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/authority-dashboard' },
     { icon: Megaphone, label: 'Notices', path: '/authority-notices' },
-    { icon: Bell, label: 'Notifications', path: '/authority-notifications' },
     { icon: User, label: 'Profile', path: '/authority-profile' },
   ];
 

@@ -6,7 +6,7 @@ import studentService from '../../../services/student.service';
 import ComplaintCard from '../components/ComplaintCard';
 import { Select, Button, Skeleton, Card } from '../../../components/UI';
 import { STATUSES, PRIORITIES, CATEGORY_LIST, COMPLAINT_CATEGORIES } from '../../../utils/constants';
-import { FileX, Search, X, SlidersHorizontal, Calendar, AlertTriangle } from 'lucide-react';
+import { FileX, Search, X, SlidersHorizontal, Calendar, AlertTriangle, FileText, CheckCircle, Clock } from 'lucide-react';
 import complaintService from '../../../services/complaint.service';
 import { Link, useSearchParams } from 'react-router-dom';
 
@@ -16,6 +16,7 @@ export default function MyComplaints() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [complaints, setComplaints] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [skip, setSkip] = useState(0);
   const LIMIT = 20;
@@ -35,6 +36,10 @@ export default function MyComplaints() {
     date_from: '',
     date_to: '',
   });
+
+  useEffect(() => {
+    studentService.getStats().then(setStats).catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetchComplaints();
@@ -97,6 +102,40 @@ export default function MyComplaints() {
     <div className="min-h-screen bg-srec-background">
       <TopNav />
       <main className="animate-fadeIn max-w-4xl mx-auto px-4 pt-4 pb-24">
+
+        {/* Stat Cards — clickable to filter */}
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <button
+            onClick={() => { setActiveStatusTab('All'); setSkip(0); setSearchParams({}); }}
+            className={`rounded-xl p-3 text-center border transition-all ${activeStatusTab === 'All' ? 'bg-srec-primary text-white border-srec-primary shadow-sm' : 'bg-white border-gray-100 hover:border-srec-primary/40'}`}
+          >
+            <div className={`flex items-center justify-center gap-1 mb-0.5 ${activeStatusTab === 'All' ? 'text-white/80' : 'text-gray-400'}`}>
+              <FileText size={12} />
+            </div>
+            <div className={`text-xl font-bold leading-none ${activeStatusTab === 'All' ? 'text-white' : 'text-gray-900'}`}>{stats?.total_complaints ?? 0}</div>
+            <div className={`text-[10px] mt-0.5 ${activeStatusTab === 'All' ? 'text-white/80' : 'text-gray-500'}`}>Total</div>
+          </button>
+          <button
+            onClick={() => { setActiveStatusTab('Resolved'); setSkip(0); setSearchParams({ status: 'Resolved' }); }}
+            className={`rounded-xl p-3 text-center border transition-all ${activeStatusTab === 'Resolved' ? 'bg-green-600 text-white border-green-600 shadow-sm' : 'bg-white border-gray-100 hover:border-green-200'}`}
+          >
+            <div className={`flex items-center justify-center gap-1 mb-0.5 ${activeStatusTab === 'Resolved' ? 'text-white/80' : 'text-green-500'}`}>
+              <CheckCircle size={12} />
+            </div>
+            <div className={`text-xl font-bold leading-none ${activeStatusTab === 'Resolved' ? 'text-white' : 'text-green-600'}`}>{stats?.resolved ?? 0}</div>
+            <div className={`text-[10px] mt-0.5 ${activeStatusTab === 'Resolved' ? 'text-white/80' : 'text-gray-500'}`}>Resolved</div>
+          </button>
+          <button
+            onClick={() => { setActiveStatusTab('Raised'); setSkip(0); setSearchParams({ status: 'Raised' }); }}
+            className={`rounded-xl p-3 text-center border transition-all ${activeStatusTab === 'Raised' ? 'bg-amber-500 text-white border-amber-500 shadow-sm' : 'bg-white border-gray-100 hover:border-amber-200'}`}
+          >
+            <div className={`flex items-center justify-center gap-1 mb-0.5 ${activeStatusTab === 'Raised' ? 'text-white/80' : 'text-amber-500'}`}>
+              <Clock size={12} />
+            </div>
+            <div className={`text-xl font-bold leading-none ${activeStatusTab === 'Raised' ? 'text-white' : 'text-amber-600'}`}>{(stats?.raised ?? 0) + (stats?.in_progress ?? 0)}</div>
+            <div className={`text-[10px] mt-0.5 ${activeStatusTab === 'Raised' ? 'text-white/80' : 'text-gray-500'}`}>Pending</div>
+          </button>
+        </div>
 
         {/* Header */}
         <div className="flex items-center justify-between mb-4">

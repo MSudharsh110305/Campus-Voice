@@ -121,6 +121,11 @@ const unflagSpam = async (complaintId) => {
     return await api(`/complaints/${complaintId}/unflag-spam`, { method: 'POST' });
 };
 
+const appealSpam = async (complaintId, reason) => {
+    const params = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+    return await api(`/complaints/${complaintId}/appeal-spam${params}`, { method: 'POST' });
+};
+
 const complaintService = {
     submitComplaint,
     getMyComplaints,
@@ -137,6 +142,7 @@ const complaintService = {
     getAdvancedFilteredComplaints,
     flagSpam,
     unflagSpam,
+    appealSpam,
 };
 
 export default complaintService;

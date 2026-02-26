@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
-import { Badge, Card, Skeleton, RaiseButton, Stat, Button, Select } from '../../../components/UI';
+import { Card, Skeleton, RaiseButton, Button, Select } from '../../../components/UI';
 import { TopNav } from '../../../components/Navbars';
 import BottomNav from '../../../components/BottomNav';
 import ComplaintCard from '../components/ComplaintCard';
 import NewComplaintModal from '../components/NewComplaintModal';
 import complaintService from '../../../services/complaint.service';
-import studentService from '../../../services/student.service';
-import { AlertCircle, FileText, SlidersHorizontal, Search, X, Inbox, CheckCircle, Clock } from 'lucide-react';
+import { AlertCircle, SlidersHorizontal, Search, X, Inbox } from 'lucide-react';
 import { STATUSES, PRIORITIES, COMPLAINT_CATEGORIES } from '../../../utils/constants';
 
 const initialFeed = [];
@@ -18,7 +17,6 @@ export default function StudentHome() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [feed, setFeed] = useState(initialFeed);
-  const [stats, setStats] = useState(null);
   const [activeTab, setActiveTab] = useState('feed'); // feed / mine
   const [showModal, setShowModal] = useState(false);
   const [skip, setSkip] = useState(0);
@@ -36,18 +34,8 @@ export default function StudentHome() {
   });
 
   useEffect(() => {
-    fetchStats();
     fetchFeed();
   }, [activeTab, filters]);
-
-  const fetchStats = async () => {
-    try {
-      const data = await studentService.getStats();
-      setStats(data);
-    } catch (error) {
-      console.error("Failed to fetch stats", error);
-    }
-  };
 
   const fetchFeed = async () => {
     if (activeTab === 'feed') {
@@ -138,37 +126,6 @@ export default function StudentHome() {
             Hello, {firstName}
           </h2>
           <p className="text-sm text-gray-400 mt-0.5">Here's what's happening on campus</p>
-        </div>
-
-        {/* Stats row — display only, 3 equal columns */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="bg-white rounded-xl px-3 py-3 flex items-center gap-2.5 border border-gray-100 shadow-sm">
-            <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0">
-              <FileText size={15} className="text-gray-400" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-xl font-bold text-gray-900 leading-none">{stats?.total_complaints ?? 0}</div>
-              <div className="text-[10px] text-gray-400 mt-0.5 truncate">Total</div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl px-3 py-3 flex items-center gap-2.5 border border-gray-100 shadow-sm">
-            <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
-              <CheckCircle size={15} className="text-green-500" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-xl font-bold text-gray-900 leading-none">{stats?.resolved ?? 0}</div>
-              <div className="text-[10px] text-gray-400 mt-0.5 truncate">Resolved</div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl px-3 py-3 flex items-center gap-2.5 border border-gray-100 shadow-sm">
-            <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
-              <Clock size={15} className="text-amber-500" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-xl font-bold text-gray-900 leading-none">{(stats?.raised ?? 0) + (stats?.in_progress ?? 0)}</div>
-              <div className="text-[10px] text-gray-400 mt-0.5 truncate">Pending</div>
-            </div>
-          </div>
         </div>
 
         {/* Campus Feed heading + filter toggle */}

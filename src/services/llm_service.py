@@ -166,7 +166,11 @@ class LLMService:
             "Information Technology (IT), "
             "Management Studies (MBA), "
             "Artificial Intelligence and Data Science (AIDS), "
-            "M.Tech in Computer Science and Engineering (MTECH_CSE)"
+            "M.Tech in Computer Science and Engineering (MTECH_CSE), "
+            "English (ENG), "
+            "Physics (PHY), "
+            "Chemistry (CHEM), "
+            "Mathematics (MATH)"
         )
 
         # Build supplementary context block from whatever is available
@@ -250,8 +254,12 @@ STEP 4 — Campus-wide facility → "General":
 All campus outdoor/infrastructure issues NOT inside a hostel building and NOT academic and NOT behavioral: fallen trees, campus roads/drainage, parking, sports courts/grounds, campus wifi/internet, auditorium, open drinking water stations, bus/transport, campus gates, campus canteen, campus library building, general campus cleanliness, streetlights, rooms/areas that are not in a hostel building.
 
 DEPARTMENT DETECTION (when category = "Department"):
-Valid codes: CSE, ECE, MECH, CIVIL, EEE, IT, BIO, AERO, RAA, EIE, MBA, AIDS, MTECH_CSE
-- If complaint names a specific dept/lab (e.g. "ECE lab", "CSE printer") → use that dept code
+Valid codes: CSE, ECE, MECH, CIVIL, EEE, IT, BIO, AERO, RAA, EIE, MBA, AIDS, MTECH_CSE, ENG, PHY, CHEM, MATH
+- If complaint names a specific dept/lab (e.g. "ECE lab", "CSE printer", "English class", "physics lab", "chemistry lab", "maths class") → use that dept code
+- ENG: complaints about English subject, English class, English faculty, English department
+- PHY: complaints about Physics subject, physics lab, physics class, physics faculty
+- CHEM: complaints about Chemistry subject, chemistry lab, chemistry class, chemistry faculty
+- MATH: complaints about Mathematics/Maths subject, math class, mathematics faculty
 - If complaint says "my department" or "our department" without naming it → use student's department from supplementary context
 - If no department context at all → use "CSE" as the default
 - NEVER assign a department solely because the student belongs to it when the complaint is about a different area
@@ -265,7 +273,7 @@ PRIORITY:
 Respond ONLY with valid JSON (no markdown, no code blocks):
 {{
   "category": "Men's Hostel|Women's Hostel|General|Department|Disciplinary Committee",
-  "target_department": "CSE|ECE|MECH|CIVIL|EEE|IT|BIO|AERO|RAA|EIE|MBA|AIDS|MTECH_CSE",
+  "target_department": "CSE|ECE|MECH|CIVIL|EEE|IT|BIO|AERO|RAA|EIE|MBA|AIDS|MTECH_CSE|ENG|PHY|CHEM|MATH",
   "priority": "Low|Medium|High|Critical",
   "reasoning": "Max 40 words",
   "confidence": 0.0-1.0,
@@ -422,7 +430,11 @@ JSON:"""
             "EIE": ["eie", "instrumentation"],
             "MBA": ["mba", "management"],
             "AIDS": ["aids", "ai", "data science", "artificial intelligence"],
-            "MTECH_CSE": ["mtech", "m.tech"]
+            "MTECH_CSE": ["mtech", "m.tech"],
+            "ENG": ["english", "english class", "english subject", "english faculty", "english department", "english teacher", "english professor"],
+            "PHY": ["physics", "physics lab", "physics class", "physics subject", "physics faculty", "physics teacher"],
+            "CHEM": ["chemistry", "chemistry lab", "chemistry class", "chem lab", "chemistry subject", "chemistry faculty"],
+            "MATH": ["mathematics", "maths", "math class", "math subject", "mathematics faculty", "math teacher"],
         }
 
         # Detect target department from complaint text

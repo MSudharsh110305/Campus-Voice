@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   FileText,
   Users,
-  Bell,
   Building2,
   TriangleAlert,
   UserCog,
@@ -23,7 +22,6 @@ export default function AdminSidebar({ className = "" }) {
     { name: "Authorities", path: "/admin/authorities", icon: Users },
     { name: "Escalations", path: "/admin/escalations", icon: TriangleAlert },
     { name: "Categories", path: "/admin/departments", icon: Building2 },
-    { name: "Notifications", path: "/admin/notifications", icon: Bell },
     { name: "Profile", path: "/admin/profile", icon: UserCog }
   ];
 

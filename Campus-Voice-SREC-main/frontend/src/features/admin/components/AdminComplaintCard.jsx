@@ -69,17 +69,9 @@ export default function AdminComplaintCard({ complaint, token }) {
             {/* Top accent bar colored by priority */}
             <div className={`h-1 w-full ${accentColor}`} />
 
-            {/* Complaint image if present */}
-            {complaint.has_image && token && (
-                <AuthenticatedImage
-                    complaintId={complaint.id}
-                    token={token}
-                    thumbnail={true}
-                    className="w-full h-36 object-cover"
-                />
-            )}
-
-            <div className="p-4 flex flex-col gap-3 flex-1">
+            <div className="p-4 flex gap-3 flex-1">
+                {/* Main content */}
+                <div className="flex-1 min-w-0 flex flex-col gap-3">
                 {/* Row 1: StatusBadge + PriorityBadge + ID */}
                 <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -165,6 +157,19 @@ export default function AdminComplaintCard({ complaint, token }) {
                         Full Details <ArrowRight size={12} />
                     </EliteButton>
                 </div>
+                </div>{/* end main content */}
+
+                {/* Thumbnail image on right — compact, no horizontal expansion */}
+                {complaint.has_image && token && (
+                    <div className="w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden bg-gray-100 self-start mt-0">
+                        <AuthenticatedImage
+                            complaintId={complaint.id}
+                            token={token}
+                            thumbnail={true}
+                            className="w-full h-full object-cover"
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );

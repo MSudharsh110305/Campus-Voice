@@ -295,11 +295,15 @@ class VoteService:
             # normalises for how reachable the complaint is.
             engagement = math.sqrt(total_votes) / math.sqrt(audience)
 
-            raw_impact = net_signal * engagement * VOTE_IMPACT_MULTIPLIER * 10
+            # Also factor in net votes directly for additional signal
+            net_votes = upvotes - downvotes
+            net_boost = net_votes * 1.5  # +1.5 per net vote
 
-            # Cap: upward max +40% of base, downward max -30% of base
-            cap_up = base_score * 0.4
-            cap_down = base_score * 0.3
+            raw_impact = net_signal * engagement * VOTE_IMPACT_MULTIPLIER * 10 + net_boost
+
+            # Cap: upward max +100% of base (votes CAN change priority level), downward max -50%
+            cap_up = base_score * 1.0
+            cap_down = base_score * 0.5
             capped_impact = max(min(raw_impact, cap_up), -cap_down)
 
             final_score = max(base_score + capped_impact, 0.0)
@@ -425,11 +429,11 @@ class VoteService:
         Returns:
             Priority level (Low, Medium, High, Critical)
         """
-        if priority_score >= 200:
+        if priority_score >= 150:
             return "Critical"
-        elif priority_score >= 100:
+        elif priority_score >= 75:
             return "High"
-        elif priority_score >= 50:
+        elif priority_score >= 30:
             return "Medium"
         else:
             return "Low"
