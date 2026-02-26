@@ -170,42 +170,42 @@ export default function AdminEscalations() {
             )}
 
             {/* Section 1: Already Escalated */}
-            {data && (
+            {data && (summary.escalated_count || 0) > 0 && (
                 <Section
                     title="Escalated Complaints"
-                    subtitle="Manually or automatically moved to a higher authority"
+                    subtitle="Moved to a higher authority"
                     icon={TrendingUp}
                     iconBg="bg-purple-50 text-purple-600"
                     count={summary.escalated_count || 0}
-                    emptyText="No complaints have been escalated."
+                    emptyText=""
                 >
                     {data.escalated.map(c => <EscalationCard key={c.id} complaint={c} />)}
                 </Section>
             )}
 
             {/* Section 2: Critical (not yet escalated) */}
-            {data && (
+            {data && (summary.critical_count || 0) > 0 && (
                 <Section
                     title="Critical Issues"
-                    subtitle="High-severity complaints not yet escalated — act immediately"
+                    subtitle="High-severity — act immediately"
                     icon={AlertTriangle}
                     iconBg="bg-red-50 text-srec-danger"
                     count={summary.critical_count || 0}
-                    emptyText="No critical unescalated complaints."
+                    emptyText=""
                 >
                     {data.critical.map(c => <EscalationCard key={c.id} complaint={c} />)}
                 </Section>
             )}
 
             {/* Section 3: Overdue */}
-            {data && (
+            {data && (summary.overdue_count || 0) > 0 && (
                 <Section
                     title="Overdue Complaints"
-                    subtitle={`Open for more than ${summary.escalation_threshold_days ?? 2} days — will auto-escalate soon`}
+                    subtitle={`Open > ${summary.escalation_threshold_days ?? 2} days`}
                     icon={Clock}
                     iconBg="bg-amber-50 text-amber-600"
                     count={summary.overdue_count || 0}
-                    emptyText="No overdue complaints."
+                    emptyText=""
                 >
                     {data.overdue.map(c => <EscalationCard key={c.id} complaint={c} />)}
                 </Section>

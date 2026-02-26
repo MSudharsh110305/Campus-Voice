@@ -519,7 +519,27 @@ async def get_system_stats(
     )
     recent_result = await db.execute(recent_complaints_query)
     recent_complaints = recent_result.scalar() or 0
-    
+
+    # Complaints per department (by dept code)
+    from src.database.models import Department as DeptModel
+    dept_complaints_query = (
+        select(DeptModel.code, func.count(Complaint.id))
+        .join(Complaint, Complaint.complaint_department_id == DeptModel.id, isouter=True)
+        .group_by(DeptModel.code)
+    )
+    dept_complaints_result = await db.execute(dept_complaints_query)
+    complaints_by_department = {row[0]: row[1] for row in dept_complaints_result.fetchall()}
+
+    # Students per department (by dept code)
+    from src.database.models import Student as StudentModel
+    dept_students_query = (
+        select(DeptModel.code, func.count(StudentModel.roll_no))
+        .join(StudentModel, StudentModel.department_id == DeptModel.id, isouter=True)
+        .group_by(DeptModel.code)
+    )
+    dept_students_result = await db.execute(dept_students_query)
+    students_by_department = {row[0]: row[1] for row in dept_students_result.fetchall()}
+
     return {
         "total_students": total_students,
         "total_authorities": total_authorities,
@@ -528,7 +548,9 @@ async def get_system_stats(
         "complaints_by_status": status_counts,
         "complaints_by_priority": priority_counts,
         "complaints_by_category": category_counts,
-        "image_statistics": image_counts
+        "image_statistics": image_counts,
+        "complaints_by_department": complaints_by_department,
+        "students_by_department": students_by_department,
     }
 
 

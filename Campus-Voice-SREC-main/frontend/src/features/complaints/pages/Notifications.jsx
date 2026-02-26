@@ -4,7 +4,7 @@ import BottomNav from '../../../components/BottomNav';
 import { Card, EliteButton, Badge } from '../../../components/UI';
 import { useAuth } from '../../../context/AuthContext';
 import studentService from '../../../services/student.service';
-import { Bell, AlertCircle, MessageSquare, CheckCircle } from 'lucide-react';
+import { Bell, AlertCircle, MessageSquare, CheckCircle, Trash2 } from 'lucide-react';
 
 export default function Notifications() {
   const { user } = useAuth();
@@ -134,17 +134,19 @@ export default function Notifications() {
             notifications.map((n) => (
               <div
                 key={n.id}
-                onClick={() => !n.is_read && handleMarkRead(n.id)}
                 className={`flex items-start gap-0 rounded-xl border overflow-hidden transition-all duration-200 ${
                   n.is_read
                     ? 'bg-white border-gray-100'
-                    : 'bg-srec-primary/[0.04] border-srec-primary/15 cursor-pointer hover:bg-srec-primary/[0.07]'
+                    : 'bg-srec-primary/[0.04] border-srec-primary/15'
                 }`}
               >
                 {/* Left accent bar */}
                 <div className={`w-1 self-stretch flex-shrink-0 ${getAccentColor(n.notification_type)}`} />
 
-                <div className="flex-1 flex items-start gap-3 p-4 min-w-0">
+                <div
+                  className={`flex-1 flex items-start gap-3 p-3 min-w-0 ${!n.is_read ? 'cursor-pointer' : ''}`}
+                  onClick={() => !n.is_read && handleMarkRead(n.id)}
+                >
                   <div className={`p-1.5 rounded-full shrink-0 mt-0.5 ${n.is_read ? 'bg-gray-100' : 'bg-white shadow-sm'}`}>
                     {getIcon(n.notification_type)}
                   </div>
@@ -152,23 +154,25 @@ export default function Notifications() {
                     <p className={`text-sm leading-snug ${n.is_read ? 'text-gray-600' : 'text-gray-900 font-medium'}`}>
                       {n.message}
                     </p>
-                    {n.complaint_title && (
-                      <p className="text-xs text-gray-400 mt-1 truncate">
-                        Ref: {n.complaint_title}
-                      </p>
-                    )}
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-[11px] text-gray-400">
                         {new Date(n.created_at).toLocaleDateString()}
                       </span>
                       {!n.is_read && (
-                        <span className="text-[10px] text-srec-primary font-semibold">
-                          • Tap to mark read
-                        </span>
+                        <span className="text-[10px] text-srec-primary font-semibold">• Tap to mark read</span>
                       )}
                     </div>
                   </div>
                 </div>
+
+                {/* Delete button */}
+                <button
+                  onClick={() => handleDelete(n.id)}
+                  className="p-3 text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors self-stretch flex items-center"
+                  title="Delete"
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
             ))
           )}

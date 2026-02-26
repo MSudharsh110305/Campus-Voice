@@ -137,8 +137,7 @@ export default function App() {
           <Route path="departments/list" element={<AdminDepartmentsList />} />
           <Route path="departments/:deptCode" element={<AdminDepartmentDetail />} />
           <Route path="notifications" element={<AdminNotifications />} />
-          {/* Reuse AuthorityProfile for Admin Profile for now or create new */}
-          <Route path="profile" element={<AuthorityProfile />} />
+          <Route path="profile" element={<AuthorityProfile noLayout={true} />} />
         </Route>
 
         {/* Authority Routes */}

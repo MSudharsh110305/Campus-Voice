@@ -51,24 +51,12 @@ export default function AdminDepartmentsList() {
         const loadData = async () => {
             try {
                 setLoading(true);
-                // Load system overview for complaint counts by category/dept
                 const data = await adminService.getSystemOverview().catch(() => null);
                 setOverview(data);
-
-                // Try to load all students and group by department_code
-                const studentsData = await adminService.getAllStudents(0, 500).catch(() => null);
-                const students = Array.isArray(studentsData)
-                    ? studentsData
-                    : studentsData?.students || [];
-
-                const counts = {};
-                students.forEach(s => {
-                    const code = s.department_code || s.department;
-                    if (code) {
-                        counts[code] = (counts[code] || 0) + 1;
-                    }
-                });
-                setStudentCounts(counts);
+                // Use students_by_department from overview if available
+                if (data?.students_by_department) {
+                    setStudentCounts(data.students_by_department);
+                }
             } catch (err) {
                 console.error('Failed to load department data:', err);
             } finally {

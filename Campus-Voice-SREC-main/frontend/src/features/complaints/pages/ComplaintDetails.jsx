@@ -404,23 +404,10 @@ export default function ComplaintDetails() {
                         </div>
                     )}
 
-                    <div className="p-6 sm:p-10">
+                    <div className="p-5 sm:p-8">
 
-                        {/* Header: Status and Metadata */}
-                        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-                            <div className="flex flex-wrap gap-2">
-                                <Badge type={complaint.status} variant="status">{complaint.status || 'Pending'}</Badge>
-                                {complaint.priority && (
-                                    <Badge type={complaint.priority} variant="priority">{complaint.priority} Priority</Badge>
-                                )}
-                            </div>
-                            <span className="text-xs font-medium text-gray-400">
-                                {new Date(complaint.submitted_at || complaint.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
-                            </span>
-                        </div>
-
-                        {/* Category & Metadata */}
-                        <div className="flex flex-wrap items-center gap-2 mb-8 text-sm">
+                        {/* Category & Metadata row (compact) */}
+                        <div className="flex flex-wrap items-center gap-2 mb-5 text-sm">
                             <Badge type={complaint.category_name || COMPLAINT_CATEGORIES[complaint.category_id]} variant="category">
                                 {complaint.category_name || COMPLAINT_CATEGORIES[complaint.category_id] || 'General'}
                             </Badge>
@@ -434,8 +421,10 @@ export default function ComplaintDetails() {
                                     Cross-Department
                                 </Badge>
                             )}
-                            <span className="text-gray-400">•</span>
-                            <span className="text-gray-500">Visibility: <span className="font-semibold text-gray-700 capitalize">{complaint.visibility}</span></span>
+                            <span className="text-gray-300">·</span>
+                            <span className="text-xs text-gray-500">
+                                <span className="font-medium">{complaint.visibility}</span> visibility
+                            </span>
                         </div>
 
                         {/* Content display based on ownership */}
@@ -459,6 +448,26 @@ export default function ComplaintDetails() {
                                                 <span>✨ AI Rephrased Summary</span>
                                             </div>
                                             <div className="prose prose-green max-w-none text-gray-600 leading-relaxed whitespace-pre-wrap">
+                                                {complaint.rephrased_text}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            ) : isAuthorityOrAdmin ? (
+                                <>
+                                    {/* Admin/Authority view: show both original + rephrased */}
+                                    {complaint.original_text && (
+                                        <div className="mb-4">
+                                            <div className="mb-1.5 text-xs font-bold text-gray-400 uppercase tracking-wider">Original Text</div>
+                                            <div className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-lg p-3 border border-gray-100">
+                                                {complaint.original_text}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {complaint.rephrased_text && complaint.rephrased_text !== complaint.original_text && (
+                                        <div>
+                                            <div className="mb-1.5 text-xs font-bold text-srec-primary uppercase tracking-wider flex items-center gap-1">✨ AI Summary</div>
+                                            <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
                                                 {complaint.rephrased_text}
                                             </div>
                                         </div>
@@ -535,6 +544,23 @@ export default function ComplaintDetails() {
                                 <p className="text-sm text-yellow-800 font-medium">
                                     ⚠️ AI analysis is temporarily unavailable. This complaint is under manual review.
                                 </p>
+                            </div>
+                        )}
+
+                        {/* Read-only vote summary for admin/authority */}
+                        {isAuthorityOrAdmin && complaint.visibility !== 'Private' && (
+                            <div className="flex items-center gap-4 py-3 px-4 bg-gray-50 rounded-xl border border-gray-100 mb-6">
+                                <div className="flex items-center gap-1.5 text-sm text-green-700 font-semibold">
+                                    <ThumbsUp size={14} className="fill-green-600 text-green-600" />
+                                    {complaint.upvotes || 0} upvotes
+                                </div>
+                                <div className="flex items-center gap-1.5 text-sm text-red-600 font-semibold">
+                                    <ThumbsDown size={14} className="fill-red-500 text-red-500" />
+                                    {complaint.downvotes || 0} downvotes
+                                </div>
+                                <span className="ml-auto text-xs text-gray-400">
+                                    Net score: <span className={`font-bold ${(complaint.net_votes || 0) > 0 ? 'text-green-600' : (complaint.net_votes || 0) < 0 ? 'text-red-500' : 'text-gray-500'}`}>{complaint.net_votes || 0}</span>
+                                </span>
                             </div>
                         )}
 
@@ -657,107 +683,68 @@ export default function ComplaintDetails() {
                         </div>
 
                         {/* Timeline & History Section */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
-                            {/* --- Timeline View --- */}
-                            <div className="space-y-6">
-                                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2 px-2">
-                                    <Clock className="text-srec-primary" size={20} /> Complaint Timeline
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
+                            {/* --- Timeline --- */}
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5 mb-3">
+                                    <Clock size={14} className="text-srec-primary" /> Timeline
                                 </h3>
-                                <div className="relative pl-6 space-y-8 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-100">
+                                <div className="relative pl-5 space-y-3 before:absolute before:left-[9px] before:top-1 before:bottom-1 before:w-px before:bg-gray-200">
                                     {loadingTimeline ? (
-                                        [1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full rounded-xl" />)
+                                        [1, 2].map(i => <Skeleton key={i} className="h-14 rounded-lg" />)
                                     ) : timeline.length > 0 ? (
                                         timeline.map((event, idx) => (
                                             <div key={idx} className="relative">
-                                                <div className={`absolute -left-[23px] top-1 w-3 h-3 rounded-full border-2 border-white shadow-sm ring-4 ring-white ${idx === 0 ? 'bg-srec-primary scale-125' : 'bg-gray-300'
-                                                    }`} />
-                                                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-neu-soft hover:shadow-neu-flat transition-all group">
-                                                    <div className="flex justify-between items-start mb-1">
-                                                        <h4 className="font-bold text-gray-900 group-hover:text-srec-primary transition-colors">
-                                                            {event.event}
-                                                        </h4>
-                                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">
-                                                            {format(new Date(event.timestamp), 'h:mm a')}
-                                                        </span>
+                                                <div className={`absolute -left-[19px] top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ${idx === 0 ? 'bg-srec-primary' : 'bg-gray-300'}`} />
+                                                <div className="bg-white px-3 py-2.5 rounded-lg border border-gray-100">
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <p className="text-xs font-semibold text-gray-800">{event.event}</p>
+                                                        <span className="text-[10px] text-gray-400 whitespace-nowrap flex-shrink-0">{format(new Date(event.timestamp), 'MMM d, h:mm a')}</span>
                                                     </div>
-                                                    <p className="text-sm text-gray-500 leading-relaxed mb-2">
-                                                        {sanitizeDescription(event.description)}
-                                                    </p>
-                                                    <div className="flex flex-wrap gap-2 items-center text-[11px] text-gray-400 mt-2 pt-2 border-t border-gray-50">
-                                                        <div className="font-medium bg-gray-50 px-2 py-0.5 rounded border border-gray-100">
-                                                            {format(new Date(event.timestamp), 'MMM dd, yyyy')}
-                                                        </div>
-                                                        {event.updated_by && (
-                                                            <div className="flex items-center gap-1">
-                                                                <span className="text-gray-300">•</span>
-                                                                <span>By: <span className="text-gray-600 font-semibold">{sanitizeName(event.updated_by)}</span></span>
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                                    {event.description && (
+                                                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{sanitizeDescription(event.description)}</p>
+                                                    )}
+                                                    {event.updated_by && (
+                                                        <p className="text-[10px] text-gray-400 mt-1">By {sanitizeName(event.updated_by)}</p>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))
                                     ) : (
-                                        <div className="text-center py-10 text-gray-400 italic">No timeline events recorded</div>
+                                        <p className="text-xs text-gray-400 italic py-4">No events yet</p>
                                     )}
                                 </div>
                             </div>
 
                             {/* --- Status History --- */}
-                            <div className="space-y-6">
-                                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2 px-2">
-                                    <History className="text-srec-primary" size={20} /> Status History
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5 mb-3">
+                                    <History size={14} className="text-srec-primary" /> Status History
                                 </h3>
-                                <div className="space-y-4">
+                                <div className="space-y-2">
                                     {loadingHistory ? (
-                                        [1, 2].map(i => <Skeleton key={i} className="h-24 w-full rounded-xl" />)
+                                        [1, 2].map(i => <Skeleton key={i} className="h-16 rounded-lg" />)
                                     ) : history.length > 0 ? (
                                         history.map((update, idx) => (
-                                            <div key={idx} className="bg-srec-card p-5 rounded-2xl border border-gray-200 shadow-neu-inset transition-all hover:translate-x-1">
-                                                <div className="flex items-center gap-3 mb-4">
-                                                    <Badge type={update.old_status} variant="status" className="opacity-60 grayscale-[0.5] scale-90">{update.old_status}</Badge>
-                                                    <ChevronRight size={14} className="text-gray-300" />
-                                                    <Badge type={update.new_status} variant="status" className="scale-105 shadow-sm font-bold">{update.new_status}</Badge>
+                                            <div key={idx} className="bg-white px-3 py-2.5 rounded-lg border border-gray-100">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <Badge type={update.old_status} variant="status" className="text-[10px]">{update.old_status}</Badge>
+                                                    <ChevronRight size={11} className="text-gray-300 flex-shrink-0" />
+                                                    <Badge type={update.new_status} variant="status" className="text-[10px] font-bold">{update.new_status}</Badge>
                                                 </div>
-
                                                 {update.reason && (
-                                                    <div className="relative mb-4">
-                                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-srec-primary rounded-full" />
-                                                        <p className="pl-4 text-sm text-gray-600 italic font-medium leading-relaxed">
-                                                            "{update.reason}"
-                                                        </p>
-                                                    </div>
+                                                    <p className="text-xs text-gray-500 italic mb-1 line-clamp-2">"{update.reason}"</p>
                                                 )}
-
-                                                <div className="flex items-center justify-between mt-auto pt-4 border-t border-gray-100">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-6 h-6 rounded-full bg-srec-primary/10 flex items-center justify-center text-[10px] font-bold text-srec-primary">
-                                                            {sanitizeName(update.updated_by)?.[0] || 'A'}
-                                                        </div>
-                                                        <span className="text-xs font-semibold text-gray-700">{sanitizeName(update.updated_by)}</span>
-                                                    </div>
-                                                    <span className="text-[10px] font-bold text-gray-400 capitalize bg-white px-2 py-0.5 rounded shadow-sm border border-gray-50">
-                                                        {format(new Date(update.updated_at), 'MMM dd, yyyy • h:mm a')}
-                                                    </span>
+                                                <div className="flex items-center justify-between text-[10px] text-gray-400">
+                                                    <span>{sanitizeName(update.updated_by)}</span>
+                                                    <span>{format(new Date(update.updated_at), 'MMM d, h:mm a')}</span>
                                                 </div>
                                             </div>
                                         ))
                                     ) : (
-                                        <div className="text-center py-10 bg-gray-50 rounded-2xl border border-dashed border-gray-200 text-gray-400 italic">
-                                            Initial submission pending review
-                                        </div>
+                                        <p className="text-xs text-gray-400 italic py-4 text-center">Initial submission pending review</p>
                                     )}
                                 </div>
-
-                                {/* Quick Legend */}
-                                {history.length > 0 && (
-                                    <div className="p-4 bg-blue-50/30 rounded-xl border border-blue-100/50 flex items-start gap-3">
-                                        <AlertCircle size={16} className="text-blue-500 mt-0.5 shrink-0" />
-                                        <p className="text-[11px] text-blue-700 leading-tight">
-                                            Status updates are made by verified authorities. Each change affects the resolution priority and department assignment of your complaint.
-                                        </p>
-                                    </div>
-                                )}
                             </div>
                         </div>
 
