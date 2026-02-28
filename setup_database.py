@@ -243,7 +243,7 @@ async def seed_authorities():
                 },
             ]
 
-            # HODs for all 17 departments — canonical passwords
+            # HODs for the 13 canonical departments only
             hod_data = [
                 ("CSE",       "Dr. A. Balasubramanian", "hod.cse@srec.ac.in",      "HodCSE@123"),
                 ("ECE",       "Dr. V. Sundaram",        "hod.ece@srec.ac.in",      "HodECE@123"),
@@ -258,10 +258,6 @@ async def seed_authorities():
                 ("MBA",       "Dr. R. Arumugam",        "hod.mba@srec.ac.in",      "HodMBA@123"),
                 ("AIDS",      "Dr. S. Karthikeyan",     "hod.aids@srec.ac.in",     "HodAIDS@123"),
                 ("MTECH_CSE", "Dr. V. Ramasamy",        "hod.mtechcse@srec.ac.in", "HodMTECH_CSE@123"),
-                ("ENG",       "Dr. P. Meenakshisundaram","hod.english@srec.ac.in",  "English@123"),
-                ("PHY",       "Dr. K. Annamalai",       "hod.physics@srec.ac.in",  "Physics@123"),
-                ("CHEM",      "Dr. R. Thirumalai",      "hod.chemistry@srec.ac.in","Chemistry@123"),
-                ("MATH",      "Dr. S. Venkataraman",    "hod.mathematics@srec.ac.in","Math@123456"),
             ]
 
             for dept_code, name, email, password in hod_data:

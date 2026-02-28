@@ -385,7 +385,7 @@ async def vote_on_complaint(
 
 @router.delete(
     "/{complaint_id}/vote",
-    response_model=SuccessResponse,
+    response_model=VoteResponse,
     summary="Remove vote",
     description="Remove your vote from a complaint"
 )
@@ -394,20 +394,24 @@ async def remove_vote(
     roll_no: str = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
-    """Remove vote from complaint."""
+    """Remove vote from complaint. Returns updated vote counts so the UI can sync."""
     try:
         service = VoteService(db)
-        
-        await service.remove_vote(
+
+        result = await service.remove_vote(
             complaint_id=complaint_id,
             student_roll_no=roll_no
         )
-        
-        return SuccessResponse(
-            success=True,
-            message="Vote removed successfully"
+
+        return VoteResponse(
+            complaint_id=complaint_id,
+            upvotes=result["upvotes"],
+            downvotes=result["downvotes"],
+            priority_score=result["priority_score"],
+            priority=result["priority"],
+            user_vote=None
         )
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

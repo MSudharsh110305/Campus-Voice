@@ -197,6 +197,7 @@ class AuthorityRepository(BaseRepository[Authority]):
         query = (
             select(Authority)
             .where(and_(*conditions))
+            .order_by(Authority.id.asc())   # deterministic: always pick the first created
             .limit(1)
         )
         result = await self.session.execute(query)

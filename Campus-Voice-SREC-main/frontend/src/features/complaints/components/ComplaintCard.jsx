@@ -142,10 +142,22 @@ export default function ComplaintCard({
     } catch (err) {
       setVoteCount(prevCount);
       setUserVote(prevVote);
-      const msg = (err?.response?.data?.error || err?.response?.data?.detail || err.message || '').toLowerCase();
-      if (msg.includes('own') || msg.includes('cannot vote') || err?.response?.status === 403)
+      // api.js sets err.status and err.data (not err.response)
+      const errData = err?.data || {};
+      const errDetail = errData?.detail;
+      const errMsg = errData?.error
+        || (typeof errDetail === 'string' ? errDetail : errDetail?.error)
+        || err.message || '';
+      const errLower = errMsg.toLowerCase();
+      if (err?.status === 403 || errLower.includes('own') || errLower.includes('cannot vote')) {
         showVoteError("Can't vote on your own complaint");
-      else showVoteError("Vote failed. Try again.");
+      } else if (errLower.includes('already')) {
+        showVoteError("You've already voted this way.");
+      } else if (errLower.includes('resolved')) {
+        showVoteError("Voting closed for resolved complaints.");
+      } else {
+        showVoteError("Vote failed. Try again.");
+      }
     } finally {
       setIsVoting(false);
     }

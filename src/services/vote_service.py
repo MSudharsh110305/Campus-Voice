@@ -1,16 +1,18 @@
 """
 Vote service for voting logic and priority calculation.
 
-Priority formula uses:
-- Upvote ratio  (upvotes / total_votes): filters out controversial complaints
-- Audience reach (how many students can actually see the complaint)
-- Engagement rate (votes / audience): measures real community concern
-- Impact is capped at ±40% of base score so votes don't flip priority levels
-  on their own — they nudge, not override.
+Priority formula (transparent, gradual):
+  raw_score        = (upvotes * 5) + (downvotes * -3)
+  reach            = upvotes + downvotes
+  reach_ratio      = reach / total_student_count
+  engagement_bonus = reach_ratio * 20          (max ~20 pts at 100% reach)
+  adjusted_score   = raw_score + engagement_bonus
+
+  Map adjusted_score → priority:  Critical ≥ 150 | High ≥ 75 | Medium ≥ 20 | Low < 20
+  Guard: never change priority by more than one level per vote update.
 """
 
 import logging
-import math
 from typing import Dict, Any, List, Optional
 from uuid import UUID
 from datetime import datetime, timezone
@@ -20,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import Vote, Complaint
 from src.repositories.vote_repo import VoteRepository
 from src.repositories.complaint_repo import ComplaintRepository
-from src.config.constants import PRIORITY_SCORES, VOTE_IMPACT_MULTIPLIER
+from src.config.constants import PRIORITY_SCORES  # kept for potential external callers
 
 logger = logging.getLogger(__name__)
 
@@ -75,29 +77,33 @@ class VoteService:
         if existing_vote:
             # Update existing vote (change from upvote to downvote or vice versa)
             old_type = existing_vote.vote_type
-            
+
             if old_type == vote_type:
                 raise ValueError(f"You have already {vote_type.lower()}d this complaint")
-            
+
             logger.info(f"Updating vote for {student_roll_no}: {old_type} → {vote_type}")
-            
-            # Decrement old vote
+
+            # IMPORTANT: Update the vote record BEFORE any commit.
+            # decrement_votes / increment_votes each commit the session, which
+            # expires ALL tracked objects — including existing_vote.  If we try
+            # to write existing_vote.vote_type AFTER those commits we trigger an
+            # async lazy-load → greenlet_spawn error.  Setting the field here
+            # means it will be flushed together with the first commit below.
+            existing_vote.vote_type = vote_type
+            existing_vote.updated_at = datetime.now(timezone.utc)
+
+            # Decrement old vote (commits — also persists the vote_type change above)
             if old_type == "Upvote":
                 await self.complaint_repo.decrement_votes(complaint_id, upvote=True)
             else:
                 await self.complaint_repo.decrement_votes(complaint_id, upvote=False)
-            
-            # Increment new vote
+
+            # Increment new vote (commits)
             if vote_type == "Upvote":
                 await self.complaint_repo.increment_votes(complaint_id, upvote=True)
             else:
                 await self.complaint_repo.increment_votes(complaint_id, upvote=False)
-            
-            # Update vote record
-            existing_vote.vote_type = vote_type
-            existing_vote.updated_at = datetime.now(timezone.utc)
-            await self.db.commit()
-            
+
             action = "changed"
         else:
             # Create new vote
@@ -188,6 +194,7 @@ class VoteService:
             "downvotes": complaint.downvotes,
             "vote_score": complaint.upvotes - complaint.downvotes,
             "priority_score": complaint.priority_score,
+            "priority": complaint.priority,
             "message": "Vote removed successfully"
         }
     
@@ -221,111 +228,98 @@ class VoteService:
             "updated_at": vote.updated_at.isoformat() if vote.updated_at else None
         }
     
-    async def _get_audience_size(self, complaint: Complaint) -> int:
-        """
-        Estimate how many students can actually see this complaint.
-        Used to measure engagement rate (votes / audience).
-        """
-        from src.database.models import Student, ComplaintCategory
+    # Priority level order (low → high index)
+    _PRIORITY_ORDER = ["Low", "Medium", "High", "Critical"]
 
-        category_result = await self.db.execute(
-            select(ComplaintCategory.name).where(ComplaintCategory.id == complaint.category_id)
-        )
-        category_name = category_result.scalar()
+    def _priority_index(self, priority: str) -> int:
+        try:
+            return self._PRIORITY_ORDER.index(priority)
+        except ValueError:
+            return 1  # default to Medium index
 
-        if category_name == "Men's Hostel":
-            q = select(func.count()).select_from(Student).where(
-                and_(Student.stay_type == "Hostel", Student.gender == "Male")
-            )
-        elif category_name == "Women's Hostel":
-            q = select(func.count()).select_from(Student).where(
-                and_(Student.stay_type == "Hostel", Student.gender == "Female")
-            )
-        elif category_name == "Department":
-            q = select(func.count()).select_from(Student).where(
-                Student.department_id == complaint.complaint_department_id
-            )
+    def _score_to_priority(self, score: float) -> str:
+        if score >= 150:
+            return "Critical"
+        elif score >= 75:
+            return "High"
+        elif score >= 20:
+            return "Medium"
         else:
-            # General / Disciplinary Committee — visible to all students
-            q = select(func.count()).select_from(Student)
-
-        result = await self.db.execute(q)
-        return max(result.scalar() or 1, 1)
+            return "Low"
 
     async def recalculate_priority(self, complaint_id: UUID) -> float:
         """
-        Recalculate complaint priority using upvote ratio + audience engagement.
+        Recalculate priority using the transparent vote formula:
 
-        Formula:
-          ratio        = upvotes / total_votes   (0.0–1.0)
-          net_signal   = ratio * 2 - 1           (-1.0 to +1.0; 0.5 ratio → 0)
-          engagement   = sqrt(total_votes / audience_size) * sqrt(total_votes)
-                       = total_votes / sqrt(audience_size)
-                         (more votes AND higher % of audience → stronger signal)
-          raw_impact   = net_signal * engagement * VOTE_IMPACT_MULTIPLIER
-          capped_impact = clamp(raw_impact, -base*0.3, +base*0.4)
-          final_score  = base_score + capped_impact
+          raw_score        = (upvotes * 5) + (downvotes * -3)
+          reach            = upvotes + downvotes
+          reach_ratio      = reach / total_student_count
+          engagement_bonus = reach_ratio * 20   (caps near 20 at full student turnout)
+          adjusted_score   = raw_score + engagement_bonus
 
-        This means:
-          - Votes nudge priority but can't single-handedly flip a level
-          - Highly controversial (50/50) complaints get zero boost
-          - Low turnout from a small audience still matters proportionally
+        Priority mapping: Critical >= 150, High >= 75, Medium >= 20, Low < 20
+        Guard: new priority cannot be more than 1 level away from the current priority.
         """
+        from src.database.models import Student
+
         complaint = await self.complaint_repo.get(complaint_id)
         if not complaint:
-            logger.warning(f"Cannot recalculate priority - complaint {complaint_id} not found")
+            logger.warning(f"Cannot recalculate priority — complaint {complaint_id} not found")
             return 0.0
 
         upvotes = complaint.upvotes or 0
         downvotes = complaint.downvotes or 0
-        total_votes = upvotes + downvotes
+        reach = upvotes + downvotes
 
-        # Base score is fixed to the AI-assigned priority (not the current level
-        # which may already be vote-inflated from previous calculations)
-        base_score = PRIORITY_SCORES.get(complaint.priority, 50.0)
+        if reach == 0:
+            # No votes yet — nothing to update
+            return complaint.priority_score or 0.0
 
-        if total_votes == 0:
-            final_score = base_score
-        else:
-            ratio = upvotes / total_votes               # 0.0–1.0
-            net_signal = ratio * 2 - 1                  # -1.0–+1.0 (0 at 50/50)
+        # Get total student count for reach normalisation
+        count_result = await self.db.execute(select(func.count()).select_from(Student))
+        total_students = max(count_result.scalar() or 1, 1)
 
-            audience = await self._get_audience_size(complaint)
-            # Engagement: sqrt(total_votes) weighs volume; dividing by sqrt(audience)
-            # normalises for how reachable the complaint is.
-            engagement = math.sqrt(total_votes) / math.sqrt(audience)
+        # Formula
+        raw_score = (upvotes * 5) + (downvotes * -3)
+        reach_ratio = reach / total_students
+        engagement_bonus = reach_ratio * 20
+        adjusted_score = raw_score + engagement_bonus
 
-            # Also factor in net votes directly for additional signal
-            net_votes = upvotes - downvotes
-            net_boost = net_votes * 1.5  # +1.5 per net vote
+        # Map score → priority level
+        proposed_priority = self._score_to_priority(adjusted_score)
 
-            raw_impact = net_signal * engagement * VOTE_IMPACT_MULTIPLIER * 10 + net_boost
+        # Guard: never change by more than 1 level per vote update
+        # Capture priority BEFORE update_priority_score() which commits and
+        # expires the SQLAlchemy session (accessing complaint.priority afterward
+        # would trigger a lazy load → async greenlet error).
+        old_priority = complaint.priority
+        current_idx = self._priority_index(old_priority)
+        proposed_idx = self._priority_index(proposed_priority)
+        guarded_idx = max(current_idx - 1, min(current_idx + 1, proposed_idx))
+        guarded_priority = self._PRIORITY_ORDER[guarded_idx]
 
-            # Cap: upward max +100% of base (votes CAN change priority level), downward max -50%
-            cap_up = base_score * 1.0
-            cap_down = base_score * 0.5
-            capped_impact = max(min(raw_impact, cap_up), -cap_down)
+        # Persist priority_score (commits → expires session objects)
+        await self.complaint_repo.update_priority_score(complaint_id, adjusted_score)
 
-            final_score = max(base_score + capped_impact, 0.0)
-
-        await self.complaint_repo.update_priority_score(complaint_id, final_score)
-
-        new_priority_level = self._calculate_priority_level(final_score)
-        if new_priority_level != complaint.priority:
-            complaint.priority = new_priority_level
-            await self.db.commit()
-            logger.info(f"Priority level updated for {complaint_id}: {new_priority_level}")
+        # Update priority level only if it changed
+        if guarded_priority != old_priority:
+            # Re-fetch complaint since session was expired by the commit above
+            fresh = await self.complaint_repo.get(complaint_id)
+            if fresh:
+                fresh.priority = guarded_priority
+                await self.db.commit()
+                logger.info(
+                    f"Priority updated for {complaint_id}: {old_priority} → {guarded_priority}"
+                )
 
         logger.info(
-            f"Priority recalculated for {complaint_id}: "
-            f"Base={base_score}, Upvotes={upvotes}, Downvotes={downvotes}, "
-            f"Ratio={upvotes/total_votes:.2f}, Impact={final_score - base_score:.1f}, "
-            f"Final={final_score:.1f}"
-            if total_votes > 0 else
-            f"Priority recalculated for {complaint_id}: Base={base_score}, No votes yet"
+            f"Vote priority for {complaint_id}: up={upvotes} down={downvotes} "
+            f"reach={reach}/{total_students} ({reach_ratio:.3f}) "
+            f"raw={raw_score:.1f} bonus={engagement_bonus:.2f} "
+            f"adj={adjusted_score:.2f} → {proposed_priority} (was={old_priority} guarded={guarded_priority})"
         )
 
-        return final_score
+        return adjusted_score
     
     async def _get_filtered_vote_counts(self, complaint: Complaint) -> tuple[int, int]:
         """
@@ -420,23 +414,8 @@ class VoteService:
         return (filtered_upvotes, filtered_downvotes)
 
     def _calculate_priority_level(self, priority_score: float) -> str:
-        """
-        Calculate priority level based on score.
-
-        Args:
-            priority_score: Calculated priority score
-
-        Returns:
-            Priority level (Low, Medium, High, Critical)
-        """
-        if priority_score >= 150:
-            return "Critical"
-        elif priority_score >= 75:
-            return "High"
-        elif priority_score >= 30:
-            return "Medium"
-        else:
-            return "Low"
+        """Calculate priority level from score (delegates to _score_to_priority)."""
+        return self._score_to_priority(priority_score)
     
     async def get_vote_statistics(
         self,

@@ -298,10 +298,11 @@ async def seed_authorities(session: AsyncSession):
         dept_result = await session.execute(text("SELECT id, code FROM departments"))
         dept_map = {row[1]: row[0] for row in dept_result.fetchall()}
 
+        # Canonical 23 authority accounts
         authorities = [
-            # System Admin
+            # Admin
             {
-                "name": "Admin User",
+                "name": "Super Admin",
                 "email": "admin@srec.ac.in",
                 "password": "Admin@123456",
                 "authority_type": "Admin",
@@ -309,9 +310,9 @@ async def seed_authorities(session: AsyncSession):
                 "designation": "System Administrator",
                 "department_id": None,
             },
-            # Administrative Officer (for General complaints)
+            # Admin Officer
             {
-                "name": "Mr. Suresh Reddy",
+                "name": "Dr. R. Krishnamurthy",
                 "email": "officer@srec.ac.in",
                 "password": "Officer@1234",
                 "authority_type": "Admin Officer",
@@ -321,17 +322,17 @@ async def seed_authorities(session: AsyncSession):
             },
             # Disciplinary Committee
             {
-                "name": "Dr. Anand Verma",
+                "name": "Prof. S. Rajagopal",
                 "email": "dc@srec.ac.in",
                 "password": "Discip@12345",
                 "authority_type": "Disciplinary Committee",
                 "authority_level": 20,
-                "designation": "Disciplinary Committee Chair",
+                "designation": "Disciplinary Committee Head",
                 "department_id": None,
             },
-            # Senior Deputy Warden (shared for both hostels)
+            # Senior Deputy Warden
             {
-                "name": "Dr. Venkat Rao",
+                "name": "Dr. M. Subramanian",
                 "email": "sdw@srec.ac.in",
                 "password": "SeniorDW@123",
                 "authority_type": "Senior Deputy Warden",
@@ -341,91 +342,91 @@ async def seed_authorities(session: AsyncSession):
             },
             # Men's Hostel Deputy Warden
             {
-                "name": "Mr. Ramesh Kumar",
+                "name": "Mr. K. Venkatesh",
                 "email": "dw.mens@srec.ac.in",
                 "password": "MensDW@1234",
                 "authority_type": "Men's Hostel Deputy Warden",
                 "authority_level": 10,
-                "designation": "Deputy Warden - Men's Hostel",
+                "designation": "Men's Hostel Deputy Warden",
                 "department_id": None,
             },
-            # Men's Hostel Wardens (2)
+            # Men's Hostel Wardens
             {
-                "name": "Mr. Srinivas Reddy",
+                "name": "Mr. N. Selvakumar",
                 "email": "warden1.mens@srec.ac.in",
                 "password": "MensW1@1234",
                 "authority_type": "Men's Hostel Warden",
                 "authority_level": 5,
-                "designation": "Warden - Men's Hostel Block A",
+                "designation": "Men's Hostel Warden – Block A",
                 "department_id": None,
             },
             {
-                "name": "Mr. Prakash Rao",
+                "name": "Mr. D. Murugesan",
                 "email": "warden2.mens@srec.ac.in",
                 "password": "MensW2@1234",
                 "authority_type": "Men's Hostel Warden",
                 "authority_level": 5,
-                "designation": "Warden - Men's Hostel Block B",
+                "designation": "Men's Hostel Warden – Block B",
                 "department_id": None,
             },
             # Women's Hostel Deputy Warden
             {
-                "name": "Mrs. Lakshmi Devi",
+                "name": "Mrs. P. Saraswathi",
                 "email": "dw.womens@srec.ac.in",
                 "password": "WomensDW@123",
                 "authority_type": "Women's Hostel Deputy Warden",
                 "authority_level": 10,
-                "designation": "Deputy Warden - Women's Hostel",
+                "designation": "Women's Hostel Deputy Warden",
                 "department_id": None,
             },
-            # Women's Hostel Wardens (2)
+            # Women's Hostel Wardens
             {
-                "name": "Mrs. Padma Sharma",
+                "name": "Mrs. L. Divya",
                 "email": "warden1.womens@srec.ac.in",
                 "password": "WomensW1@123",
                 "authority_type": "Women's Hostel Warden",
                 "authority_level": 5,
-                "designation": "Warden - Women's Hostel Block A",
+                "designation": "Women's Hostel Warden – Block E",
                 "department_id": None,
             },
             {
-                "name": "Mrs. Kavitha Reddy",
+                "name": "Mrs. B. Kavitha",
                 "email": "warden2.womens@srec.ac.in",
                 "password": "WomensW2@123",
                 "authority_type": "Women's Hostel Warden",
                 "authority_level": 5,
-                "designation": "Warden - Women's Hostel Block B",
+                "designation": "Women's Hostel Warden – Block F",
                 "department_id": None,
             },
         ]
 
-        # HODs for all 13 departments
+        # HODs for the 13 canonical departments
         hod_data = [
-            ("CSE", "Dr. Priya Sharma", "hod.cse@srec.ac.in"),
-            ("ECE", "Dr. Suresh Babu", "hod.ece@srec.ac.in"),
-            ("MECH", "Dr. Krishna Murthy", "hod.mech@srec.ac.in"),
-            ("CIVIL", "Dr. Ravi Kumar", "hod.civil@srec.ac.in"),
-            ("EEE", "Dr. Narayana Rao", "hod.eee@srec.ac.in"),
-            ("IT", "Dr. Srikanth Reddy", "hod.it@srec.ac.in"),
-            ("BIO", "Dr. Lakshmi Prasad", "hod.bio@srec.ac.in"),
-            ("AERO", "Dr. Vijay Kumar", "hod.aero@srec.ac.in"),
-            ("RAA", "Dr. Satish Chandra", "hod.raa@srec.ac.in"),
-            ("EIE", "Dr. Ramana Reddy", "hod.eie@srec.ac.in"),
-            ("MBA", "Dr. Rajendra Prasad", "hod.mba@srec.ac.in"),
-            ("AIDS", "Dr. Kiran Kumar", "hod.aids@srec.ac.in"),
-            ("MTECH_CSE", "Dr. Srinivasa Rao", "hod.mtechcse@srec.ac.in"),
+            ("CSE",       "Dr. A. Balasubramanian", "hod.cse@srec.ac.in",      "HodCSE@123"),
+            ("ECE",       "Dr. V. Sundaram",        "hod.ece@srec.ac.in",      "HodECE@123"),
+            ("MECH",      "Dr. P. Ganesan",         "hod.mech@srec.ac.in",     "HodMECH@123"),
+            ("CIVIL",     "Dr. S. Murugan",         "hod.civil@srec.ac.in",    "HodCIVIL@123"),
+            ("EEE",       "Dr. R. Jayakumar",       "hod.eee@srec.ac.in",      "HodEEE@123"),
+            ("IT",        "Dr. K. Muthukumar",      "hod.it@srec.ac.in",       "HodIT@123"),
+            ("BIO",       "Dr. N. Anbazhagan",      "hod.bio@srec.ac.in",      "HodBIO@123"),
+            ("AERO",      "Dr. C. Senthilkumar",    "hod.aero@srec.ac.in",     "HodAERO@123"),
+            ("RAA",       "Dr. M. Rajendran",       "hod.raa@srec.ac.in",      "HodRAA@123"),
+            ("EIE",       "Dr. T. Sivasubramanian", "hod.eie@srec.ac.in",      "HodEIE@123"),
+            ("MBA",       "Dr. R. Arumugam",        "hod.mba@srec.ac.in",      "HodMBA@123"),
+            ("AIDS",      "Dr. S. Karthikeyan",     "hod.aids@srec.ac.in",     "HodAIDS@123"),
+            ("MTECH_CSE", "Dr. V. Ramasamy",        "hod.mtechcse@srec.ac.in", "HodMTECH_CSE@123"),
         ]
 
-        for dept_code, name, email in hod_data:
+        for dept_code, name, email, password in hod_data:
             dept_id = dept_map.get(dept_code)
             if dept_id:
                 authorities.append({
                     "name": name,
                     "email": email,
-                    "password": f"Hod{dept_code}@123",
+                    "password": password,
                     "authority_type": "HOD",
                     "authority_level": 8,
-                    "designation": f"Head of Department - {dept_code}",
+                    "designation": f"Head of Department – {dept_code}",
                     "department_id": dept_id,
                 })
 

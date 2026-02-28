@@ -122,11 +122,13 @@ class ComplaintService:
                 )
 
         # Build context for LLM.
-        # Bug 2 fix: Only pass department code so the LLM fallback can detect
-        # cross-department targets. Gender and stay_type are intentionally excluded
-        # from the LLM prompt to prevent hostel-bias in categorisation.
+        # Pass gender and stay_type so the LLM can pick the correct hostel
+        # category (Men's vs Women's) directly when the complaint text is ambiguous.
+        # The LLM prompt already guards against hostel-bias for non-hostel text.
         context = {
-            "department": student.department.code if (student.department and hasattr(student.department, 'code')) else "Unknown"
+            "department": student.department.code if (student.department and hasattr(student.department, 'code')) else "Unknown",
+            "gender": student.gender or "",
+            "stay_type": student.stay_type or "",
         }
 
         # LLM Processing
@@ -168,16 +170,22 @@ class ComplaintService:
                     if student.stay_type == "Day Scholar":
                         raise ValueError("Day scholars cannot submit hostel complaints")
 
-                    # Check gender restrictions
+                    # Auto-correct hostel category to match student gender.
+                    # LLM doesn't know the student's gender, so it may guess wrong.
+                    # Silently correct rather than rejecting valid hostel complaints.
                     if ai_category == "Men's Hostel" and student.gender == "Female":
-                        raise ValueError(
-                            "Female students should use Women's Hostel category for hostel complaints"
+                        logger.info(
+                            f"Auto-correcting hostel category: Men's Hostel → Women's Hostel for female student {student_roll_no}"
                         )
+                        categorization["category"] = "Women's Hostel"
+                        ai_category = "Women's Hostel"
 
-                    if ai_category == "Women's Hostel" and student.gender == "Male":
-                        raise ValueError(
-                            "Male students should use Men's Hostel category for hostel complaints"
+                    elif ai_category == "Women's Hostel" and student.gender == "Male":
+                        logger.info(
+                            f"Auto-correcting hostel category: Women's Hostel → Men's Hostel for male student {student_roll_no}"
                         )
+                        categorization["category"] = "Men's Hostel"
+                        ai_category = "Men's Hostel"
 
                 # 3. Rephrase for professionalism.
                 # If rephrase_complaint returns None (gibberish/repeated words), flag as spam

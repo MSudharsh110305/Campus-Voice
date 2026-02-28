@@ -189,14 +189,17 @@ export default function ComplaintDetails() {
             }
 
             // Update with actual backend response
+            // API returns vote_count (not net_votes) — keep both in sync
+            const netScore = response.upvotes - response.downvotes;
             setComplaint({
                 ...complaint,
                 upvotes: response.upvotes,
                 downvotes: response.downvotes,
-                net_votes: response.upvotes - response.downvotes,
+                vote_count: netScore,
+                net_votes: netScore,
                 priority: response.priority
             });
-            setUserVote(response.user_vote);
+            setUserVote(response.user_vote ?? null);
 
         } catch (error) {
             console.error("Vote failed:", error);
@@ -205,15 +208,22 @@ export default function ComplaintDetails() {
             setComplaint(prevComplaint);
             setUserVote(prevVote);
 
-            // Show user-friendly error message
-            const errMsg = error?.response?.data?.error || error?.response?.data?.detail || '';
-            const errorMsg = (errMsg || error.message || '').toLowerCase();
-            if (errMsg.toLowerCase().includes('own') || errMsg.toLowerCase().includes('cannot vote') || error?.response?.status === 403 || error?.status === 403) {
+            // api.js sets err.status and err.data (not err.response)
+            const errData = error?.data || {};
+            const errDetail = errData?.detail;
+            // detail may be string or {error: string}
+            const errMsg = errData?.error
+                || (typeof errDetail === 'string' ? errDetail : errDetail?.error)
+                || error.message || '';
+            const errLower = errMsg.toLowerCase();
+            if (error?.status === 403 || errLower.includes('own') || errLower.includes('cannot vote')) {
                 showVoteError("You can't vote on your own complaint");
-            } else if (errorMsg.includes('greenlet') || errorMsg.includes('sqlalchemy')) {
-                showVoteError("Server is temporarily busy. Please try again in a moment.");
-            } else if (errorMsg.includes('rate limit')) {
-                showVoteError("Too many requests. Please wait a moment and try again.");
+            } else if (errLower.includes('resolved')) {
+                showVoteError("Voting is closed for resolved complaints.");
+            } else if (errLower.includes('already')) {
+                showVoteError("You've already voted this way on this complaint.");
+            } else if (errLower.includes('greenlet') || errLower.includes('sqlalchemy')) {
+                showVoteError("Server is temporarily busy. Please try again.");
             } else {
                 showVoteError("Vote could not be registered. Please try again.");
             }
@@ -559,7 +569,7 @@ export default function ComplaintDetails() {
                                     {complaint.downvotes || 0} downvotes
                                 </div>
                                 <span className="ml-auto text-xs text-gray-400">
-                                    Net score: <span className={`font-bold ${(complaint.net_votes || 0) > 0 ? 'text-green-600' : (complaint.net_votes || 0) < 0 ? 'text-red-500' : 'text-gray-500'}`}>{complaint.net_votes || 0}</span>
+                                    Net score: <span className={`font-bold ${(complaint.vote_count ?? complaint.net_votes ?? 0) > 0 ? 'text-green-600' : (complaint.vote_count ?? complaint.net_votes ?? 0) < 0 ? 'text-red-500' : 'text-gray-500'}`}>{complaint.vote_count ?? complaint.net_votes ?? 0}</span>
                                 </span>
                             </div>
                         )}
@@ -602,7 +612,7 @@ export default function ComplaintDetails() {
 
                                     {/* Net Score */}
                                     <div className="text-sm text-gray-500 ml-auto font-medium bg-gray-50 px-4 py-2 rounded-lg border border-gray-100">
-                                        Net Score: <span className={`font-bold ${complaint.net_votes > 0 ? 'text-green-600' : complaint.net_votes < 0 ? 'text-red-500' : 'text-gray-900'}`}>{complaint.net_votes || 0}</span>
+                                        Net Score: <span className={`font-bold ${(complaint.vote_count ?? complaint.net_votes ?? 0) > 0 ? 'text-green-600' : (complaint.vote_count ?? complaint.net_votes ?? 0) < 0 ? 'text-red-500' : 'text-gray-900'}`}>{complaint.vote_count ?? complaint.net_votes ?? 0}</span>
                                     </div>
                                 </div>
                             )}
