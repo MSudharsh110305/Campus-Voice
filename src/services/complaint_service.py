@@ -276,6 +276,17 @@ class ComplaintService:
         dept_row = dept_result.first()
         target_department_id = dept_row[0] if dept_row else student.department_id  # Fallback to student's department
 
+        # Flag cross-department complaints (student filing against a different dept)
+        is_cross_department = (
+            target_department_id is not None
+            and student.department_id is not None
+            and target_department_id != student.department_id
+        )
+        if is_cross_department:
+            logger.info(
+                f"Cross-department complaint: student dept={student.department_id} → target dept={target_department_id}"
+            )
+
         # Calculate initial priority score
         priority = categorization.get("priority", "Medium")
         priority_score = PRIORITY_SCORES.get(priority, 50.0)
@@ -328,6 +339,7 @@ class ComplaintService:
             is_marked_as_spam=is_spam_complaint,
             spam_reason=spam_complaint_reason if is_spam_complaint else None,
             complaint_department_id=target_department_id,
+            is_cross_department=is_cross_department,
             # ✅ NEW: Binary image fields
             image_data=image_bytes,
             image_mimetype=image_mimetype,

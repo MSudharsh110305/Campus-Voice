@@ -274,7 +274,7 @@ export default function ComplaintDetails() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-gray-50">
+            <div className="min-h-screen bg-srec-background">
                 <TopNav />
                 <div className="max-w-3xl mx-auto p-6 pt-10">
                     <Skeleton className="h-64 rounded-xl mb-6" />
@@ -290,7 +290,7 @@ export default function ComplaintDetails() {
         const isRateLimitError = error && error.toLowerCase().includes('rate limit');
 
         return (
-            <div className="min-h-screen bg-gray-50">
+            <div className="min-h-screen bg-srec-background">
                 <TopNav />
                 <div className="max-w-3xl mx-auto p-6 pt-20 text-center">
                     {isRateLimitError ? (
@@ -375,7 +375,7 @@ export default function ComplaintDetails() {
             <div className="animate-fadeIn max-w-3xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
                 <button
                     onClick={() => navigate(-1)}
-                    className="mb-4 flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-srec-primary transition-colors"
+                    className="mb-4 flex items-center gap-1.5 text-sm font-medium text-srec-textMuted hover:text-srec-primary transition-colors"
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                     Back
@@ -391,7 +391,7 @@ export default function ComplaintDetails() {
                     )}
                 </div>
 
-                <Card className="overflow-hidden shadow-neu-flat">
+                <Card className="overflow-hidden shadow-card">
                     {complaint?.has_image && (
                         <div className="relative bg-gray-100">
                             {imageLoading ? (

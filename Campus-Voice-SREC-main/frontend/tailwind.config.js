@@ -9,23 +9,35 @@ export default {
     extend: {
       colors: {
         srec: {
+          // Core greens
           primary: "#14532D",
           primaryHover: "#166534",
           primaryLight: "#22C55E",
+          primarySoft: "#DCFCE7",
+          primaryMuted: "#86EFAC",
 
-          gold: "#D4AF37",
-          goldLight: "#FACC15",
+          // Gold accents
+          gold: "#C8A135",
+          goldLight: "#FDE68A",
 
-          background: "#F8FAF8",
+          // Backgrounds — subtle green-tinted whites
+          background: "#F7F9F7",
+          backgroundAlt: "#F0F4F0",
           card: "#FFFFFF",
+          cardHover: "#FCFDFB",
 
-          textPrimary: "#111827",
-          textSecondary: "#6B7280",
+          // Text hierarchy
+          textPrimary: "#0F1A0F",
+          textSecondary: "#4B5E4B",
+          textMuted: "#8A9B8A",
 
-          border: "#E5E7EB",
+          // Borders — green-tinted grays
+          border: "#E2E8E2",
+          borderLight: "#EFF2EF",
+          borderHover: "#C5D0C5",
 
           danger: "#EF4444",
-          warning: "#FACC15",
+          warning: "#F59E0B",
         },
         brand: {
           light: '#6ee7b7', // Soft Emerald 300
@@ -75,12 +87,18 @@ export default {
         },
       },
       boxShadow: {
-        'soft': '0 4px 20px -2px rgba(16, 185, 129, 0.05)',
+        // Refined layered shadows
+        'soft': '0 1px 3px rgba(20,83,45,0.04), 0 1px 2px rgba(20,83,45,0.02)',
+        'card': '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)',
+        'card-hover': '0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.03)',
+        'elevated': '0 8px 24px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04)',
+        'glow-green': '0 0 20px rgba(34,197,94,0.15)',
+        'inner-soft': 'inset 0 1px 2px rgba(0,0,0,0.04)',
+        // Neumorphic shadows
         'neu-flat': '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02)',
         'neu-hover': '0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01)',
         'neu-pressed': 'inset 2px 2px 5px #e2e4e7, inset -2px -2px 5px #ffffff',
         'neu-light': '0 1px 2px rgba(0, 0, 0, 0.05)',
-        // Neuromorphic shadows for premium feel
         'neu-inset': 'inset 3px 3px 6px #d1d5db, inset -3px -3px 6px #ffffff',
         'neu-raised': '6px 6px 12px #d1d5db, -6px -6px 12px #ffffff',
         'neu-soft': '4px 4px 8px #d1d5db, -4px -4px 8px #ffffff',
@@ -91,6 +109,25 @@ export default {
         // Vote button glow
         'vote-glow': '0 0 12px rgba(16, 185, 129, 0.4)',
         'vote-glow-down': '0 0 12px rgba(244, 63, 94, 0.4)',
+      },
+      keyframes: {
+        'slide-up': {
+          '0%': { transform: 'translateY(8px)', opacity: '0' },
+          '100%': { transform: 'translateY(0)', opacity: '1' },
+        },
+        'scale-in': {
+          '0%': { transform: 'scale(0.95)', opacity: '0' },
+          '100%': { transform: 'scale(1)', opacity: '1' },
+        },
+        'fade-in': {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+      },
+      animation: {
+        'slide-up': 'slide-up 0.2s ease-out forwards',
+        'scale-in': 'scale-in 0.15s ease-out forwards',
+        'fade-in': 'fade-in 0.2s ease-out forwards',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],

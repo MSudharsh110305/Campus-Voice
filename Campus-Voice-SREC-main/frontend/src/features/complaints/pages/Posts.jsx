@@ -137,7 +137,7 @@ export default function Posts() {
     }
   };
 
-  const inputClass = "w-full rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary transition-all";
+  const inputClass = "w-full rounded-xl border border-srec-border bg-srec-backgroundAlt px-4 py-3 text-sm text-srec-textPrimary placeholder:text-srec-textMuted focus:bg-white focus:outline-none focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary transition-all resize-none";
 
   // Success screen
   if (submitted && apiResponse) {
@@ -250,15 +250,15 @@ export default function Posts() {
 
       <div className="animate-fadeIn max-w-3xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-xl font-bold text-gray-900 tracking-tight">Posts</h1>
+          <h1 className="text-xl font-bold text-srec-textPrimary tracking-tight">Posts</h1>
 
           {/* Pill tab switcher */}
-          <div className="flex bg-gray-100 rounded-full p-1">
+          <div className="flex bg-srec-backgroundAlt rounded-full p-1 border border-srec-borderLight">
             <button
               onClick={() => setActiveTab('create')}
               className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${activeTab === 'create'
-                ? 'bg-white shadow-sm text-srec-primary font-semibold'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-white shadow-card text-srec-primary font-semibold'
+                : 'text-srec-textMuted hover:text-srec-textSecondary'
                 }`}
             >
               Create
@@ -266,8 +266,8 @@ export default function Posts() {
             <button
               onClick={() => setActiveTab('mine')}
               className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${activeTab === 'mine'
-                ? 'bg-white shadow-sm text-srec-primary font-semibold'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-white shadow-card text-srec-primary font-semibold'
+                : 'text-srec-textMuted hover:text-srec-textSecondary'
                 }`}
             >
               My Posts
@@ -316,7 +316,7 @@ export default function Posts() {
 
               <div>
                 <div className="flex gap-3">
-                  <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${formData.visibility === 'Public' ? 'border-srec-primary bg-srec-primary/5 text-srec-primary shadow-sm' : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-600'}`}>
+                  <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${formData.visibility === 'Public' ? 'border-srec-primary bg-srec-primarySoft text-srec-primary shadow-card' : 'border-srec-border bg-white hover:bg-srec-backgroundAlt text-srec-textSecondary'}`}>
                     <input
                       type="radio"
                       name="visibility"
@@ -327,7 +327,7 @@ export default function Posts() {
                     />
                     <span className="font-semibold text-sm">Public</span>
                   </label>
-                  <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${formData.visibility === 'Private' ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-sm' : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-600'}`}>
+                  <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${formData.visibility === 'Private' ? 'border-amber-500 bg-amber-50 text-amber-700 shadow-card' : 'border-srec-border bg-white hover:bg-srec-backgroundAlt text-srec-textSecondary'}`}>
                     <input
                       type="radio"
                       name="visibility"
@@ -343,9 +343,9 @@ export default function Posts() {
 
               <div>
                 {!imagePreview ? (
-                  <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
-                    <Upload className="w-7 h-7 mb-1.5 text-gray-400" />
-                    <p className="text-xs text-gray-500 font-medium">Click to upload photo (optional, max 5MB)</p>
+                  <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-srec-borderHover rounded-xl cursor-pointer bg-srec-backgroundAlt hover:bg-srec-primarySoft hover:border-srec-primaryMuted transition-colors duration-200">
+                    <Upload className="w-7 h-7 mb-1.5 text-srec-textMuted" />
+                    <p className="text-xs text-srec-textMuted font-medium">Click to upload photo (optional, max 5MB)</p>
                     <input type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
                   </label>
                 ) : (
@@ -380,12 +380,12 @@ export default function Posts() {
         {activeTab === 'mine' && (
           <div className="space-y-3">
             {(!Array.isArray(myPosts) || myPosts.length === 0) ? (
-              <div className="text-center py-16 bg-white rounded-2xl border border-gray-100 shadow-sm">
-                <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-gray-50 flex items-center justify-center">
-                  <Inbox size={26} className="text-gray-400" />
+              <div className="text-center py-16 bg-white rounded-2xl border border-srec-border shadow-card">
+                <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-srec-backgroundAlt flex items-center justify-center">
+                  <Inbox size={26} className="text-srec-textMuted" />
                 </div>
-                <p className="text-gray-700 text-base font-semibold">No posts yet</p>
-                <p className="text-gray-400 text-sm mt-1 max-w-xs mx-auto">
+                <p className="text-srec-textPrimary text-base font-semibold">No posts yet</p>
+                <p className="text-srec-textMuted text-sm mt-1 max-w-xs mx-auto">
                   Your submitted complaints will appear here
                 </p>
                 <button

@@ -23,10 +23,10 @@ body {
 }
 
 /* Thin scrollbar for webkit browsers */
-::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+::-webkit-scrollbar-thumb { background: #C5D0C5; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #8A9B8A; }
 
 /* Success Animation Styles */
 @keyframes drawCircle {
@@ -80,7 +80,14 @@ body {
 
 
 body {
-  background-color: #F8FAF8;
+  background-color: #F7F9F7;
+}
+
+/* Glass morphism utility */
+.glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 @keyframes pageFadeIn {

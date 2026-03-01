@@ -2,7 +2,7 @@ import React from 'react';
 
 export function Card({ children, className = '' }) {
   return (
-    <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm hover:-translate-y-[1px] transition-all duration-300 ${className}`}>
+    <div className={`bg-white rounded-2xl border border-srec-border shadow-card hover:shadow-card-hover hover:-translate-y-[1px] transition-all duration-300 ${className}`}>
       {children}
     </div>
   );
@@ -12,7 +12,7 @@ export function Card({ children, className = '' }) {
 export { default as Button } from './UI/Button';
 
 export function Skeleton({ className = '' }) {
-  return <div className={`animate-pulse bg-gray-100 rounded-xl ${className}`} />;
+  return <div className={`animate-pulse bg-srec-backgroundAlt rounded-xl ${className}`} />;
 }
 
 export function Badge({ children, type = 'default', variant = 'status' }) {
@@ -81,6 +81,7 @@ export function RaiseButton({ children, className = '', ...props }) {
         shadow-raise-btn
         border-t border-raise-light/50
         transition-all duration-200
+        will-change-transform
         hover:shadow-raise-btn-hover hover:-translate-y-0.5
         active:shadow-raise-pressed active:translate-y-0 active:scale-[0.98]
         focus:outline-none focus:ring-2 focus:ring-raise/50 focus:ring-offset-2

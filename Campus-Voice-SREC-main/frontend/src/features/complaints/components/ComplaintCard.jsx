@@ -173,10 +173,10 @@ export default function ComplaintCard({
 
   return (
     <Link to={`/complaint/${id}`} className="block group">
-      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm group-hover:shadow-md group-hover:-translate-y-0.5 transition-all duration-200">
+      <div className="bg-white rounded-xl border border-srec-border overflow-hidden shadow-card group-hover:shadow-card-hover group-hover:-translate-y-0.5 transition-all duration-300">
 
         {/* Priority gradient accent bar */}
-        <div className={`h-[3px] w-full bg-gradient-to-r ${pc.bar}`} />
+        <div className={`h-[2px] w-full bg-gradient-to-r opacity-80 ${pc.bar}`} />
 
         <div className="p-3.5">
           {/* Row 1: category tag + status badge + timestamp */}
@@ -195,7 +195,7 @@ export default function ComplaintCard({
                 {pc.label}
               </span>
             )}
-            <span className="text-[10px] text-gray-300 ml-auto flex items-center gap-0.5 flex-shrink-0">
+            <span className="text-[10px] text-srec-textMuted ml-auto flex items-center gap-0.5 flex-shrink-0">
               <Clock size={9} />
               {timeAgo(timestamp)}
             </span>
@@ -205,15 +205,15 @@ export default function ComplaintCard({
           <div className="flex gap-2.5 items-start">
             {/* Text content */}
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-gray-700 leading-snug line-clamp-2">
+              <p className="text-sm text-srec-textSecondary leading-snug line-clamp-2">
                 {bodyText}
               </p>
 
               {/* Assigned authority — visible to all */}
               {assigned_authority_name && (
                 <div className="flex items-center gap-1 mt-1.5">
-                  <ShieldCheck size={10} className="text-emerald-600 flex-shrink-0" />
-                  <span className="text-[10px] text-emerald-700 font-medium truncate">
+                  <ShieldCheck size={10} className="text-srec-primary flex-shrink-0" />
+                  <span className="text-[10px] text-srec-primary font-medium truncate">
                     {assigned_authority_name}
                   </span>
                 </div>
@@ -222,21 +222,21 @@ export default function ComplaintCard({
               {/* Department code (if present and no authority shown) */}
               {department_code && !assigned_authority_name && !isOwner && (
                 <div className="flex items-center gap-1 mt-1">
-                  <Building2 size={10} className="text-gray-300 flex-shrink-0" />
-                  <span className="text-[10px] text-gray-400">{department_code}</span>
+                  <Building2 size={10} className="text-srec-textMuted flex-shrink-0" />
+                  <span className="text-[10px] text-srec-textMuted">{department_code}</span>
                 </div>
               )}
             </div>
 
             {/* Thumbnail */}
             {has_image && (
-              <div className="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 ring-1 ring-gray-200">
+              <div className="w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-srec-backgroundAlt ring-1 ring-srec-border">
                 {imageLoading ? (
                   <Skeleton className="w-full h-full" />
                 ) : imageUrl ? (
                   <img src={imageUrl} alt="" className="w-full h-full object-cover" />
                 ) : (
-                  <div className="flex items-center justify-center h-full text-gray-200">
+                  <div className="flex items-center justify-center h-full text-srec-textMuted">
                     <FileX size={16} strokeWidth={1.5} />
                   </div>
                 )}
@@ -245,16 +245,16 @@ export default function ComplaintCard({
           </div>
 
           {/* Row 3: vote buttons (always full-width below content) */}
-          <div className="flex items-center mt-3 pt-2.5 border-t border-gray-50">
+          <div className="flex items-center mt-3 pt-2.5 border-t border-srec-borderLight">
             {!isOwner ? (
               <div className="flex items-center gap-1.5 ml-auto" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
                 <button
                   onClick={e => handleVote(e, VOTE_TYPES.UPVOTE)}
                   disabled={isVoting}
-                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all duration-150 active:scale-95 ${
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all duration-150 active:scale-95 will-change-transform ${
                     userVote === VOTE_TYPES.UPVOTE
-                      ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-200'
-                      : 'bg-gray-50 text-gray-400 border border-gray-200 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50'
+                      ? 'bg-srec-primary text-white shadow-sm ring-1 ring-srec-primary/20'
+                      : 'bg-srec-backgroundAlt text-srec-textMuted border border-srec-border hover:border-srec-primaryMuted hover:text-srec-primary hover:bg-srec-primarySoft'
                   }`}
                 >
                   <ThumbsUp size={11} className={userVote === VOTE_TYPES.UPVOTE ? 'fill-current' : ''} />
@@ -263,10 +263,10 @@ export default function ComplaintCard({
                 <button
                   onClick={e => handleVote(e, VOTE_TYPES.DOWNVOTE)}
                   disabled={isVoting}
-                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all duration-150 active:scale-95 ${
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all duration-150 active:scale-95 will-change-transform ${
                     userVote === VOTE_TYPES.DOWNVOTE
-                      ? 'bg-rose-500 text-white shadow-sm shadow-rose-200'
-                      : 'bg-gray-50 text-gray-400 border border-gray-200 hover:border-rose-300 hover:text-rose-600 hover:bg-rose-50'
+                      ? 'bg-rose-500 text-white shadow-sm ring-1 ring-rose-200'
+                      : 'bg-srec-backgroundAlt text-srec-textMuted border border-srec-border hover:border-rose-300 hover:text-rose-600 hover:bg-rose-50'
                   }`}
                 >
                   <ThumbsDown size={11} className={userVote === VOTE_TYPES.DOWNVOTE ? 'fill-current' : ''} />
@@ -274,7 +274,7 @@ export default function ComplaintCard({
                 </button>
               </div>
             ) : (
-              <span className="text-[10px] text-gray-300 ml-auto italic">Your complaint</span>
+              <span className="text-[10px] text-srec-textMuted ml-auto italic">Your complaint</span>
             )}
           </div>
 

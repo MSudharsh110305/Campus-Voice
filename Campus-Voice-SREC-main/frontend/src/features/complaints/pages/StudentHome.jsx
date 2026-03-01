@@ -121,23 +121,24 @@ export default function StudentHome() {
       <div className="animate-fadeIn max-w-3xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
 
         {/* Greeting banner */}
-        <div className="mb-5 rounded-2xl bg-gradient-to-br from-srec-primary via-green-800 to-emerald-700 px-5 py-4 shadow-md shadow-green-900/10 relative overflow-hidden">
-          {/* Decorative ring */}
-          <div className="absolute -top-6 -right-6 w-28 h-28 rounded-full bg-white/5 pointer-events-none" />
-          <div className="absolute -bottom-8 -right-2 w-20 h-20 rounded-full bg-white/5 pointer-events-none" />
-          <p className="text-green-200 text-xs font-medium mb-0.5 uppercase tracking-widest">SREC Campus Voice</p>
+        <div className="mb-5 rounded-2xl bg-gradient-to-br from-srec-primary via-green-800 to-emerald-700 px-5 py-4 shadow-elevated shadow-green-900/10 relative overflow-hidden">
+          {/* Decorative circles */}
+          <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-white/5 pointer-events-none" />
+          <div className="absolute -bottom-10 -right-3 w-24 h-24 rounded-full bg-white/5 pointer-events-none" />
+          <div className="absolute top-2 left-1/2 w-16 h-16 rounded-full bg-white/[0.03] pointer-events-none" />
+          <p className="text-emerald-300/70 text-[10px] font-semibold mb-1 uppercase tracking-[0.2em]">SREC Campus Voice</p>
           <h2 className="text-xl font-bold text-white tracking-tight">
-            Hello, {firstName} 👋
+            Hello, {firstName}
           </h2>
-          <p className="text-green-300 text-xs mt-1">Here's what's happening on campus today</p>
+          <p className="text-green-300/80 text-xs mt-1">Here's what's happening on campus today</p>
         </div>
 
         {/* Campus Feed heading + filter toggle */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-gray-900 tracking-tight">Campus Feed</h2>
+            <h2 className="text-base font-bold text-srec-textPrimary tracking-tight">Campus Feed</h2>
             {feed.length > 0 && !loading && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-srec-primarySoft text-srec-primary border border-srec-primaryMuted/30">
                 {feed.length}
               </span>
             )}
@@ -157,7 +158,7 @@ export default function StudentHome() {
         </div>
 
         {showFilters && (
-          <Card className="mb-5 p-4 border-srec-primary/10 bg-srec-primary/[0.02] shadow-neu-inset rounded-2xl animate-in fade-in slide-in-from-top-4 duration-300">
+          <Card className="mb-5 p-4 border-srec-borderLight bg-srec-backgroundAlt shadow-inner-soft rounded-2xl animate-slide-up">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
@@ -210,12 +211,12 @@ export default function StudentHome() {
           </RaiseButton>
 
           {!loading && feed.length === 0 ? (
-            <div className="text-center py-14 bg-white rounded-2xl border border-gray-100 shadow-sm">
-              <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-emerald-50 flex items-center justify-center">
-                <Inbox size={24} className="text-emerald-400" />
+            <div className="text-center py-14 bg-white rounded-2xl border border-srec-border shadow-card">
+              <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-srec-primarySoft flex items-center justify-center">
+                <Inbox size={24} className="text-srec-primary" />
               </div>
-              <p className="text-gray-800 text-base font-semibold">No posts yet</p>
-              <p className="text-gray-400 text-sm mt-1 max-w-xs mx-auto">
+              <p className="text-srec-textPrimary text-base font-semibold">No posts yet</p>
+              <p className="text-srec-textMuted text-sm mt-1 max-w-xs mx-auto">
                 Be the first to raise a complaint for your campus
               </p>
             </div>
@@ -245,7 +246,7 @@ export default function StudentHome() {
                   <button
                     onClick={loadMore}
                     disabled={loadingMore}
-                    className="flex items-center gap-2 border border-emerald-200 bg-emerald-50 text-emerald-700 rounded-xl px-6 py-2 text-sm font-semibold hover:bg-emerald-100 hover:border-emerald-300 transition-all duration-200 disabled:opacity-50"
+                    className="flex items-center gap-2 border border-srec-border bg-white text-srec-textSecondary rounded-xl px-6 py-2 text-sm font-semibold hover:bg-srec-primarySoft hover:border-srec-primaryMuted hover:text-srec-primary transition-all duration-200 disabled:opacity-50 shadow-card"
                   >
                     {loadingMore ? 'Loading...' : 'Load More'}
                   </button>

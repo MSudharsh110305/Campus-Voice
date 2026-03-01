@@ -178,6 +178,7 @@ async def get_complaints(
         student_stay_type=student.stay_type,
         student_department_id=student.department_id,
         student_gender=student.gender,
+        student_roll_no=student.roll_no,
         skip=skip,
         limit=limit
     )
@@ -221,13 +222,30 @@ async def get_complaints(
         elif student.gender == "Female" and mens_hostel_id:
             count_conditions.append(Complaint.category_id != mens_hostel_id)
 
-    # ✅ BUG 1 FIX: Inter-department filtering.
-    # General and Disciplinary visible to all students.
-    # Department complaints: only same-dept students.
-    # Hostel complaints: visible to ALL same-gender hostel students (NO dept restriction).
+    # Inter-department filtering (mirrors get_public_feed logic):
+    # 1. Same department, 2. Cross-dept (both sides), 3. Self, 4. General, 5. Disciplinary, 6. Hostel
+    from src.database.models import Student as StudentModel
     inter_dept_conditions = [
-        Complaint.complaint_department_id == student.department_id
+        Complaint.complaint_department_id == student.department_id,
     ]
+
+    # Cross-dept: show to submitter's department too
+    cross_dept_sq = (
+        select(Complaint.id)
+        .join(StudentModel, Complaint.student_roll_no == StudentModel.roll_no)
+        .where(
+            and_(
+                Complaint.is_cross_department == True,
+                StudentModel.department_id == student.department_id
+            )
+        )
+        .scalar_subquery()
+    )
+    inter_dept_conditions.append(Complaint.id.in_(cross_dept_sq))
+
+    # Self-visibility
+    inter_dept_conditions.append(Complaint.student_roll_no == student.roll_no)
+
     if general_id:
         inter_dept_conditions.append(Complaint.category_id == general_id)
     if disciplinary_id:

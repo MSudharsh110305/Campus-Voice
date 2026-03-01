@@ -15,28 +15,28 @@ export function TopNav() {
   const initials = user?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'U';
 
   return (
-    <div className="sticky top-0 z-30 shadow-sm border-b border-gray-100 backdrop-blur-sm bg-white/95">
+    <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-srec-borderLight shadow-soft">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-        <Link to={isAdmin ? '/admin' : '/'} className="flex items-center gap-2 group">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-srec-primaryLight to-srec-primary flex items-center justify-center text-white font-bold shadow-md shadow-srec-primary/20 group-hover:scale-105 transition-transform">
+        <Link to={isAdmin ? '/admin' : '/'} className="flex items-center gap-2.5 group">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-srec-primaryLight to-srec-primary flex items-center justify-center text-white font-bold text-sm shadow-md shadow-srec-primary/15 group-hover:scale-105 transition-transform duration-200">
             CV
           </div>
-          <span className="font-bold text-gray-900 tracking-tight text-lg group-hover:text-srec-primary transition-colors">CampusVoice</span>
+          <span className="font-bold text-srec-textPrimary tracking-tight text-lg group-hover:text-srec-primary transition-colors duration-200">CampusVoice</span>
         </Link>
         <nav className="flex items-center gap-2 text-sm font-medium">
           {isAdmin ? (
-            <Link to="/admin" className={`text-lg font-semibold ${location.pathname === '/admin' ? 'text-srec-primary' : 'text-gray-500 hover:text-gray-900'}`}>Dashboard</Link>
+            <Link to="/admin" className={`text-base font-semibold transition-colors ${location.pathname === '/admin' ? 'text-srec-primary' : 'text-srec-textSecondary hover:text-srec-textPrimary'}`}>Dashboard</Link>
           ) : isStudent ? (
             <>
               {/* Notification Bell */}
               <button
                 onClick={() => navigate('/notifications')}
-                className="relative p-2 rounded-full hover:bg-srec-primary/5 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-srec-primary"
+                className="relative p-2 rounded-full hover:bg-srec-primarySoft transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-srec-primary"
                 aria-label="Notifications"
               >
                 <Bell
                   size={20}
-                  className={unreadCount > 0 ? 'text-srec-primary' : 'text-gray-500'}
+                  className={unreadCount > 0 ? 'text-srec-primary' : 'text-srec-textMuted'}
                 />
                 {unreadCount > 0 && (
                   <span className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center border border-white leading-none">
@@ -48,23 +48,23 @@ export function TopNav() {
               {/* Profile Avatar with dropdown */}
               <div className="relative group">
                 <button
-                  className="w-9 h-9 rounded-full bg-srec-primary text-white text-sm font-bold flex items-center justify-center shadow-sm hover:shadow-md hover:bg-srec-primaryLight transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-srec-primary"
+                  className="w-9 h-9 rounded-full bg-srec-primary text-white text-sm font-bold flex items-center justify-center shadow-card hover:shadow-card-hover hover:bg-srec-primaryHover transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-srec-primary will-change-transform"
                   aria-label="Profile"
                 >
                   {initials}
                 </button>
                 {/* Dropdown */}
-                <div className="absolute right-0 mt-2 w-44 bg-white rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.10)] border border-gray-100 py-1 invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-all duration-150 origin-top-right z-50">
-                  <div className="px-4 py-2.5 border-b border-gray-50">
-                    <p className="text-xs font-semibold text-gray-900 truncate">{user?.name}</p>
-                    <p className="text-[11px] text-gray-400 truncate">{user?.roll_no}</p>
+                <div className="absolute right-0 mt-2 w-48 glass rounded-2xl shadow-elevated border border-srec-borderLight py-1.5 invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-all duration-200 origin-top-right z-50 animate-scale-in">
+                  <div className="px-4 py-2.5 border-b border-srec-borderLight">
+                    <p className="text-xs font-semibold text-srec-textPrimary truncate">{user?.name}</p>
+                    <p className="text-[11px] text-srec-textMuted truncate">{user?.roll_no}</p>
                   </div>
-                  <Link to="/profile" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                  <Link to="/profile" className="flex items-center gap-2 px-4 py-2 text-sm text-srec-textSecondary hover:bg-srec-backgroundAlt hover:text-srec-textPrimary transition-colors">
                     <User size={14} /> Profile
                   </Link>
                   <button
                     onClick={() => { logout(); navigate('/login'); }}
-                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left transition-colors"
                   >
                     <LogOut size={14} /> Sign Out
                   </button>

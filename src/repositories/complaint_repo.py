@@ -37,6 +37,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
         is_marked_as_spam: bool = False,
         spam_reason: Optional[str] = None,
         complaint_department_id: Optional[int] = None,
+        is_cross_department: bool = False,
         # ✅ NEW: Image binary parameters
         image_data: Optional[bytes] = None,
         image_filename: Optional[str] = None,
@@ -89,6 +90,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
             is_marked_as_spam=is_marked_as_spam,
             spam_reason=spam_reason,
             complaint_department_id=complaint_department_id,
+            is_cross_department=is_cross_department,
             submitted_at=current_time,
             updated_at=current_time,
             # ✅ NEW: Image fields
@@ -292,6 +294,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
         student_stay_type: str,
         student_department_id: int,
         student_gender: Optional[str] = None,
+        student_roll_no: Optional[str] = None,
         skip: int = 0,
         limit: int = 100
     ) -> List[Complaint]:
@@ -382,19 +385,39 @@ class ComplaintRepository(BaseRepository[Complaint]):
                 conditions.append(Complaint.category_id != mens_hostel_id)
             # For "Other" gender, show both hostel categories
 
-        # Bug 1 fix: Hostel complaints must be visible to ALL same-gender hostel
-        # students regardless of department. The department filter must NOT apply to
-        # hostel-category complaints.
-        #
-        # Students can see:
-        # 1. Men's Hostel complaints → any male hostel student (no dept restriction)
-        # 2. Women's Hostel complaints → any female hostel student (no dept restriction)
-        # 3. Complaints from their own department (Department category)
-        # 4. General category complaints (visible to all)
-        # 5. Disciplinary Committee complaints (visible to all)
+        # Visibility rules for department filtering:
+        # 1. Own department: complaint_department_id matches viewer's dept
+        # 2. Cross-dept: submitter's dept matches viewer's dept (both sides see it)
+        # 3. Self-visibility: submitter always sees their own public complaint
+        # 4. General: visible to all
+        # 5. Disciplinary: visible to all
+        # 6. Hostel: visible to same-gender hostel students (handled below)
         inter_dept_conditions = [
-            Complaint.complaint_department_id == student_department_id
+            Complaint.complaint_department_id == student_department_id,
         ]
+
+        # Cross-department visibility: a complaint about dept B filed by a dept A
+        # student should be visible to BOTH dept A (submitter's dept) AND dept B
+        # (target dept). The target-dept side is handled by the condition above.
+        # This subquery handles the submitter's dept side.
+        cross_dept_submitter_sq = (
+            select(Complaint.id)
+            .join(Student, Complaint.student_roll_no == Student.roll_no)
+            .where(
+                and_(
+                    Complaint.is_cross_department == True,
+                    Student.department_id == student_department_id
+                )
+            )
+            .scalar_subquery()
+        )
+        inter_dept_conditions.append(Complaint.id.in_(cross_dept_submitter_sq))
+
+        # Self-visibility: a student always sees their own public complaints
+        # regardless of which department the complaint targets.
+        if student_roll_no:
+            inter_dept_conditions.append(Complaint.student_roll_no == student_roll_no)
+
         if general_id:
             inter_dept_conditions.append(Complaint.category_id == general_id)
         if disciplinary_id:
