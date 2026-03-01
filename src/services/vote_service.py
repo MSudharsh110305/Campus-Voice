@@ -78,11 +78,32 @@ class VoteService:
         )
         
         if existing_vote:
-            # Update existing vote (change from upvote to downvote or vice versa)
             old_type = existing_vote.vote_type
 
             if old_type == vote_type:
-                raise ValueError(f"You have already {vote_type.lower()}d this complaint")
+                # Toggle off: same vote type clicked again → remove the vote
+                logger.info(f"Toggle-off vote for {student_roll_no}: removing {vote_type}")
+                if old_type == "Upvote":
+                    await self.complaint_repo.decrement_votes(complaint_id, upvote=True)
+                else:
+                    await self.complaint_repo.decrement_votes(complaint_id, upvote=False)
+                await self.vote_repo.delete_vote(complaint_id, student_roll_no)
+                try:
+                    await self.recalculate_priority(complaint_id)
+                except Exception as e:
+                    logger.warning(f"Priority recalc failed after toggle-off (vote still removed): {e}")
+                complaint = await self.complaint_repo.get(complaint_id)
+                return {
+                    "complaint_id": str(complaint_id),
+                    "vote_type": None,
+                    "action": "removed",
+                    "upvotes": complaint.upvotes,
+                    "downvotes": complaint.downvotes,
+                    "vote_score": complaint.upvotes - complaint.downvotes,
+                    "priority_score": complaint.priority_score,
+                    "priority": complaint.priority,
+                    "message": "Vote removed successfully"
+                }
 
             logger.info(f"Updating vote for {student_roll_no}: {old_type} → {vote_type}")
 
@@ -115,18 +136,21 @@ class VoteService:
                 student_roll_no=student_roll_no,
                 vote_type=vote_type
             )
-            
+
             # Increment vote count
             if vote_type == "Upvote":
                 await self.complaint_repo.increment_votes(complaint_id, upvote=True)
             else:
                 await self.complaint_repo.increment_votes(complaint_id, upvote=False)
-            
+
             action = "added"
-        
-        # Recalculate priority
-        await self.recalculate_priority(complaint_id)
-        
+
+        # Recalculate priority — non-fatal: vote is already committed
+        try:
+            await self.recalculate_priority(complaint_id)
+        except Exception as e:
+            logger.warning(f"Priority recalc failed (vote still saved): {e}")
+
         # Get updated complaint
         complaint = await self.complaint_repo.get(complaint_id)
         
@@ -179,10 +203,13 @@ class VoteService:
         
         # Delete vote
         await self.vote_repo.delete_vote(complaint_id, student_roll_no)
-        
-        # Recalculate priority
-        await self.recalculate_priority(complaint_id)
-        
+
+        # Recalculate priority — non-fatal: vote is already removed
+        try:
+            await self.recalculate_priority(complaint_id)
+        except Exception as e:
+            logger.warning(f"Priority recalc failed after remove_vote (vote still removed): {e}")
+
         # Get updated complaint
         complaint = await self.complaint_repo.get(complaint_id)
         

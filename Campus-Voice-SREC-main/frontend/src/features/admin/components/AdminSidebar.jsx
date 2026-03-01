@@ -4,11 +4,12 @@ import {
   LayoutDashboard,
   FileText,
   Users,
+  GraduationCap,
   Building2,
   TriangleAlert,
   UserCog,
   LogOut,
-  ShieldCheck
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from '../../../context/AuthContext';
 
@@ -21,6 +22,7 @@ export default function AdminSidebar({ className = "" }) {
     { name: "Dashboard",      path: "/admin",              icon: LayoutDashboard },
     { name: "All Complaints", path: "/admin/complaints",   icon: FileText },
     { name: "Authorities",    path: "/admin/authorities",  icon: Users },
+    { name: "Students",       path: "/admin/students",     icon: GraduationCap },
     { name: "Escalations",    path: "/admin/escalations",  icon: TriangleAlert },
     { name: "Departments",    path: "/admin/departments",  icon: Building2 },
     { name: "Profile",        path: "/admin/profile",      icon: UserCog }

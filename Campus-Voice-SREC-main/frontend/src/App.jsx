@@ -16,6 +16,7 @@ import AdminDepartments from './features/admin/pages/AdminDepartments';
 import AdminDepartmentsList from './features/admin/pages/AdminDepartmentsList';
 import AdminDepartmentDetail from './features/admin/pages/AdminDepartmentDetail';
 import AdminNotifications from './features/admin/pages/AdminNotifications';
+import AdminStudents from './features/admin/pages/AdminStudents';
 
 import AuthorityDashboard from './features/admin/pages/AuthorityDashboard';
 import AuthorityNotifications from './features/admin/pages/AuthorityNotifications';
@@ -28,6 +29,8 @@ import Profile from './features/profile/pages/Profile';
 import Posts from './features/complaints/pages/Posts';
 import Notifications from './features/complaints/pages/Notifications';
 import NoticeFeed from './features/complaints/pages/NoticeFeed';
+import Changelog from './features/complaints/pages/Changelog';
+import AdminAnalytics from './features/admin/pages/AdminAnalytics';
 
 function ProtectedRoute({ children, allow, redirectTo = "/login" }) {
   const { user } = useAuth();
@@ -119,6 +122,14 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/changelog"
+          element={
+            <ProtectedRoute allow={['Student', 'Admin']}>
+              <Changelog />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Admin Routes - Nested under AdminLayout */}
         <Route
@@ -137,6 +148,7 @@ export default function App() {
           <Route path="departments/list" element={<AdminDepartmentsList />} />
           <Route path="departments/:deptCode" element={<AdminDepartmentDetail />} />
           <Route path="notifications" element={<AdminNotifications />} />
+          <Route path="students" element={<AdminStudents />} />
           <Route path="profile" element={<AuthorityProfile noLayout={true} />} />
         </Route>
 

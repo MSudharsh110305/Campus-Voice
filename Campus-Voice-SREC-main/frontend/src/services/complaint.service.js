@@ -126,6 +126,29 @@ const appealSpam = async (complaintId, reason) => {
     return await api(`/complaints/${complaintId}/appeal-spam${params}`, { method: 'POST' });
 };
 
+const checkDuplicate = async (text, categoryHint = null) => {
+    return await api('/complaints/check-duplicate', {
+        method: 'POST',
+        body: JSON.stringify({ text, category_hint: categoryHint }),
+    });
+};
+
+const rateComplaint = async (complaintId, rating, feedback = null) => {
+    return await api(`/complaints/${complaintId}/rate`, {
+        method: 'POST',
+        body: JSON.stringify({ rating, feedback }),
+    });
+};
+
+const getChangelog = async (skip = 0, limit = 20) => {
+    const params = new URLSearchParams({ skip, limit });
+    return await api(`/complaints/changelog?${params}`);
+};
+
+const getPublicAnalytics = async () => {
+    return await api('/complaints/analytics/summary');
+};
+
 const complaintService = {
     submitComplaint,
     getMyComplaints,
@@ -143,6 +166,10 @@ const complaintService = {
     flagSpam,
     unflagSpam,
     appealSpam,
+    checkDuplicate,
+    rateComplaint,
+    getChangelog,
+    getPublicAnalytics,
 };
 
 export default complaintService;

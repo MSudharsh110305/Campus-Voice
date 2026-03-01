@@ -7,7 +7,7 @@ import ComplaintCard from '../components/ComplaintCard';
 import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import studentService from '../../../services/student.service';
-import { Upload, X, Lock, FileX, Inbox } from 'lucide-react';
+import { Upload, X, FileX, Inbox, AlertTriangle, ThumbsUp } from 'lucide-react';
 import { VISIBILITY, COMPLAINT_CATEGORIES } from '../../../utils/constants';
 
 export default function Posts() {
@@ -25,6 +25,11 @@ export default function Posts() {
   const [apiResponse, setApiResponse] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+
+  // Duplicate-check modal state
+  const [dupModalOpen, setDupModalOpen] = useState(false);
+  const [dupCandidates, setDupCandidates] = useState([]);
+  const [isDupChecking, setIsDupChecking] = useState(false);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -76,6 +81,7 @@ export default function Posts() {
     fetchMyComplaints();
   }, [activeTab]);
 
+  // Called when user clicks "Submit" — first checks for duplicates
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -96,12 +102,35 @@ export default function Posts() {
       return;
     }
 
+    // Duplicate check before submitting
+    try {
+      setIsDupChecking(true);
+      const dupResult = await complaintService.checkDuplicate(formData.original_text);
+      if (dupResult?.is_likely_duplicate && dupResult?.duplicates?.length > 0) {
+        setDupCandidates(dupResult.duplicates);
+        setDupModalOpen(true);
+        return; // stop — let user decide in modal
+      }
+    } catch (_) {
+      // Silently ignore — don't block submission if check fails
+    } finally {
+      setIsDupChecking(false);
+    }
+
+    await doSubmit();
+  };
+
+  // The actual API submission (called directly or after user confirms from modal)
+  const doSubmit = async () => {
     setIsSubmitting(true);
+    setDupModalOpen(false);
+    setFormError('');
 
     try {
       const fd = new FormData();
       fd.append('original_text', formData.original_text);
       fd.append('visibility', formData.visibility);
+      fd.append('is_anonymous', 'true');
       if (formData.image) {
         fd.append('image', formData.image);
       }
@@ -128,6 +157,7 @@ export default function Posts() {
         visibility: 'Public',
       });
       setImagePreview(null);
+      setDupCandidates([]);
 
     } catch (error) {
       console.error(error);
@@ -277,19 +307,6 @@ export default function Posts() {
 
         {activeTab === 'create' && (
           <Card className="p-5 sm:p-6 shadow-sm">
-            {/* Privacy Reassurance Banner */}
-            <div className="flex items-center gap-3 p-4 mb-5 rounded-xl bg-amber-50 border border-amber-100">
-              <div className="flex-shrink-0 w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
-                <Lock size={16} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-amber-800">Anonymous Posting</h4>
-                <p className="text-xs text-amber-700/80 mt-0.5">
-                  Your identity is hidden from other students. Only authorities can see your details.
-                </p>
-              </div>
-            </div>
-
             {formError && (
               <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
                 {formError}
@@ -367,12 +384,61 @@ export default function Posts() {
 
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isDupChecking}
                 className="w-full py-3 bg-srec-primary text-white font-semibold rounded-xl hover:bg-srec-primaryHover transition-all duration-200 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? 'Submitting...' : 'Submit Grievance'}
+                {isDupChecking ? 'Checking for duplicates…' : isSubmitting ? 'Submitting...' : 'Submit Grievance'}
               </button>
             </form>
+
+            {/* Duplicate warning modal */}
+            {dupModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-y-auto">
+                  <div className="p-5 border-b border-srec-borderLight flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                      <AlertTriangle size={18} className="text-amber-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-srec-textPrimary text-sm">Similar complaints found</h3>
+                      <p className="text-xs text-srec-textMuted mt-0.5">Consider upvoting instead of re-submitting</p>
+                    </div>
+                  </div>
+                  <div className="p-5 space-y-3">
+                    {dupCandidates.map((c) => (
+                      <div key={c.id} className="p-3 bg-srec-backgroundAlt rounded-xl border border-srec-borderLight">
+                        <p className="text-xs text-srec-textSecondary line-clamp-3">{c.rephrased_text}</p>
+                        <div className="flex items-center gap-3 mt-2">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${c.status === 'Resolved' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {c.status}
+                          </span>
+                          <span className="text-xs text-srec-textMuted flex items-center gap-1">
+                            <ThumbsUp size={11} /> {c.upvotes}
+                          </span>
+                          <span className="text-xs text-srec-textMuted ml-auto">
+                            {Math.round(c.similarity_score * 100)}% match
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="p-5 border-t border-srec-borderLight flex gap-3">
+                    <button
+                      onClick={() => setDupModalOpen(false)}
+                      className="flex-1 py-2.5 rounded-xl border border-srec-border text-srec-textSecondary text-sm font-medium hover:bg-srec-backgroundAlt transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={doSubmit}
+                      className="flex-1 py-2.5 rounded-xl bg-srec-primary text-white text-sm font-semibold hover:bg-srec-primaryHover transition-colors"
+                    >
+                      Submit anyway
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </Card>
         )}
 

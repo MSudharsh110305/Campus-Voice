@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import ExportModal from '../../../components/ExportModal';
 import adminService from '../../../services/admin.service';
+import complaintService from '../../../services/complaint.service';
 import { Card, Select, Skeleton, EliteButton, STATUS_COLORS } from '../../../components/UI';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend
+  ResponsiveContainer, PieChart, Pie, Cell, Legend, BarChart, Bar
 } from 'recharts';
-import { AlertTriangle, CheckCircle, Users, FileText, Activity, ArrowUpRight, Download } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Users, FileText, Activity, ArrowUpRight, Download, Star, TrendingUp } from 'lucide-react';
 import AdminComplaintCard from '../components/AdminComplaintCard';
 
 // Simple stats card for admin dashboard
@@ -51,6 +52,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState(null);
   const [analytics, setAnalytics] = useState(null);
+  const [publicAnalytics, setPublicAnalytics] = useState(null);
   const [error, setError] = useState(null);
   const [showExport, setShowExport] = useState(false);
 
@@ -58,6 +60,7 @@ export default function AdminDashboard() {
     if (!user || user.role !== 'Admin') return;
     loadOverview();
     loadAnalytics();
+    loadPublicAnalytics();
   }, [user]);
 
   const loadOverview = async () => {
@@ -79,6 +82,15 @@ export default function AdminDashboard() {
       setAnalytics(data);
     } catch (err) {
       console.error('Failed to load analytics:', err);
+    }
+  };
+
+  const loadPublicAnalytics = async () => {
+    try {
+      const data = await complaintService.getPublicAnalytics();
+      setPublicAnalytics(data);
+    } catch (err) {
+      console.error('Failed to load public analytics:', err);
     }
   };
 
@@ -132,6 +144,11 @@ export default function AdminDashboard() {
 
   // Build status bar data
   const statusData = Object.entries(byStatus).map(([name, value]) => ({ name, value }));
+
+  // Public analytics extras
+  const deptData = Object.entries(publicAnalytics?.top_departments || {}).map(([name, value]) => ({ name, value }));
+  const satisfactionAvg = publicAnalytics?.satisfaction_avg;
+  const avgResolutionH = publicAnalytics?.avg_resolution_hours ?? analytics?.avg_resolution_time_hours;
 
   const exportSections = [
     {
@@ -354,13 +371,41 @@ export default function AdminDashboard() {
           </div>
           <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
             <p className="text-2xl font-bold text-blue-600">
-              {analytics?.avg_resolution_time_hours != null
-                ? `${Math.round(analytics.avg_resolution_time_hours)}h`
-                : '—'}
+              {avgResolutionH != null ? `${Math.round(avgResolutionH)}h` : '—'}
             </p>
             <p className="text-xs text-gray-500 mt-1 font-medium">Avg Resolution Time</p>
           </div>
+          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
+            <p className="text-2xl font-bold text-amber-600 flex items-center justify-center gap-1">
+              <Star size={18} className="fill-amber-400 text-amber-400" />
+              {satisfactionAvg != null ? satisfactionAvg : '—'}
+            </p>
+            <p className="text-xs text-gray-500 mt-1 font-medium">Satisfaction Avg / 5</p>
+          </div>
         </div>
+
+        {/* Top Departments chart */}
+        {deptData.length > 0 && (
+          <div className="mt-4 bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
+            <h4 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+              <TrendingUp size={15} className="text-srec-primary" />
+              Top Departments by Complaint Volume
+            </h4>
+            <ResponsiveContainer width="100%" height={Math.min(deptData.length * 36, 240)}>
+              <BarChart data={deptData} layout="vertical" margin={{ top: 0, right: 24, bottom: 0, left: 80 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11, fill: '#9CA3AF' }} allowDecimals={false} axisLine={false} tickLine={false} />
+                <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: '#6B7280' }} width={80} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                <Bar dataKey="value" name="Complaints" fill="#14532D" radius={[0, 4, 4, 0]}>
+                  {deptData.map((_, i) => (
+                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
 
         {/* Priority breakdown */}
         {Object.keys(byPriority).length > 0 && (

@@ -626,6 +626,64 @@ class CommentListResponse(BaseModel):
     }
 
 
+class SatisfactionRatingRequest(BaseModel):
+    """Request body for POST /complaints/{id}/rate"""
+    rating: int = Field(..., ge=1, le=5, description="Rating 1 (worst) to 5 (best)")
+    feedback: Optional[str] = Field(None, max_length=1000, description="Optional free-text feedback")
+
+
+class SatisfactionRatingResponse(BaseModel):
+    """Response for satisfaction rating submission"""
+    complaint_id: UUID
+    rating: int
+    feedback: Optional[str] = None
+    message: str
+
+
+class DuplicateCheckRequest(BaseModel):
+    """Request body for POST /complaints/check-duplicate"""
+    text: str = Field(..., min_length=10, max_length=2000)
+    category_hint: Optional[str] = None
+
+
+class DuplicateCandidate(BaseModel):
+    """A potential duplicate complaint"""
+    id: UUID
+    rephrased_text: str
+    status: str
+    upvotes: int
+    submitted_at: datetime
+    similarity_score: float = Field(..., ge=0.0, le=1.0)
+
+
+class DuplicateCheckResponse(BaseModel):
+    """Response for duplicate check"""
+    is_likely_duplicate: bool
+    duplicates: List[DuplicateCandidate]
+    message: str
+
+
+class ChangelogEntry(BaseModel):
+    """Single resolved complaint for the What's Fixed feed"""
+    id: UUID
+    rephrased_text: str
+    resolution_note: Optional[str] = None
+    category_name: Optional[str] = None
+    resolved_at: Optional[datetime] = None
+    upvotes: int
+    satisfaction_avg: Optional[float] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ChangelogResponse(BaseModel):
+    """Response for GET /complaints/changelog"""
+    entries: List[ChangelogEntry]
+    total: int
+    page: int
+    page_size: int
+
+
 __all__ = [
     "ComplaintCreate",
     "ComplaintUpdate",
@@ -641,4 +699,11 @@ __all__ = [
     "CommentCreate",
     "CommentResponse",
     "CommentListResponse",
+    "SatisfactionRatingRequest",
+    "SatisfactionRatingResponse",
+    "DuplicateCheckRequest",
+    "DuplicateCheckResponse",
+    "DuplicateCandidate",
+    "ChangelogEntry",
+    "ChangelogResponse",
 ]

@@ -17,6 +17,7 @@ import logging
 from typing import Optional
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_db, get_current_admin  # ✅ FIXED IMPORT
@@ -729,6 +730,84 @@ async def bulk_update_status(
         success=True,
         message=f"{updated_count} complaints updated to '{new_status}'"
     )
+
+
+@router.put(
+    "/complaints/{complaint_id}/reassign",
+    response_model=SuccessResponse,
+    summary="Reassign complaint to different authority",
+    description="Change which authority handles a complaint (admin only)"
+)
+async def reassign_complaint(
+    complaint_id: str,
+    authority_id: int = Query(..., description="ID of the new authority to assign"),
+    current_authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Reassign a complaint to a different authority."""
+    from uuid import UUID
+    from src.database.models import Complaint, Authority
+
+    try:
+        complaint_uuid = UUID(complaint_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid complaint ID")
+
+    result = await db.execute(select(Complaint).where(Complaint.id == complaint_uuid))
+    complaint = result.scalar_one_or_none()
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    auth_result = await db.execute(select(Authority).where(Authority.id == authority_id))
+    authority = auth_result.scalar_one_or_none()
+    if not authority:
+        raise HTTPException(status_code=404, detail="Authority not found")
+
+    old_authority_id = complaint.assigned_authority_id
+    complaint.assigned_authority_id = authority_id
+    complaint.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    logger.info(
+        f"Complaint {complaint_id} reassigned from authority {old_authority_id} "
+        f"to {authority_id} by admin {current_authority_id}"
+    )
+    return SuccessResponse(success=True, message=f"Complaint reassigned to {authority.name}")
+
+
+@router.delete(
+    "/complaints/{complaint_id}",
+    response_model=SuccessResponse,
+    summary="Delete complaint",
+    description="Permanently delete a complaint (admin only)"
+)
+async def admin_delete_complaint(
+    complaint_id: str,
+    current_authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Permanently delete a complaint and all related data."""
+    from uuid import UUID
+    from src.database.models import Complaint, Vote, StatusUpdate
+
+    try:
+        complaint_uuid = UUID(complaint_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid complaint ID")
+
+    result = await db.execute(select(Complaint).where(Complaint.id == complaint_uuid))
+    complaint = result.scalar_one_or_none()
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    # Delete associated votes and status updates first (FK constraints)
+    await db.execute(delete(Vote).where(Vote.complaint_id == complaint_uuid))
+    await db.execute(delete(StatusUpdate).where(StatusUpdate.complaint_id == complaint_uuid))
+    await db.delete(complaint)
+    await db.commit()
+
+    logger.info(f"Complaint {complaint_id} permanently deleted by admin {current_authority_id}")
+    return SuccessResponse(success=True, message="Complaint deleted")
 
 
 # ==================== IMAGE MODERATION ====================

@@ -13,6 +13,7 @@ export default function AdminAllComplaints() {
     const categoryFromUrl = searchParams.get('category') || '';
     const statusFromUrl = searchParams.get('status') || '';
     const priorityFromUrl = searchParams.get('priority') || '';
+    const [authorities, setAuthorities] = useState([]);
     const searchFromUrl = searchParams.get('search') || '';
 
     const [complaints, setComplaints] = useState([]);
@@ -41,6 +42,12 @@ export default function AdminAllComplaints() {
     useEffect(() => {
         loadComplaints(true);
     }, [filters]);
+
+    useEffect(() => {
+        adminService.getAllAuthorities(0, 200, true)
+            .then(data => setAuthorities(data.authorities || []))
+            .catch(() => {});
+    }, []);
 
     const loadComplaints = async (reset = false) => {
         try {
@@ -74,6 +81,25 @@ export default function AdminAllComplaints() {
     const setFilter = (key, val) => setFilters(f => ({ ...f, [key]: val }));
     const clearFilters = () => setFilters({ status: '', priority: '', category_name: '', search: '', date_from: '', date_to: '' });
     const hasFilters = !!(filters.status || filters.priority || filters.category_name || filters.search || filters.date_from || filters.date_to);
+
+    const handleDelete = async (complaintId) => {
+        await adminService.deleteComplaint(complaintId);
+        setComplaints(prev => prev.filter(c => c.id !== complaintId));
+    };
+
+    const handleReassign = async (complaintId, authorityId) => {
+        const result = await adminService.reassignComplaint(complaintId, authorityId);
+        const auth = authorities.find(a => a.id === authorityId);
+        if (auth) {
+            setComplaints(prev =>
+                prev.map(c => c.id === complaintId
+                    ? { ...c, assigned_authority_name: auth.name }
+                    : c
+                )
+            );
+        }
+        return result;
+    };
 
     return (
         <div className="space-y-5">
@@ -158,7 +184,16 @@ export default function AdminAllComplaints() {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {complaints.map(c => <AdminComplaintCard key={c.id} complaint={c} token={getToken()} />)}
+                    {complaints.map(c => (
+                        <AdminComplaintCard
+                            key={c.id}
+                            complaint={c}
+                            token={getToken()}
+                            authorities={authorities}
+                            onDelete={handleDelete}
+                            onReassign={handleReassign}
+                        />
+                    ))}
                 </div>
             )}
 

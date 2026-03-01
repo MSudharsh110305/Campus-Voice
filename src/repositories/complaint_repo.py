@@ -39,6 +39,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
         spam_reason: Optional[str] = None,
         complaint_department_id: Optional[int] = None,
         is_cross_department: bool = False,
+        is_anonymous: bool = False,
         # ✅ NEW: Image binary parameters
         image_data: Optional[bytes] = None,
         image_filename: Optional[str] = None,
@@ -92,6 +93,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
             spam_reason=spam_reason,
             complaint_department_id=complaint_department_id,
             is_cross_department=is_cross_department,
+            is_anonymous=is_anonymous,
             submitted_at=current_time,
             updated_at=current_time,
             # ✅ NEW: Image fields
@@ -362,38 +364,12 @@ class ComplaintRepository(BaseRepository[Complaint]):
         hostel_category_ids = [cid for cid in [mens_hostel_id, womens_hostel_id] if cid is not None]
 
         if student_stay_type == "Day Scholar":
-            # ✅ FIX: Dual-layer hostel exclusion for day scholars:
-            # Layer 1: Exclude by category_id (catches correctly-categorized hostel complaints)
+            # Exclude hostel complaints by category_id only.
+            # A hostel student's Department/General complaint is still visible to day scholars.
             if mens_hostel_id:
                 conditions.append(Complaint.category_id != mens_hostel_id)
             if womens_hostel_id:
                 conditions.append(Complaint.category_id != womens_hostel_id)
-            # Layer 2: Exclude complaints submitted by hostel students that aren't
-            # General/Disciplinary (catches LLM miscategorized hostel complaints)
-            if hostel_category_ids:
-                hostel_submitters_sq = (
-                    select(Student.roll_no)
-                    .where(Student.stay_type == "Hostel")
-                    .scalar_subquery()
-                )
-                non_general_disc_ids = [
-                    cid for cid in hostel_category_ids
-                ]
-                # If category is NOT general/disciplinary AND submitter is a hostel student → exclude
-                safe_category_ids = [cid for cid in [general_id, disciplinary_id] if cid is not None]
-                if safe_category_ids:
-                    # Exclude: submitter is hostel student AND category is not in safe categories
-                    conditions.append(
-                        or_(
-                            Complaint.student_roll_no.notin_(hostel_submitters_sq),
-                            Complaint.category_id.in_(safe_category_ids)
-                        )
-                    )
-                else:
-                    # No safe categories found - just exclude all hostel submitters' non-hostel posts
-                    conditions.append(
-                        Complaint.student_roll_no.notin_(hostel_submitters_sq)
-                    )
         else:
             # Hostel students: Filter by gender
             # Men should not see women's hostel complaints

@@ -23,6 +23,7 @@ from src.api.dependencies import (
     get_db,
     get_current_student,
     get_current_authority,
+    get_current_user,
     get_complaint_with_ownership,
     get_complaint_with_visibility,
     ComplaintFilters,
@@ -37,6 +38,13 @@ from src.schemas.complaint import (
     ComplaintFilter,
     SpamFlag,
     ImageUploadResponse,
+    SatisfactionRatingRequest,
+    SatisfactionRatingResponse,
+    DuplicateCheckRequest,
+    DuplicateCheckResponse,
+    DuplicateCandidate,
+    ChangelogEntry,
+    ChangelogResponse,
 )
 from src.schemas.vote import VoteCreate, VoteResponse
 from src.schemas.common import SuccessResponse
@@ -62,6 +70,7 @@ router = APIRouter(prefix="/complaints", tags=["Complaints"])
 async def create_complaint(
     original_text: str = Form(..., min_length=10, max_length=2000, description="Complaint text"),
     visibility: str = Form(default="Public", description="Visibility level (Public or Private)"),
+    is_anonymous: bool = Form(default=False, description="Hide your identity from other students"),
     image: Optional[UploadFile] = File(None, description="Optional complaint image"),
     roll_no: str = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
@@ -104,7 +113,8 @@ async def create_complaint(
             student_roll_no=roll_no,
             original_text=original_text,
             visibility=visibility,
-            image_file=image
+            image_file=image,
+            is_anonymous=is_anonymous,
         )
 
         return ComplaintSubmitResponse(**result)
@@ -278,6 +288,73 @@ async def get_complaints(
     )
 
 
+# ==================== CHANGELOG ====================
+
+@router.get(
+    "/changelog",
+    response_model=ChangelogResponse,
+    summary="What's Fixed — public resolved complaints",
+    description="Paginated list of publicly resolved complaints with resolution notes"
+)
+async def get_changelog(
+    _: dict = Depends(get_current_user),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Public feed of resolved complaints (the 'What's Fixed' page).
+
+    Shows Resolved/Closed public complaints ordered by resolution date.
+    Includes optional resolution notes left by authority and average satisfaction rating.
+    """
+    from src.database.models import Complaint, ComplaintCategory
+    from sqlalchemy import select, func, and_
+    from sqlalchemy.orm import selectinload
+
+    base_conditions = [
+        Complaint.visibility == "Public",
+        Complaint.status.in_(["Resolved", "Closed"]),
+        Complaint.is_marked_as_spam == False,
+    ]
+
+    # Total count
+    count_query = select(func.count()).where(and_(*base_conditions))
+    count_result = await db.execute(count_query)
+    total = count_result.scalar() or 0
+
+    query = (
+        select(Complaint)
+        .options(selectinload(Complaint.category))
+        .where(and_(*base_conditions))
+        .order_by(Complaint.resolved_at.desc().nullslast(), Complaint.submitted_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    complaints = result.scalars().all()
+
+    entries = [
+        ChangelogEntry(
+            id=c.id,
+            rephrased_text=(c.rephrased_text or c.original_text or "")[:400],
+            resolution_note=c.resolution_note,
+            category_name=c.category.name if c.category else None,
+            resolved_at=c.resolved_at,
+            upvotes=c.upvotes or 0,
+            satisfaction_avg=None,  # aggregate deferred — single pass for MVP
+        )
+        for c in complaints
+    ]
+
+    return ChangelogResponse(
+        entries=entries,
+        total=total,
+        page=skip // limit + 1,
+        page_size=limit,
+    )
+
+
 @router.get(
     "/{complaint_id}",
     response_model=ComplaintDetailResponse,
@@ -384,13 +461,15 @@ async def vote_on_complaint(
             vote_type=data.vote_type
         )
 
+        # When the user toggled off their vote, action="removed" and vote_type=None
+        resolved_user_vote = None if result.get("action") == "removed" else data.vote_type
         return VoteResponse(
             complaint_id=complaint_id,
             upvotes=result["upvotes"],
             downvotes=result["downvotes"],
             priority_score=result["priority_score"],
             priority=result["priority"],
-            user_vote=data.vote_type
+            user_vote=resolved_user_vote
         )
 
     except Exception as e:
@@ -1103,6 +1182,252 @@ async def filter_complaints(
         page_size=limit,
         total_pages=(total + limit - 1) // limit
     )
+
+
+# ==================== SATISFACTION RATING ====================
+
+@router.post(
+    "/{complaint_id}/rate",
+    response_model=SatisfactionRatingResponse,
+    summary="Rate complaint resolution",
+    description="Submit satisfaction rating (1-5) after complaint is Resolved or Closed"
+)
+async def rate_complaint(
+    complaint_id: UUID,
+    body: SatisfactionRatingRequest,
+    roll_no: str = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Submit satisfaction rating after a complaint is resolved.
+
+    - Only the complaint owner can rate
+    - Complaint must be Resolved or Closed
+    - Can only be rated once
+    """
+    from src.repositories.complaint_repo import ComplaintRepository
+    from datetime import datetime, timezone
+
+    complaint_repo = ComplaintRepository(db)
+    complaint = await complaint_repo.get(complaint_id)
+
+    if not complaint:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found")
+
+    if complaint.student_roll_no != roll_no:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the complaint owner can rate it")
+
+    if complaint.status not in ("Resolved", "Closed"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Complaint must be Resolved or Closed before rating"
+        )
+
+    if complaint.satisfaction_rating is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Complaint has already been rated"
+        )
+
+    complaint.satisfaction_rating = body.rating
+    complaint.satisfaction_feedback = body.feedback
+    complaint.rated_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    logger.info(f"Complaint {complaint_id} rated {body.rating}/5 by {roll_no}")
+
+    return SatisfactionRatingResponse(
+        complaint_id=complaint_id,
+        rating=body.rating,
+        feedback=body.feedback,
+        message="Thank you for your feedback!"
+    )
+
+
+# ==================== DUPLICATE CHECK ====================
+
+@router.post(
+    "/check-duplicate",
+    response_model=DuplicateCheckResponse,
+    summary="Check for duplicate complaints",
+    description="Before submitting, detect similar recent complaints using keyword overlap"
+)
+async def check_duplicate(
+    body: DuplicateCheckRequest,
+    _: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Check if a complaint text is likely a duplicate of existing public complaints.
+
+    Uses keyword overlap scoring. Returns top similar complaints for the student
+    to review before submitting.
+    """
+    from src.database.models import Complaint, ComplaintCategory
+    from sqlalchemy import select, and_
+    from sqlalchemy.orm import selectinload
+    from datetime import datetime, timedelta, timezone
+    import re
+
+    # Look at complaints from last 30 days
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+
+    query = (
+        select(Complaint)
+        .options(selectinload(Complaint.category))
+        .where(
+            and_(
+                Complaint.visibility == "Public",
+                Complaint.status != "Spam",
+                Complaint.is_marked_as_spam == False,
+                Complaint.submitted_at >= cutoff,
+            )
+        )
+        .limit(300)
+    )
+    result = await db.execute(query)
+    candidates = result.scalars().all()
+
+    def _keyword_overlap(a: str, b: str) -> float:
+        """Simple Jaccard similarity on word sets."""
+        stop = {"the", "a", "an", "is", "in", "at", "of", "to", "and", "my", "i"}
+        words_a = set(re.sub(r"[^\w\s]", "", a.lower()).split()) - stop
+        words_b = set(re.sub(r"[^\w\s]", "", b.lower()).split()) - stop
+        if not words_a or not words_b:
+            return 0.0
+        return len(words_a & words_b) / len(words_a | words_b)
+
+    # Score all candidates
+    THRESHOLD = 0.25
+    scored = []
+    query_text = (body.text or "").strip()
+    for c in candidates:
+        ref_text = c.rephrased_text or c.original_text or ""
+        score = _keyword_overlap(query_text, ref_text)
+        if score >= THRESHOLD:
+            scored.append((score, c))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = scored[:5]
+
+    duplicates = [
+        DuplicateCandidate(
+            id=c.id,
+            rephrased_text=(c.rephrased_text or c.original_text or "")[:300],
+            status=c.status,
+            upvotes=c.upvotes or 0,
+            submitted_at=c.submitted_at,
+            similarity_score=round(score, 3),
+        )
+        for score, c in top
+    ]
+
+    is_likely_dup = bool(duplicates) and duplicates[0].similarity_score >= 0.40
+
+    return DuplicateCheckResponse(
+        is_likely_duplicate=is_likely_dup,
+        duplicates=duplicates,
+        message=(
+            "Similar complaints found — consider upvoting instead of re-submitting."
+            if is_likely_dup
+            else "No significant duplicates found."
+        )
+    )
+
+
+# ==================== ANALYTICS (PUBLIC SUMMARY) ====================
+
+@router.get(
+    "/analytics/summary",
+    summary="Public complaint analytics",
+    description="Overall complaint statistics visible to all students"
+)
+async def get_public_analytics(
+    _: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    High-level complaint statistics for the student dashboard analytics panel.
+
+    Returns counts by status, category, and department plus avg resolution time.
+    """
+    from src.database.models import Complaint, ComplaintCategory, Department
+    from sqlalchemy import select, func, and_, case
+
+    # Status counts (public, non-spam)
+    base = and_(
+        Complaint.visibility == "Public",
+        Complaint.is_marked_as_spam == False,
+    )
+
+    status_query = (
+        select(Complaint.status, func.count().label("cnt"))
+        .where(base)
+        .group_by(Complaint.status)
+    )
+    status_result = await db.execute(status_query)
+    status_counts = {row.status: row.cnt for row in status_result}
+
+    # Category breakdown
+    category_query = (
+        select(ComplaintCategory.name, func.count().label("cnt"))
+        .join(Complaint, Complaint.category_id == ComplaintCategory.id)
+        .where(base)
+        .group_by(ComplaintCategory.name)
+        .order_by(func.count().desc())
+    )
+    cat_result = await db.execute(category_query)
+    category_breakdown = {row.name: row.cnt for row in cat_result}
+
+    # Top 5 departments by complaint volume
+    dept_query = (
+        select(Department.name, func.count().label("cnt"))
+        .join(Complaint, Complaint.complaint_department_id == Department.id)
+        .where(base)
+        .group_by(Department.name)
+        .order_by(func.count().desc())
+        .limit(5)
+    )
+    dept_result = await db.execute(dept_query)
+    dept_breakdown = {row.name: row.cnt for row in dept_result}
+
+    # Avg resolution time in hours (resolved complaints only)
+    resolution_query = (
+        select(
+            func.extract("epoch",
+                func.avg(Complaint.resolved_at - Complaint.submitted_at)
+            ).label("avg_secs")
+        )
+        .where(
+            and_(
+                base,
+                Complaint.resolved_at.isnot(None),
+                Complaint.status.in_(["Resolved", "Closed"]),
+            )
+        )
+    )
+    res_result = await db.execute(resolution_query)
+    avg_secs = res_result.scalar()
+    avg_resolution_hours = round(float(avg_secs) / 3600, 1) if avg_secs else None
+
+    # Satisfaction average
+    sat_query = select(func.avg(Complaint.satisfaction_rating)).where(
+        and_(base, Complaint.satisfaction_rating.isnot(None))
+    )
+    sat_result = await db.execute(sat_query)
+    satisfaction_avg = sat_result.scalar()
+    satisfaction_avg = round(float(satisfaction_avg), 2) if satisfaction_avg else None
+
+    total = sum(status_counts.values())
+
+    return {
+        "total_complaints": total,
+        "status_breakdown": status_counts,
+        "category_breakdown": category_breakdown,
+        "top_departments": dept_breakdown,
+        "avg_resolution_hours": avg_resolution_hours,
+        "satisfaction_avg": satisfaction_avg,
+    }
 
 
 __all__ = ["router"]

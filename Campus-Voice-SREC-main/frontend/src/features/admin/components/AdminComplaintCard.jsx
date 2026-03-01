@@ -8,7 +8,9 @@ import {
     Tag,
     Eye,
     AlertTriangle,
-    ArrowRight
+    ArrowRight,
+    Trash2,
+    RefreshCw,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -50,9 +52,43 @@ const PRIORITY_ACCENT = {
     'Low':      'bg-gray-300',
 };
 
-export default function AdminComplaintCard({ complaint, token }) {
+export default function AdminComplaintCard({ complaint, token, authorities = [], onDelete, onReassign }) {
     const navigate = useNavigate();
     const [expanded, setExpanded] = useState(false);
+    const [showActions, setShowActions] = useState(false);
+    const [selectedAuthority, setSelectedAuthority] = useState('');
+    const [isReassigning, setIsReassigning] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [actionMsg, setActionMsg] = useState(null);
+
+    const handleReassign = async (e) => {
+        e.stopPropagation();
+        if (!selectedAuthority) return;
+        setIsReassigning(true);
+        try {
+            await onReassign(complaint.id, parseInt(selectedAuthority));
+            setActionMsg({ type: 'success', text: 'Reassigned' });
+            setTimeout(() => setActionMsg(null), 2500);
+        } catch (err) {
+            setActionMsg({ type: 'error', text: err.message || 'Failed' });
+            setTimeout(() => setActionMsg(null), 3000);
+        } finally {
+            setIsReassigning(false);
+        }
+    };
+
+    const handleDelete = async (e) => {
+        e.stopPropagation();
+        if (!window.confirm('Permanently delete this complaint? This cannot be undone.')) return;
+        setIsDeleting(true);
+        try {
+            await onDelete(complaint.id);
+        } catch (err) {
+            setActionMsg({ type: 'error', text: err.message || 'Delete failed' });
+            setTimeout(() => setActionMsg(null), 3000);
+            setIsDeleting(false);
+        }
+    };
 
     const summary = complaint.rephrased_text || complaint.original_text || '';
     const TRUNCATE_LEN = 160;
@@ -146,16 +182,66 @@ export default function AdminComplaintCard({ complaint, token }) {
                     </div>
                 </div>
 
-                {/* Row 5: View Details */}
-                <div className="border-t border-gray-100 pt-3 flex justify-end" onClick={(e) => e.stopPropagation()}>
-                    <EliteButton
-                        size="sm"
-                        variant="outline"
-                        onClick={() => navigate(`/complaint/${complaint.id}`)}
-                        className="flex items-center gap-1 text-xs"
-                    >
-                        Full Details <ArrowRight size={12} />
-                    </EliteButton>
+                {/* Row 5: Actions */}
+                <div className="border-t border-gray-100 pt-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+                    {actionMsg && (
+                        <p className={`text-xs font-medium px-2 py-1 rounded ${actionMsg.type === 'success' ? 'text-green-700 bg-green-50' : 'text-red-600 bg-red-50'}`}>
+                            {actionMsg.text}
+                        </p>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <EliteButton
+                            size="sm"
+                            variant="outline"
+                            onClick={() => navigate(`/complaint/${complaint.id}`)}
+                            className="flex items-center gap-1 text-xs"
+                        >
+                            Details <ArrowRight size={12} />
+                        </EliteButton>
+                        {(onDelete || onReassign) && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setShowActions(v => !v); }}
+                                className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+                            >
+                                Manage
+                            </button>
+                        )}
+                    </div>
+                    {showActions && (
+                        <div className="bg-gray-50 rounded-xl border border-gray-200 p-3 space-y-2">
+                            {onReassign && authorities.length > 0 && (
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        value={selectedAuthority}
+                                        onChange={e => setSelectedAuthority(e.target.value)}
+                                        onClick={e => e.stopPropagation()}
+                                        className="flex-1 text-xs bg-white border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-srec-primary/30"
+                                    >
+                                        <option value="">Select authority…</option>
+                                        {authorities.map(a => (
+                                            <option key={a.id} value={a.id}>{a.name} ({a.authority_type})</option>
+                                        ))}
+                                    </select>
+                                    <button
+                                        disabled={!selectedAuthority || isReassigning}
+                                        onClick={handleReassign}
+                                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-srec-primary text-white hover:bg-srec-primaryHover disabled:opacity-50 transition-colors"
+                                    >
+                                        <RefreshCw size={11} /> {isReassigning ? '…' : 'Reassign'}
+                                    </button>
+                                </div>
+                            )}
+                            {onDelete && (
+                                <button
+                                    disabled={isDeleting}
+                                    onClick={handleDelete}
+                                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors w-full justify-center"
+                                >
+                                    <Trash2 size={12} /> {isDeleting ? 'Deleting…' : 'Delete Complaint'}
+                                </button>
+                            )}
+                        </div>
+                    )}
                 </div>
                 </div>{/* end main content */}
 

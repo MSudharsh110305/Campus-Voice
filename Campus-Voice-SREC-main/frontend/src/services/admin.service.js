@@ -42,6 +42,20 @@ const toggleStudentActive = async (rollNo, activate) => {
     });
 };
 
+// Complaint Routing Control
+const reassignComplaint = async (complaintId, authorityId) => {
+    const params = new URLSearchParams({ authority_id: authorityId });
+    return await api(`/admin/complaints/${complaintId}/reassign?${params}`, {
+        method: 'PUT',
+    });
+};
+
+const deleteComplaint = async (complaintId) => {
+    return await api(`/admin/complaints/${complaintId}`, {
+        method: 'DELETE',
+    });
+};
+
 // System Stats
 const getSystemOverview = async () => {
     return await api('/admin/stats/overview');
@@ -122,6 +136,8 @@ const adminService = {
     deleteAuthority,
     getAllStudents,
     toggleStudentActive,
+    reassignComplaint,
+    deleteComplaint,
     getSystemOverview,
     getAnalytics,
     getAdminComplaints,

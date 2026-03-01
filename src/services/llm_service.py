@@ -224,10 +224,17 @@ Does the complaint describe ANY of:
 • General indiscipline: violating college rules, dress code violation, using mobile phone in class without permission, sleeping in class disruptively, disrespecting faculty or staff
 → YES → Category = "Disciplinary Committee"
 
-STEP 2 — Check for ACADEMIC INFRASTRUCTURE issue → "Department":
-Does the complaint mention a problem with EQUIPMENT or FACILITIES in academic areas: lab equipment not working, computer lab issue, projector/AV system fault, seminar hall problem, printer issue (academic use), software license missing, IDE/software not working, classroom infrastructure (broken furniture/AC/fan), faculty/HOD request, curriculum/timetable/project submission, department office service, IT equipment in academic building?
-NOTE: If the complaint is about STUDENT BEHAVIOR in these spaces (not the infrastructure itself), use STEP 1 instead.
+STEP 2 — Check for ACADEMIC / DEPARTMENT issue → "Department":
+Does the complaint mention a problem with EQUIPMENT, FACILITIES, or SERVICES in academic/departmental areas:
+• Lab equipment not working, computer lab issue, projector/AV system fault, seminar hall problem
+• Printer issue (academic use), software license missing, IDE/software not working
+• Classroom infrastructure (broken furniture/AC/fan), IT equipment in academic building
+• Faculty/HOD request, curriculum, timetable, project submission, department office service
+• Placement, internship, career guidance, campus recruitment, training and placement cell (T&P), aptitude training, soft skills training, industry visit, placement preparation, campus drives
+NOTE: If the complaint is about STUDENT BEHAVIOR in these spaces (not the infrastructure/service itself), use STEP 1 instead.
 → YES → Category = "Department"
+
+DEPARTMENT FOR PLACEMENT COMPLAINTS: Use "AIDS" if student is from AI/DS, otherwise use the student's department code. If no department context, default to the student's own department or "CSE".
 
 STEP 3 — Check for HOSTEL FACILITY → hostel category:
 Is the issue about something physically INSIDE a hostel building?
@@ -261,6 +268,7 @@ Valid codes: CSE, ECE, MECH, CIVIL, EEE, IT, BIO, AERO, RAA, EIE, MBA, AIDS, MTE
 - CHEM: complaints about Chemistry subject, chemistry lab, chemistry class, chemistry faculty
 - MATH: complaints about Mathematics/Maths subject, math class, mathematics faculty
 - If complaint says "my department" or "our department" without naming it → use student's department from supplementary context
+- Placement/internship/T&P complaints → use the student's own department from supplementary context (or "CSE" if unknown)
 - If no department context at all → use "CSE" as the default
 - NEVER assign a department solely because the student belongs to it when the complaint is about a different area
 

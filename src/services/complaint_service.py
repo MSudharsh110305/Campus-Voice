@@ -42,7 +42,8 @@ class ComplaintService:
         student_roll_no: str,
         original_text: str,
         visibility: str = "Public",
-        image_file: Optional[UploadFile] = None  # ✅ Accept UploadFile
+        image_file: Optional[UploadFile] = None,  # ✅ Accept UploadFile
+        is_anonymous: bool = False,               # v2: hide submitter identity from peers
     ) -> Dict[str, Any]:
         """
         Create a new complaint with FULL AI-DRIVEN processing (no category_id required).
@@ -340,6 +341,7 @@ class ComplaintService:
             spam_reason=spam_complaint_reason if is_spam_complaint else None,
             complaint_department_id=target_department_id,
             is_cross_department=is_cross_department,
+            is_anonymous=is_anonymous,
             # ✅ NEW: Binary image fields
             image_data=image_bytes,
             image_mimetype=image_mimetype,

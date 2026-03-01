@@ -47,6 +47,13 @@ export default function ComplaintDetails() {
     const [isDisputing, setIsDisputing] = useState(false);
     const [disputeMsg, setDisputeMsg] = useState(null);
 
+    // Satisfaction rating state
+    const [ratingModalOpen, setRatingModalOpen] = useState(false);
+    const [selectedRating, setSelectedRating] = useState(0);
+    const [ratingFeedback, setRatingFeedback] = useState('');
+    const [isRating, setIsRating] = useState(false);
+    const [ratingMsg, setRatingMsg] = useState(null);
+
     const fetchHistory = async () => {
         try {
             setLoadingHistory(true);
@@ -250,6 +257,25 @@ export default function ComplaintDetails() {
             setStatusUpdateMsg({ type: 'error', text: typeof msg === 'object' ? JSON.stringify(msg) : msg });
         } finally {
             setIsUpdatingStatus(false);
+        }
+    };
+
+    // Handler: student satisfaction rating
+    const handleRating = async (e) => {
+        e.preventDefault();
+        if (!selectedRating) return;
+        setIsRating(true);
+        setRatingMsg(null);
+        try {
+            await complaintService.rateComplaint(id, selectedRating, ratingFeedback || null);
+            setComplaint(prev => ({ ...prev, satisfaction_rating: selectedRating }));
+            setRatingMsg({ type: 'success', text: 'Thank you for your feedback!' });
+            setTimeout(() => setRatingModalOpen(false), 1500);
+        } catch (err) {
+            const detail = err?.data?.detail || err.message || 'Could not submit rating';
+            setRatingMsg({ type: 'error', text: typeof detail === 'object' ? JSON.stringify(detail) : detail });
+        } finally {
+            setIsRating(false);
         }
     };
 
@@ -834,6 +860,85 @@ export default function ComplaintDetails() {
                                             Escalated on {new Date(complaint.escalated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
                                         </p>
                                     )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ==================== SATISFACTION RATING (Student only) ==================== */}
+                        {!isAuthorityOrAdmin && ['Resolved', 'Closed'].includes(complaint.status) && complaint.student_roll_no === user?.roll_no && (
+                            <div className="mt-8 p-5 bg-gradient-to-br from-green-50 to-white rounded-2xl border border-green-100 shadow-sm">
+                                {complaint.satisfaction_rating ? (
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex gap-1">
+                                            {[1,2,3,4,5].map(s => (
+                                                <span key={s} className={`text-xl ${s <= complaint.satisfaction_rating ? 'text-amber-400' : 'text-gray-200'}`}>★</span>
+                                            ))}
+                                        </div>
+                                        <p className="text-sm text-green-700 font-medium">You rated this {complaint.satisfaction_rating}/5</p>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div>
+                                            <p className="text-sm font-bold text-green-900">Your complaint was resolved!</p>
+                                            <p className="text-xs text-green-700 mt-0.5">How satisfied are you with the resolution?</p>
+                                        </div>
+                                        <button
+                                            onClick={() => setRatingModalOpen(true)}
+                                            className="flex-shrink-0 px-4 py-2 bg-srec-primary text-white text-xs font-semibold rounded-xl hover:bg-srec-primaryHover transition-colors"
+                                        >
+                                            Rate it
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Rating modal */}
+                        {ratingModalOpen && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                                <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+                                    <h3 className="text-base font-bold text-srec-textPrimary mb-1">Rate the resolution</h3>
+                                    <p className="text-xs text-srec-textMuted mb-4">Your feedback helps improve the process</p>
+                                    <form onSubmit={handleRating} className="space-y-4">
+                                        <div className="flex justify-center gap-2">
+                                            {[1,2,3,4,5].map(s => (
+                                                <button
+                                                    key={s}
+                                                    type="button"
+                                                    onClick={() => setSelectedRating(s)}
+                                                    className={`text-3xl transition-transform hover:scale-110 ${s <= selectedRating ? 'text-amber-400' : 'text-gray-200'}`}
+                                                >★</button>
+                                            ))}
+                                        </div>
+                                        <textarea
+                                            rows={3}
+                                            placeholder="Optional: Tell us more about your experience…"
+                                            value={ratingFeedback}
+                                            onChange={e => setRatingFeedback(e.target.value)}
+                                            className="w-full rounded-xl border border-srec-border px-3 py-2.5 text-sm text-srec-textPrimary placeholder:text-srec-textMuted focus:outline-none focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary resize-none"
+                                        />
+                                        {ratingMsg && (
+                                            <p className={`text-xs font-medium ${ratingMsg.type === 'success' ? 'text-green-700' : 'text-red-600'}`}>
+                                                {ratingMsg.text}
+                                            </p>
+                                        )}
+                                        <div className="flex gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => { setRatingModalOpen(false); setRatingMsg(null); setSelectedRating(0); setRatingFeedback(''); }}
+                                                className="flex-1 py-2.5 rounded-xl border border-srec-border text-srec-textSecondary text-sm font-medium hover:bg-srec-backgroundAlt transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="submit"
+                                                disabled={!selectedRating || isRating}
+                                                className="flex-1 py-2.5 rounded-xl bg-srec-primary text-white text-sm font-semibold hover:bg-srec-primaryHover transition-colors disabled:opacity-50"
+                                            >
+                                                {isRating ? 'Submitting…' : 'Submit Rating'}
+                                            </button>
+                                        </div>
+                                    </form>
                                 </div>
                             </div>
                         )}
