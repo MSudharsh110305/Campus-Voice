@@ -153,10 +153,12 @@ class Authority(Base):
 
 class Complaint(Base):
     """Complaint model - main table for student complaints
-    
+
     ✅ FIXED: Image storage using binary columns for database storage
     ✅ REMOVED: image_url column (legacy, not needed)
     ✅ ADDED: image_verified and image_verification_status columns
+    ✅ ADDED (v2): is_anonymous, satisfaction_rating, satisfaction_feedback,
+                   resolution_note, duplicate_of_id
     """
     __tablename__ = "complaints"
     
@@ -197,12 +199,33 @@ class Complaint(Base):
     # Cross-department tracking
     complaint_department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
     is_cross_department = Column(Boolean, default=False, nullable=False)
-    
+
+    # ── v2: Anonymity ──────────────────────────────────────────────────────────
+    # When True the submitter's name/roll_no is hidden from other students in the
+    # public feed; authorities and admin can still see the full identity.
+    is_anonymous = Column(Boolean, default=False, nullable=False, index=True)
+
+    # ── v2: Post-resolution satisfaction rating ────────────────────────────────
+    # Student rates how well their complaint was resolved (1=very bad … 5=excellent).
+    # NULL = not yet rated.
+    satisfaction_rating = Column(Integer, nullable=True)
+    satisfaction_feedback = Column(Text, nullable=True)  # Optional free-text
+    rated_at = Column(DateTime(timezone=True), nullable=True)
+
+    # ── v2: Resolution note ────────────────────────────────────────────────────
+    # Authority/admin writes a brief public explanation when closing/resolving.
+    resolution_note = Column(Text, nullable=True)
+
+    # ── v2: Duplicate detection ────────────────────────────────────────────────
+    # If this complaint is a duplicate, points to the canonical (parent) complaint.
+    # When the parent is deleted the FK is set NULL (not cascade-deleted).
+    duplicate_of_id = Column(UUID(as_uuid=True), ForeignKey("complaints.id", ondelete="SET NULL"), nullable=True, index=True)
+
     # Timestamps
     submitted_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now())
     resolved_at = Column(DateTime(timezone=True), nullable=True)
-    
+
     # Relationships
     student = relationship("Student", back_populates="complaints")
     category = relationship("ComplaintCategory", back_populates="complaints")
@@ -215,7 +238,10 @@ class Complaint(Base):
     llm_logs = relationship("LLMProcessingLog", back_populates="complaint", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="complaint", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="complaint", cascade="all, delete-orphan")
-    
+    # Self-referential: duplicates that point to this complaint as their canonical parent
+    duplicate_complaints = relationship("Complaint", foreign_keys="Complaint.duplicate_of_id", back_populates="duplicate_of")
+    duplicate_of = relationship("Complaint", foreign_keys=[duplicate_of_id], remote_side="Complaint.id", back_populates="duplicate_complaints")
+
     __table_args__ = (
         CheckConstraint("visibility IN ('Private', 'Department', 'Public')", name="check_visibility"),
         CheckConstraint("status IN ('Raised', 'In Progress', 'Resolved', 'Closed', 'Spam')", name="check_status"),
@@ -227,6 +253,10 @@ class Complaint(Base):
         CheckConstraint(
             "image_verification_status IN ('Pending', 'Verified', 'Rejected', 'Error')",
             name="check_image_verification_status"
+        ),
+        CheckConstraint(
+            "satisfaction_rating IS NULL OR (satisfaction_rating >= 1 AND satisfaction_rating <= 5)",
+            name="check_satisfaction_rating"
         ),
         # Performance indexes
         Index("idx_complaint_status_priority", "status", "priority_score"),
