@@ -1,18 +1,21 @@
 """
 Vote service for voting logic and priority calculation.
 
-Priority formula (transparent, gradual):
-  raw_score        = (upvotes * 5) + (downvotes * -3)
-  reach            = upvotes + downvotes
-  reach_ratio      = reach / total_student_count
-  engagement_bonus = reach_ratio * 20          (max ~20 pts at 100% reach)
-  adjusted_score   = raw_score + engagement_bonus
+Priority formula — Wilson Score Lower Bound (Bayesian ranking):
+  wilson         = lower bound of 95% CI for the upvote ratio
+  adjusted_score = wilson * 200   (maps 0–1 → 0–200)
 
   Map adjusted_score → priority:  Critical ≥ 150 | High ≥ 75 | Medium ≥ 20 | Low < 20
   Guard: never change priority by more than one level per vote update.
+
+  Advantages over arithmetic score:
+  - Accounts for sample size (1 vote isn't the same confidence as 100 votes)
+  - Naturally balances upvote ratio against vote volume
+  - Resilient to manipulation via mass downvotes
 """
 
 import logging
+import math
 from typing import Dict, Any, List, Optional
 from uuid import UUID
 from datetime import datetime, timezone
@@ -247,21 +250,38 @@ class VoteService:
         else:
             return "Low"
 
+    @staticmethod
+    def _wilson_lower_bound(upvotes: int, downvotes: int, z: float = 1.96) -> float:
+        """
+        Wilson Score Lower Bound — Bayesian confidence interval for vote ranking.
+
+        Rewards complaints with a high upvote *ratio* backed by sufficient votes.
+        A complaint with 1 upvote / 1 total is ranked below 90 upvotes / 100 total,
+        even though both have a 100% / 90% ratio, because the sample is too small.
+
+        Returns a value in [0, 1]. Multiply by 200 to get the priority_score range.
+        """
+        n = upvotes + downvotes
+        if n == 0:
+            return 0.0
+        p = upvotes / n
+        return (
+            (p + z * z / (2 * n) - z * math.sqrt((p * (1 - p) + z * z / (4 * n)) / n))
+            / (1 + z * z / n)
+        )
+
     async def recalculate_priority(self, complaint_id: UUID) -> float:
         """
-        Recalculate priority using the transparent vote formula:
+        Recalculate priority using Wilson Score Lower Bound (Bayesian ranking).
 
-          raw_score        = (upvotes * 5) + (downvotes * -3)
-          reach            = upvotes + downvotes
-          reach_ratio      = reach / total_student_count
-          engagement_bonus = reach_ratio * 20   (caps near 20 at full student turnout)
-          adjusted_score   = raw_score + engagement_bonus
+          wilson = _wilson_lower_bound(upvotes, downvotes)
+          adjusted_score = wilson * 200
 
-        Priority mapping: Critical >= 150, High >= 75, Medium >= 20, Low < 20
+        Maps to priority: Critical ≥ 150 (wilson ≥ 0.75) | High ≥ 75 (0.375+) |
+                          Medium ≥ 20 (0.10+) | Low < 20
+
         Guard: new priority cannot be more than 1 level away from the current priority.
         """
-        from src.database.models import Student
-
         complaint = await self.complaint_repo.get(complaint_id)
         if not complaint:
             logger.warning(f"Cannot recalculate priority — complaint {complaint_id} not found")
@@ -275,20 +295,14 @@ class VoteService:
             # No votes yet — nothing to update
             return complaint.priority_score or 0.0
 
-        # Get total student count for reach normalisation
-        count_result = await self.db.execute(select(func.count()).select_from(Student))
-        total_students = max(count_result.scalar() or 1, 1)
-
-        # Formula
-        raw_score = (upvotes * 5) + (downvotes * -3)
-        reach_ratio = reach / total_students
-        engagement_bonus = reach_ratio * 20
-        adjusted_score = raw_score + engagement_bonus
+        # Wilson Score → priority_score (0–200 scale)
+        wilson = self._wilson_lower_bound(upvotes, downvotes)
+        adjusted_score = wilson * 200
 
         # Map score → priority level
         proposed_priority = self._score_to_priority(adjusted_score)
 
-        # Guard: never change by more than 1 level per vote update
+        # Guard: never change by more than 1 level per vote update.
         # Capture priority BEFORE update_priority_score() which commits and
         # expires the SQLAlchemy session (accessing complaint.priority afterward
         # would trigger a lazy load → async greenlet error).
@@ -314,9 +328,8 @@ class VoteService:
 
         logger.info(
             f"Vote priority for {complaint_id}: up={upvotes} down={downvotes} "
-            f"reach={reach}/{total_students} ({reach_ratio:.3f}) "
-            f"raw={raw_score:.1f} bonus={engagement_bonus:.2f} "
-            f"adj={adjusted_score:.2f} → {proposed_priority} (was={old_priority} guarded={guarded_priority})"
+            f"wilson={wilson:.4f} adj={adjusted_score:.2f} → {proposed_priority} "
+            f"(was={old_priority} guarded={guarded_priority})"
         )
 
         return adjusted_score

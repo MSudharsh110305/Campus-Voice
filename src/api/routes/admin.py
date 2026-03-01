@@ -612,19 +612,28 @@ async def get_analytics(
     
     resolution_rate = (resolved / total * 100) if total > 0 else 0
     
-    # Average resolution time (for resolved complaints)
-    avg_time_query = select(
-        func.avg(
-            func.extract('epoch', Complaint.resolved_at - Complaint.submitted_at) / 3600
-        )
+    # Average resolution time — EWMA (Exponential Weighted Moving Average, α=0.3)
+    # Fetches resolution times ordered chronologically; recent complaints are
+    # weighted more heavily, smoothing out historical outliers.
+    times_query = select(
+        func.extract('epoch', Complaint.resolved_at - Complaint.submitted_at) / 3600
     ).where(
         and_(
             Complaint.submitted_at >= start_date,
             Complaint.resolved_at.isnot(None)
         )
-    )
-    avg_time_result = await db.execute(avg_time_query)
-    avg_resolution_hours = avg_time_result.scalar() or 0
+    ).order_by(Complaint.resolved_at)
+    times_result = await db.execute(times_query)
+    resolution_times = [float(t) for t in times_result.scalars() if t is not None]
+
+    if not resolution_times:
+        avg_resolution_hours = 0.0
+    else:
+        alpha = 0.3
+        ewma = resolution_times[0]
+        for t in resolution_times[1:]:
+            ewma = alpha * t + (1 - alpha) * ewma
+        avg_resolution_hours = ewma
     
     return {
         "period_days": days,

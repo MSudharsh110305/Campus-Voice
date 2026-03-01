@@ -8,6 +8,7 @@ Complaint repository with specialized queries.
 
 from typing import Optional, List, Dict, Any
 from uuid import UUID
+import math
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func, and_, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -275,6 +276,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
         if status:
             conditions.append(Complaint.status == status)
 
+        # Fetch all assigned complaints — Priority Queue with Aging sorts in Python
         query = (
             select(Complaint)
             .options(
@@ -282,12 +284,29 @@ class ComplaintRepository(BaseRepository[Complaint]):
                 selectinload(Complaint.category)
             )
             .where(and_(*conditions))
-            .order_by(desc(Complaint.priority_score))
-            .offset(skip)
-            .limit(limit)
         )
         result = await self.session.execute(query)
-        return result.scalars().all()
+        complaints = list(result.scalars().all())
+
+        # Priority Queue with Aging:
+        #   aging_score = priority_score + (hours_open / 24) * 10 + upvotes * 2
+        # Older unresolved complaints automatically rise in the queue,
+        # preventing starvation of long-pending issues.
+        now_utc = datetime.now(timezone.utc)
+
+        def _aging_score(c: Complaint) -> float:
+            base = c.priority_score or 0.0
+            submitted = c.submitted_at
+            if submitted is not None:
+                if submitted.tzinfo is None:
+                    submitted = submitted.replace(tzinfo=timezone.utc)
+                hours_open = max(0.0, (now_utc - submitted).total_seconds() / 3600)
+            else:
+                hours_open = 0.0
+            return base + (hours_open / 24) * 10 + (c.upvotes or 0) * 2
+
+        complaints.sort(key=_aging_score, reverse=True)
+        return complaints[skip: skip + limit]
 
     async def get_public_feed(
         self,
@@ -438,16 +457,34 @@ class ComplaintRepository(BaseRepository[Complaint]):
 
         conditions.append(or_(*inter_dept_conditions))
 
+        # Fetch up to 1000 matching complaints; Hacker News Hot Score sorts in Python.
+        # hot_score = max(1, upvotes - downvotes) / (age_hours + 2) ** 1.8
+        # This naturally surfaces recent high-engagement posts above stale ones.
         query = (
             select(Complaint)
             .options(selectinload(Complaint.category), selectinload(Complaint.assigned_authority))
             .where(and_(*conditions))
-            .order_by(desc(Complaint.submitted_at))  # Newest first
-            .offset(skip)
-            .limit(limit)
+            .order_by(desc(Complaint.submitted_at))  # Pre-sort newest so we cap at 1000 sensibly
+            .limit(1000)
         )
         result = await self.session.execute(query)
-        return result.scalars().all()
+        complaints = list(result.scalars().all())
+
+        now_utc = datetime.now(timezone.utc)
+
+        def _hot_score(c: Complaint) -> float:
+            submitted = c.submitted_at
+            if submitted is None:
+                age_hours = 999999.0
+            else:
+                if submitted.tzinfo is None:
+                    submitted = submitted.replace(tzinfo=timezone.utc)
+                age_hours = max(0.0, (now_utc - submitted).total_seconds() / 3600)
+            votes = max(1, (c.upvotes or 0) - (c.downvotes or 0))
+            return votes / (age_hours + 2) ** 1.8
+
+        complaints.sort(key=_hot_score, reverse=True)
+        return complaints[skip: skip + limit]
 
     async def get_high_priority(self, limit: int = 50) -> List[Complaint]:
         """

@@ -1132,19 +1132,25 @@ async def get_authority_stats_detailed(
     resolved = by_status.get("Resolved", 0) + by_status.get("Closed", 0)
     resolution_rate = round((resolved / total * 100), 1) if total > 0 else 0.0
 
-    # --- Avg resolution time (hours) for resolved complaints ---
-    avg_q = select(
-        func.avg(
-            func.extract("epoch", Complaint.resolved_at - Complaint.submitted_at) / 3600
-        )
+    # --- Avg resolution time (hours) — EWMA (α=0.3), ordered chronologically ---
+    times_q = select(
+        func.extract("epoch", Complaint.resolved_at - Complaint.submitted_at) / 3600
     ).where(and_(
         base,
         Complaint.resolved_at.isnot(None),
         Complaint.status.in_(["Resolved", "Closed"])
-    ))
-    avg_res = await db.execute(avg_q)
-    avg_hours = avg_res.scalar()
-    avg_hours = round(float(avg_hours), 1) if avg_hours else None
+    )).order_by(Complaint.resolved_at)
+    times_res = await db.execute(times_q)
+    resolution_times = [float(t) for t in times_res.scalars() if t is not None]
+
+    if not resolution_times:
+        avg_hours = None
+    else:
+        alpha = 0.3
+        ewma = resolution_times[0]
+        for t in resolution_times[1:]:
+            ewma = alpha * t + (1 - alpha) * ewma
+        avg_hours = round(ewma, 1)
 
     # --- Weekly trend (last 4 weeks, complaints submitted) ---
     now = datetime.now(timezone.utc)

@@ -61,23 +61,63 @@ class SpamDetectionService:
             "expires_at": blacklist.expires_at.isoformat() if blacklist.expires_at else None
         }
     
+    @staticmethod
+    def _levenshtein(s: str, t: str) -> int:
+        """Compute Levenshtein edit distance (DP, O(n) space)."""
+        m, n = len(s), len(t)
+        dp = list(range(n + 1))
+        for i in range(1, m + 1):
+            prev = dp[:]
+            dp[0] = i
+            for j in range(1, n + 1):
+                if s[i - 1] == t[j - 1]:
+                    dp[j] = prev[j - 1]
+                else:
+                    dp[j] = 1 + min(prev[j], dp[j - 1], prev[j - 1])
+        return dp[n]
+
     def contains_spam_keywords(self, text: str) -> bool:
         """
-        Check if text contains spam keywords.
-        
+        Check if text contains spam keywords using Levenshtein fuzzy matching.
+
+        Strategy:
+        - Short keywords (≤ 3 chars) or phrase keywords (contains space):
+          exact substring match (too short / too specific for fuzzy).
+        - Single-word keywords (> 3 chars): fuzzy match against every word
+          in the text, allowing up to 2 edits for keywords ≥ 6 chars,
+          1 edit for keywords 4–5 chars.
+
         Args:
             text: Text to check
-        
+
         Returns:
-            True if contains spam keywords
+            True if text contains a spam keyword (exact or fuzzy)
         """
         text_lower = text.lower()
-        has_spam = any(keyword in text_lower for keyword in SPAM_KEYWORDS)
-        
-        if has_spam:
-            logger.warning("Text contains spam keywords")
-        
-        return has_spam
+        words = text_lower.split()
+
+        for keyword in SPAM_KEYWORDS:
+            klen = len(keyword)
+
+            # Short or multi-word keywords: exact substring match only
+            if klen <= 3 or ' ' in keyword:
+                if keyword in text_lower:
+                    logger.warning(f"Spam keyword (exact): '{keyword}'")
+                    return True
+                continue
+
+            # Determine allowed edit distance by keyword length
+            max_dist = 2 if klen >= 6 else 1
+
+            for word in words:
+                # Skip words that are too different in length to ever match
+                if abs(len(word) - klen) > max_dist:
+                    continue
+                if self._levenshtein(word, keyword) <= max_dist:
+                    logger.warning(f"Spam keyword (fuzzy): '{keyword}' ≈ '{word}'")
+                    return True
+
+        return False
     
     async def get_spam_count(
         self,
