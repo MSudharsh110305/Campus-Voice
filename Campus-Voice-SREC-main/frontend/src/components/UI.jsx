@@ -136,17 +136,19 @@ export function Stat({ label, value, color = 'brand' }) {
   );
 }
 
+// Single source of truth for status colors — used everywhere
+export const STATUS_COLORS = {
+  'Raised':      { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-100',    dot: 'bg-blue-400' },
+  'In Progress': { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-100',   dot: 'bg-amber-400' },
+  'Resolved':    { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', dot: 'bg-emerald-500' },
+  'Closed':      { bg: 'bg-gray-100',   text: 'text-gray-500',    border: 'border-gray-200',    dot: 'bg-gray-400' },
+  'Spam':        { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-100',     dot: 'bg-red-400' },
+};
+
 export function StatusBadge({ status, className = '' }) {
-  const config = {
-    'Raised':      { bg: 'bg-blue-50',   text: 'text-blue-700',   dot: 'bg-blue-400' },
-    'In Progress': { bg: 'bg-amber-50',  text: 'text-amber-700',  dot: 'bg-amber-400' },
-    'Resolved':    { bg: 'bg-green-50',  text: 'text-green-700',  dot: 'bg-green-400' },
-    'Closed':      { bg: 'bg-gray-100',  text: 'text-gray-600',   dot: 'bg-gray-400' },
-    'Spam':        { bg: 'bg-red-50',    text: 'text-red-600',    dot: 'bg-red-400' },
-  };
-  const c = config[status] || config['Raised'];
+  const c = STATUS_COLORS[status] || STATUS_COLORS['Raised'];
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${c.bg} ${c.text} ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${c.bg} ${c.text} ${c.border} ${className}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
       {status}
     </span>

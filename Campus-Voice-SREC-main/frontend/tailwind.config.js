@@ -9,16 +9,17 @@ export default {
     extend: {
       colors: {
         srec: {
-          // Core greens
+          // Core greens — SREC logo palette
           primary: "#14532D",
-          primaryHover: "#166534",
+          primaryHover: "#155D31",
           primaryLight: "#22C55E",
           primarySoft: "#DCFCE7",
           primaryMuted: "#86EFAC",
 
-          // Gold accents
-          gold: "#C8A135",
-          goldLight: "#FDE68A",
+          // Gold accents — warm logo gold
+          gold: "#B8952E",
+          goldLight: "#F5E2A0",
+          goldMuted: "#D4B86A",
 
           // Backgrounds — subtle green-tinted whites
           background: "#F7F9F7",
@@ -36,23 +37,26 @@ export default {
           borderLight: "#EFF2EF",
           borderHover: "#C5D0C5",
 
-          danger: "#EF4444",
-          warning: "#F59E0B",
+          // Danger — deep warm crimson (replaces flat bright red)
+          danger: "#C82828",
+          dangerLight: "#FEE2E2",
+          dangerDark: "#9B1C1C",
+          warning: "#D97706",
         },
         brand: {
-          light: '#6ee7b7', // Soft Emerald 300
-          DEFAULT: '#10b981', // Emerald 500 - Professional Green
-          dark: '#047857', // Emerald 700
+          light: '#6ee7b7',
+          DEFAULT: '#10b981',
+          dark: '#047857',
         },
         accent: {
-          light: '#fde68a', // Amber 200 - Soft Gold highlight
-          DEFAULT: '#d97706', // Amber 600 - Muted Gold
-          dark: '#b45309', // Amber 700
+          light: '#f5e2a0',
+          DEFAULT: '#B8952E',
+          dark: '#8B6F1E',
         },
-        background: '#f4f7f6', // Soft cool off-white for page background
-        surface: '#ffffff', // Pure white for cards
-        success: '#10b981', // Match brand
-        error: '#f43f5e', // Soft Rose
+        background: '#F7F9F7',
+        surface: '#ffffff',
+        success: '#10b981',
+        error: '#C82828',
         gray: {
           50: '#f9fafb',
           100: '#f3f4f6',
@@ -65,35 +69,42 @@ export default {
           800: '#1f2937',
           900: '#111827',
         },
-        // Semantic Action Colors - Raise/Create
+        // Raise button — slightly deeper warm coral
         raise: {
-          light: '#fecaca',   // soft red for backgrounds
-          DEFAULT: '#f87171', // coral red for actions
-          dark: '#dc2626',    // darker red for text
+          light: '#fde8e8',
+          DEFAULT: '#D95555',
+          dark: '#B91C1C',
         },
-        // Priority Colors (pastel/mild)
+        // Priority Colors
         priority: {
-          low: '#86efac',      // soft green
-          medium: '#fcd34d',   // soft amber/yellow  
-          high: '#fdba74',     // soft orange
-          critical: '#fca5a5', // muted red
+          low: '#86efac',
+          medium: '#fcd34d',
+          high: '#fdba74',
+          critical: '#fca5a5',
         },
-        // Status Colors (pastel/mild)
+        // Status Colors
         status: {
-          raised: '#93c5fd',   // soft blue
-          opened: '#5eead4',   // soft teal
-          reviewed: '#c4b5fd', // soft violet
-          closed: '#d1d5db',   // soft gray
+          raised: '#93c5fd',
+          opened: '#5eead4',
+          reviewed: '#c4b5fd',
+          closed: '#d1d5db',
         },
       },
       boxShadow: {
         // Refined layered shadows
-        'soft': '0 1px 3px rgba(20,83,45,0.04), 0 1px 2px rgba(20,83,45,0.02)',
-        'card': '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02)',
-        'card-hover': '0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.03)',
-        'elevated': '0 8px 24px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04)',
-        'glow-green': '0 0 20px rgba(34,197,94,0.15)',
-        'inner-soft': 'inset 0 1px 2px rgba(0,0,0,0.04)',
+        'soft': '0 1px 3px rgba(20,83,45,0.06), 0 1px 2px rgba(20,83,45,0.04)',
+        'card': '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+        'card-hover': '0 4px 14px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04)',
+        'elevated': '0 8px 24px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06)',
+        'glow-green': '0 0 20px rgba(34,197,94,0.18)',
+        'inner-soft': 'inset 0 1px 3px rgba(0,0,0,0.06)',
+        // Button depth shadows — key addition
+        'btn': '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08)',
+        'btn-hover': '0 4px 10px rgba(0,0,0,0.14), 0 2px 4px rgba(0,0,0,0.08)',
+        'btn-primary': '0 2px 6px rgba(20,83,45,0.30), 0 1px 3px rgba(20,83,45,0.20)',
+        'btn-primary-hover': '0 4px 14px rgba(20,83,45,0.35), 0 2px 6px rgba(20,83,45,0.20)',
+        'btn-danger': '0 2px 6px rgba(200,40,40,0.28), 0 1px 3px rgba(200,40,40,0.16)',
+        'btn-danger-hover': '0 4px 12px rgba(200,40,40,0.35), 0 2px 4px rgba(200,40,40,0.18)',
         // Neumorphic shadows
         'neu-flat': '0 2px 8px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02)',
         'neu-hover': '0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01)',
@@ -103,12 +114,12 @@ export default {
         'neu-raised': '6px 6px 12px #d1d5db, -6px -6px 12px #ffffff',
         'neu-soft': '4px 4px 8px #d1d5db, -4px -4px 8px #ffffff',
         // Raise button shadows
-        'raise-btn': '0 4px 14px -2px rgba(248, 113, 113, 0.35), 0 2px 4px rgba(248, 113, 113, 0.2)',
-        'raise-btn-hover': '0 8px 20px -2px rgba(248, 113, 113, 0.45), 0 4px 8px rgba(248, 113, 113, 0.25)',
-        'raise-pressed': 'inset 0 2px 4px rgba(0,0,0,0.15)',
+        'raise-btn': '0 4px 14px -2px rgba(217,85,85,0.40), 0 2px 4px rgba(217,85,85,0.22)',
+        'raise-btn-hover': '0 8px 22px -2px rgba(217,85,85,0.50), 0 4px 8px rgba(217,85,85,0.28)',
+        'raise-pressed': 'inset 0 2px 4px rgba(0,0,0,0.18)',
         // Vote button glow
         'vote-glow': '0 0 12px rgba(16, 185, 129, 0.4)',
-        'vote-glow-down': '0 0 12px rgba(244, 63, 94, 0.4)',
+        'vote-glow-down': '0 0 12px rgba(200, 40, 40, 0.35)',
       },
       keyframes: {
         'slide-up': {
@@ -130,10 +141,13 @@ export default {
         'fade-in': 'fade-in 0.2s ease-out forwards',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-      }
+        sans: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', 'sans-serif'],
+      },
+      letterSpacing: {
+        tightest: '-0.04em',
+        tighter: '-0.02em',
+      },
     },
   },
   plugins: [],
 };
-

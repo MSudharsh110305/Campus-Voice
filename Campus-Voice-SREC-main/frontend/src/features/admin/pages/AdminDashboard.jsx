@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import ExportModal from '../../../components/ExportModal';
 import adminService from '../../../services/admin.service';
-import { Card, Select, Skeleton, EliteButton } from '../../../components/UI';
+import { Card, Select, Skeleton, EliteButton, STATUS_COLORS } from '../../../components/UI';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend
@@ -42,7 +42,7 @@ function StatCard({ label, value, icon: Icon, color = 'blue', sub, onClick }) {
   );
 }
 
-const PIE_COLORS = ['#14532D', '#D4AF37', '#22C55E', '#EF4444', '#6366F1'];
+const PIE_COLORS = ['#14532D', '#B8952E', '#22C55E', '#C82828', '#6366F1'];
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -235,24 +235,19 @@ export default function AdminDashboard() {
         />
       </div>
 
-      {/* Status breakdown — clickable */}
+      {/* Status breakdown — clickable chips using canonical STATUS_COLORS */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-        {Object.entries(byStatus).map(([status, count]) => {
-          const colors = {
-            Raised: 'bg-yellow-50 border-yellow-100 text-yellow-700 hover:border-yellow-300',
-            'In Progress': 'bg-blue-50 border-blue-100 text-blue-700 hover:border-blue-300',
-            Resolved: 'bg-green-50 border-green-100 text-green-700 hover:border-green-300',
-            Closed: 'bg-gray-50 border-gray-100 text-gray-600 hover:border-gray-300',
-            Spam: 'bg-red-50 border-red-100 text-red-600 hover:border-red-300',
-          };
+        {['Raised', 'In Progress', 'Resolved', 'Closed', 'Spam'].map((status) => {
+          const count = byStatus[status] || 0;
+          const c = STATUS_COLORS[status] || STATUS_COLORS['Raised'];
           return (
             <div
               key={status}
               onClick={() => navigate(`/admin/complaints?status=${encodeURIComponent(status)}`)}
-              className={`rounded-xl border px-4 py-3 text-center cursor-pointer transition-all duration-150 hover:shadow-sm ${colors[status] || 'bg-gray-50 border-gray-100 text-gray-600'}`}
+              className={`rounded-xl border px-4 py-3 text-center cursor-pointer transition-all duration-200 hover:shadow-card-hover hover:-translate-y-px ${c.bg} ${c.border} ${c.text}`}
             >
-              <p className="text-2xl font-bold">{count}</p>
-              <p className="text-xs font-medium mt-0.5">{status}</p>
+              <p className="text-2xl font-bold leading-tight">{count}</p>
+              <p className="text-xs font-semibold mt-1 opacity-80">{status}</p>
             </div>
           );
         })}
