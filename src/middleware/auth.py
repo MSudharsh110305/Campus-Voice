@@ -56,9 +56,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if self._is_public_route(request.url.path):
             return await call_next(request)
         
-        # Extract token from header
+        # Extract token from header, or fall back to ?token= query param
+        # (query param is used for file download/attachment links opened in new tab)
         authorization = request.headers.get("Authorization")
-        
+
+        if not authorization:
+            token_param = request.query_params.get("token")
+            if token_param:
+                authorization = f"Bearer {token_param}"
+
         if not authorization:
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -68,7 +74,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     "error_code": "MISSING_TOKEN"
                 }
             )
-        
+
         token = extract_token_from_header(authorization)
         
         if not token:

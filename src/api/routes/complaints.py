@@ -117,6 +117,16 @@ async def create_complaint(
             is_anonymous=is_anonymous,
         )
 
+        # Auto-merge check: if 10+ similar complaints exist, LLM merges them
+        try:
+            if result.get("id") and visibility == "Public":
+                from src.database.models import Complaint as ComplaintModel
+                complaint_obj = await db.get(ComplaintModel, result["id"])
+                if complaint_obj:
+                    await _check_and_merge_duplicates(db, complaint_obj)
+        except Exception as merge_err:
+            logger.warning(f"Auto-merge check failed (non-fatal): {merge_err}")
+
         return ComplaintSubmitResponse(**result)
 
     except ValueError as e:
@@ -164,6 +174,8 @@ async def get_complaints(
     roll_no: str = Depends(get_current_student),
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
+    category_id: Optional[int] = Query(None, description="Filter by category ID"),
+    sort_by: Optional[str] = Query("hot", description="Sort order: hot, new, top"),
     db: AsyncSession = Depends(get_db)
 ):
     """Get public complaint feed filtered by visibility rules."""
@@ -190,7 +202,9 @@ async def get_complaints(
         student_gender=student.gender,
         student_roll_no=student.roll_no,
         skip=skip,
-        limit=limit
+        limit=limit,
+        category_id=category_id,
+        sort_by=sort_by or "hot",
     )
 
     # Count using same visibility logic (✅ UPDATED: Only Public)
@@ -275,6 +289,10 @@ async def get_complaints(
 
     count_conditions.append(or_(*inter_dept_conditions))
 
+    # Apply category filter to count as well
+    if category_id is not None:
+        count_conditions.append(Complaint.category_id == category_id)
+
     count_query = select(func.count()).select_from(Complaint).where(and_(*count_conditions))
     result = await db.execute(count_query)
     total = result.scalar() or 0
@@ -303,23 +321,36 @@ async def get_changelog(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Public feed of resolved complaints (the 'What's Fixed' page).
+    Public 'What's Fixed' / 'Wins' feed — popular resolved complaints only.
 
-    Shows Resolved/Closed public complaints ordered by resolution date.
-    Includes optional resolution notes left by authority and average satisfaction rating.
+    Popularity score = upvotes*4 + satisfaction_rating*8 + min(view_count//5, 30).
+    Only complaints with score >= 5 OR upvotes >= 2 are shown.
+    Ordered by popularity score descending, then resolved_at.
     """
     from src.database.models import Complaint, ComplaintCategory
-    from sqlalchemy import select, func, and_
+    from sqlalchemy import select, func, and_, or_, case
     from sqlalchemy.orm import selectinload
+
+    # Popularity score expression
+    score_expr = (
+        func.coalesce(Complaint.upvotes, 0) * 4
+        + func.coalesce(Complaint.satisfaction_rating, 0) * 8
+        + func.least(func.coalesce(Complaint.view_count, 0) / 5, 30)
+    )
 
     base_conditions = [
         Complaint.visibility == "Public",
         Complaint.status.in_(["Resolved", "Closed"]),
         Complaint.is_marked_as_spam == False,
+        # Only popular complaints: score >= 5 OR at least 2 upvotes
+        or_(
+            score_expr >= 5,
+            func.coalesce(Complaint.upvotes, 0) >= 2,
+        ),
     ]
 
     # Total count
-    count_query = select(func.count()).where(and_(*base_conditions))
+    count_query = select(func.count()).select_from(Complaint).where(and_(*base_conditions))
     count_result = await db.execute(count_query)
     total = count_result.scalar() or 0
 
@@ -327,7 +358,7 @@ async def get_changelog(
         select(Complaint)
         .options(selectinload(Complaint.category))
         .where(and_(*base_conditions))
-        .order_by(Complaint.resolved_at.desc().nullslast(), Complaint.submitted_at.desc())
+        .order_by(score_expr.desc(), Complaint.resolved_at.desc().nullslast())
         .offset(skip)
         .limit(limit)
     )
@@ -342,7 +373,7 @@ async def get_changelog(
             category_name=c.category.name if c.category else None,
             resolved_at=c.resolved_at,
             upvotes=c.upvotes or 0,
-            satisfaction_avg=None,  # aggregate deferred — single pass for MVP
+            satisfaction_avg=float(c.satisfaction_rating) if c.satisfaction_rating else None,
         )
         for c in complaints
     ]
@@ -363,6 +394,7 @@ async def get_changelog(
 )
 async def get_complaint(
     complaint = Depends(get_complaint_with_visibility),
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -370,6 +402,20 @@ async def get_complaint(
 
     Visibility is automatically checked by the dependency.
     """
+    # Increment view_count for student viewers (fire-and-forget, never blocks response)
+    if current_user.get("role") == "student":
+        try:
+            from sqlalchemy import update as sa_update
+            from src.database.models import Complaint as ComplaintModel
+            await db.execute(
+                sa_update(ComplaintModel)
+                .where(ComplaintModel.id == complaint.id)
+                .values(view_count=ComplaintModel.view_count + 1)
+            )
+            await db.commit()
+        except Exception:
+            pass  # Never fail the request due to view tracking
+
     # Convert status_updates ORM objects to dicts before validation
     status_updates_dicts = None
     if hasattr(complaint, 'status_updates') and complaint.status_updates:
@@ -1047,6 +1093,14 @@ async def appeal_spam(
     if not complaint.is_marked_as_spam and complaint.status != "Spam":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Complaint is not marked as spam")
 
+    if complaint.has_disputed:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You have already disputed this complaint")
+
+    # Mark as disputed so the student can't dispute again, store appeal reason
+    complaint.has_disputed = True
+    complaint.appeal_reason = (reason or "").strip() or None
+    await db.commit()
+
     appeal_text = reason or "No reason provided"
     preview = (complaint.original_text or "")[:100]
     msg = (
@@ -1232,9 +1286,30 @@ async def rate_complaint(
     complaint.satisfaction_rating = body.rating
     complaint.satisfaction_feedback = body.feedback
     complaint.rated_at = datetime.now(timezone.utc)
+    authority_id_for_notify = complaint.assigned_authority_id
+    complaint_text_for_notify = (complaint.rephrased_text or complaint.original_text or "")
     await db.commit()
 
     logger.info(f"Complaint {complaint_id} rated {body.rating}/5 by {roll_no}")
+
+    # Notify the assigned authority about the rating
+    if authority_id_for_notify:
+        try:
+            from src.services.notification_service import notification_service
+            stars = body.rating * "★" + (5 - body.rating) * "☆"
+            await notification_service.create_notification(
+                db,
+                recipient_type="Authority",
+                recipient_id=str(authority_id_for_notify),
+                complaint_id=complaint_id,
+                notification_type="rating_received",
+                message=(
+                    f"A student rated their complaint {body.rating}/5 ({stars}). "
+                    f'Complaint: "{complaint_text_for_notify[:80]}..."'
+                )
+            )
+        except Exception as _notif_err:
+            logger.warning(f"Failed to send rating notification: {_notif_err}")
 
     return SatisfactionRatingResponse(
         complaint_id=complaint_id,
@@ -1244,32 +1319,96 @@ async def rate_complaint(
     )
 
 
-# ==================== DUPLICATE CHECK ====================
+# ==================== IMPROVED DUPLICATE DETECTION ====================
+
+# Common stop words to exclude from token matching
+_STOP_WORDS = {
+    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+    'should', 'may', 'might', 'shall', 'can', 'in', 'on', 'at', 'of',
+    'for', 'to', 'with', 'by', 'from', 'not', 'no', 'my', 'our', 'i',
+    'we', 'it', 'its', 'this', 'that', 'very', 'so', 'and', 'or', 'but',
+    'there', 'their', 'they', 'what', 'when', 'where', 'which', 'who',
+    'how', 'all', 'also', 'just', 'get', 'got', 'still', 'please',
+}
+
+# Expand common abbreviations and synonyms before comparison
+_SYNONYMS = [
+    (r'\bac\b', 'air conditioner'),
+    (r'\ba\.c\b', 'air conditioner'),
+    (r'\bwifi\b', 'wireless internet'),
+    (r'\bwi-fi\b', 'wireless internet'),
+    (r'\bwashroom\b', 'toilet bathroom'),
+    (r'\bwc\b', 'toilet bathroom'),
+    (r'\brest room\b', 'toilet bathroom'),
+    (r'\bcanteen\b', 'cafeteria food'),
+    (r'\bmess\b', 'cafeteria food'),
+    (r'\blight\b', 'electricity power'),
+    (r'\bpower\b', 'electricity power'),
+    (r'\belectricity\b', 'electricity power'),
+    (r'\bprofessor\b', 'faculty teacher'),
+    (r'\bprof\b', 'faculty teacher'),
+    (r'\bfaculty\b', 'faculty teacher'),
+    (r'\blab\b', 'laboratory'),
+]
+
+
+def _preprocess(text: str) -> str:
+    """Lowercase, expand synonyms, remove punctuation."""
+    import re
+    t = (text or "").lower().strip()
+    for pattern, replacement in _SYNONYMS:
+        t = re.sub(pattern, replacement, t)
+    t = re.sub(r"[^\w\s]", " ", t)
+    return t
+
+
+def _word_tokens(text: str) -> set:
+    """Meaningful word tokens after stop word removal."""
+    return {w for w in _preprocess(text).split() if len(w) > 2 and w not in _STOP_WORDS}
+
+
+def _char_ngrams(text: str, n: int = 4) -> set:
+    """Character n-grams on condensed text — catches 'AC'↔'air conditioner' via bigrams."""
+    normalized = "".join(_preprocess(text).split())
+    return {normalized[i:i+n] for i in range(len(normalized) - n + 1)} if len(normalized) >= n else set()
+
+
+def _jaccard(a: str, b: str) -> float:
+    """
+    Combined similarity: 60% word-level Jaccard + 40% char-4gram Jaccard.
+    Handles synonyms, abbreviations, and partial word matches better than plain word sets.
+    """
+    wa, wb = _word_tokens(a), _word_tokens(b)
+    ca, cb = _char_ngrams(a), _char_ngrams(b)
+
+    word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0.0
+    char_score = len(ca & cb) / len(ca | cb) if (ca | cb) else 0.0
+
+    return 0.6 * word_score + 0.4 * char_score
+
 
 @router.post(
     "/check-duplicate",
     response_model=DuplicateCheckResponse,
     summary="Check for duplicate complaints",
-    description="Before submitting, detect similar recent complaints using keyword overlap"
+    description="Before submitting, detect similar recent complaints"
 )
 async def check_duplicate(
     body: DuplicateCheckRequest,
-    _: dict = Depends(get_current_user),
+    roll_no: str = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Check if a complaint text is likely a duplicate of existing public complaints.
-
-    Uses keyword overlap scoring. Returns top similar complaints for the student
-    to review before submitting.
+    Uses Jaccard token similarity for fast, accurate matching. Returns top similar
+    complaints for the student to review before submitting.
     """
-    from src.database.models import Complaint, ComplaintCategory
+    from src.database.models import Complaint
     from sqlalchemy import select, and_
     from sqlalchemy.orm import selectinload
     from datetime import datetime, timedelta, timezone
-    import re
 
-    # Look at complaints from last 30 days
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
 
     query = (
@@ -1281,34 +1420,28 @@ async def check_duplicate(
                 Complaint.status != "Spam",
                 Complaint.is_marked_as_spam == False,
                 Complaint.submitted_at >= cutoff,
+                Complaint.merged_into_id == None,  # Exclude merged-away complaints
             )
         )
+        .order_by(Complaint.submitted_at.desc())
         .limit(300)
     )
     result = await db.execute(query)
     candidates = result.scalars().all()
 
-    def _keyword_overlap(a: str, b: str) -> float:
-        """Simple Jaccard similarity on word sets."""
-        stop = {"the", "a", "an", "is", "in", "at", "of", "to", "and", "my", "i"}
-        words_a = set(re.sub(r"[^\w\s]", "", a.lower()).split()) - stop
-        words_b = set(re.sub(r"[^\w\s]", "", b.lower()).split()) - stop
-        if not words_a or not words_b:
-            return 0.0
-        return len(words_a & words_b) / len(words_a | words_b)
-
-    # Score all candidates
-    THRESHOLD = 0.25
-    scored = []
+    THRESHOLD = 0.10          # Lowered: catch more potential duplicates
+    LIKELY_DUP_THRESHOLD = 0.18  # Lowered: flag as likely dup sooner
     query_text = (body.text or "").strip()
+
+    # Compute improved similarity against each candidate
+    scored = []
     for c in candidates:
-        ref_text = c.rephrased_text or c.original_text or ""
-        score = _keyword_overlap(query_text, ref_text)
+        text = c.rephrased_text or c.original_text or ""
+        score = _jaccard(query_text, text)
         if score >= THRESHOLD:
             scored.append((score, c))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    top = scored[:5]
 
     duplicates = [
         DuplicateCandidate(
@@ -1318,11 +1451,12 @@ async def check_duplicate(
             upvotes=c.upvotes or 0,
             submitted_at=c.submitted_at,
             similarity_score=round(score, 3),
+            is_own=(c.student_roll_no == roll_no),  # hide upvote on own complaints
         )
-        for score, c in top
+        for score, c in scored[:5]
     ]
 
-    is_likely_dup = bool(duplicates) and duplicates[0].similarity_score >= 0.40
+    is_likely_dup = bool(duplicates) and duplicates[0].similarity_score >= LIKELY_DUP_THRESHOLD
 
     return DuplicateCheckResponse(
         is_likely_duplicate=is_likely_dup,
@@ -1333,6 +1467,233 @@ async def check_duplicate(
             else "No significant duplicates found."
         )
     )
+
+
+# ==================== LLM AUTO-MERGE FOR DUPLICATE CLUSTERS ====================
+
+MERGE_THRESHOLD_COUNT = 10     # Minimum duplicates to trigger merge
+MERGE_SIMILARITY_MIN = 0.20   # Minimum Jaccard similarity to count as cluster member
+
+
+async def _check_and_merge_duplicates(db: AsyncSession, new_complaint):
+    """
+    After a new complaint is submitted, check if there are 10+ similar complaints
+    in the public feed. If so, LLM merges them into a single canonical complaint.
+    """
+    from src.database.models import Complaint, Notification, Authority
+    from sqlalchemy import select, and_
+    from datetime import datetime, timedelta, timezone
+    import json
+
+    try:
+        new_text = new_complaint.rephrased_text or new_complaint.original_text or ""
+        if len(new_text.strip()) < 10:
+            return
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+
+        # Get recent public complaints (excluding already-merged ones)
+        q = (
+            select(Complaint)
+            .where(
+                and_(
+                    Complaint.visibility == "Public",
+                    Complaint.status.notin_(["Spam", "Closed"]),
+                    Complaint.is_marked_as_spam == False,
+                    Complaint.submitted_at >= cutoff,
+                    Complaint.merged_into_id == None,
+                    Complaint.id != new_complaint.id,
+                )
+            )
+            .order_by(Complaint.submitted_at.desc())
+            .limit(300)
+        )
+        result = await db.execute(q)
+        candidates = list(result.scalars().all())
+
+        if len(candidates) < MERGE_THRESHOLD_COUNT:
+            return
+
+        # Compute Jaccard similarities
+        cluster = [(new_complaint, 1.0)]  # Include the new complaint itself
+        for c in candidates:
+            text = c.rephrased_text or c.original_text or ""
+            score = _jaccard(new_text, text)
+            if score >= MERGE_SIMILARITY_MIN:
+                cluster.append((c, score))
+
+        if len(cluster) < MERGE_THRESHOLD_COUNT:
+            # Not enough duplicates — but notify if >= 5
+            if len(cluster) >= 5:
+                await _notify_trend_detected(db, cluster, new_text, new_complaint.assigned_authority_id)
+            return
+
+        # 10+ duplicates found — call LLM to create merged summary
+        logger.info(f"Duplicate cluster of {len(cluster)} found — triggering LLM merge")
+
+        complaint_texts = []
+        for c, _ in cluster[:15]:  # Cap at 15 for LLM context
+            text = c.rephrased_text or c.original_text or ""
+            complaint_texts.append(text[:200])
+
+        merged_summary = await _llm_merge_complaints(complaint_texts)
+        if not merged_summary:
+            return
+
+        # Deduplicate votes across the cluster:
+        # A student who voted on multiple duplicate complaints counts only once
+        from src.database.models import Vote
+        cluster_ids = [c.id for c, _ in cluster]
+        vote_q = select(Vote).where(Vote.complaint_id.in_(cluster_ids))
+        vote_result = await db.execute(vote_q)
+        all_votes = vote_result.scalars().all()
+
+        # Keep only the most recent vote per student (upvote wins over downvote if mixed)
+        voter_map: dict = {}  # student_roll_no → latest vote_type
+        for v in sorted(all_votes, key=lambda x: x.created_at or datetime.min):
+            voter_map[v.student_roll_no] = v.vote_type
+
+        unique_upvotes = sum(1 for vt in voter_map.values() if vt == "upvote")
+        unique_downvotes = sum(1 for vt in voter_map.values() if vt == "downvote")
+        unique_voters = len(voter_map)
+
+        # Create canonical complaint using deduplicated vote counts
+        canonical = Complaint(
+            student_roll_no=new_complaint.student_roll_no,
+            category_id=new_complaint.category_id,
+            original_text=f"[Auto-merged from {len(cluster)} similar complaints]",
+            rephrased_text=merged_summary,
+            visibility="Public",
+            upvotes=unique_upvotes,
+            downvotes=unique_downvotes,
+            priority_score=0.0,
+            priority="High",  # Merged complaints with 10+ reports are at least High
+            assigned_authority_id=new_complaint.assigned_authority_id,
+            status="Raised",
+            is_merged_canonical=True,
+            complaint_department_id=new_complaint.complaint_department_id,
+        )
+        db.add(canonical)
+        await db.flush()
+
+        # Point all cluster members to the canonical
+        for c, _ in cluster:
+            c.merged_into_id = canonical.id
+
+        await db.flush()
+        await db.commit()
+
+        # Build notification message with unique vote info
+        vote_info = (
+            f"Unique voters: {unique_voters} students "
+            f"({unique_upvotes} upvotes, {unique_downvotes} downvotes — deduplicated)"
+        )
+        merge_msg = (
+            f"🔗 AUTO-MERGED: {len(cluster)} similar complaints combined into one issue.\n"
+            f"Summary: \"{merged_summary[:300]}\"\n"
+            f"{vote_info}"
+        )
+
+        # Notify all admins
+        admin_q = select(Authority).where(
+            and_(Authority.authority_type == "Admin", Authority.is_active == True)
+        )
+        admin_result = await db.execute(admin_q)
+        admins = admin_result.scalars().all()
+        for admin in admins:
+            db.add(Notification(
+                recipient_type="Authority",
+                recipient_id=str(admin.id),
+                complaint_id=canonical.id,
+                notification_type="duplicate_merge",
+                message=merge_msg,
+            ))
+
+        # Notify the assigned authority (HOD, Warden, etc.) if different from admin
+        if new_complaint.assigned_authority_id:
+            db.add(Notification(
+                recipient_type="Authority",
+                recipient_id=str(new_complaint.assigned_authority_id),
+                complaint_id=canonical.id,
+                notification_type="duplicate_merge",
+                message=merge_msg,
+            ))
+
+        await db.commit()
+
+        logger.info(f"Successfully merged {len(cluster)} complaints into canonical {canonical.id}")
+
+    except Exception as e:
+        logger.error(f"Auto-merge failed (non-fatal): {e}", exc_info=True)
+
+
+async def _llm_merge_complaints(complaint_texts: list) -> str | None:
+    """Use Groq LLM to create a merged summary from multiple similar complaints."""
+    try:
+        from src.services.llm_service import llm_service
+
+        numbered = "\n".join(f"{i+1}. {t}" for i, t in enumerate(complaint_texts))
+        prompt = (
+            "You are summarizing multiple similar campus complaints into ONE concise complaint.\n"
+            "These complaints are all about the same issue reported by different students.\n\n"
+            f"Individual complaints:\n{numbered}\n\n"
+            "Write a single, clear, professional complaint text (2-4 sentences) that captures:\n"
+            "- The core issue all students are reporting\n"
+            "- The scope/impact (mention that multiple students reported this)\n"
+            "- Any specific details mentioned across complaints\n\n"
+            "Output ONLY the merged complaint text, nothing else."
+        )
+
+        response = await llm_service.client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=300,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.warning(f"LLM merge failed: {e}")
+        return None
+
+
+async def _notify_trend_detected(db, cluster, query_text, assigned_authority_id=None):
+    """Notify admins and assigned authority when 5+ similar complaints detected."""
+    from src.database.models import Authority, Notification
+    from sqlalchemy import and_
+
+    try:
+        topic = query_text[:100]
+        trend_msg = (
+            f"📈 TREND: {len(cluster)} students reported similar issues.\n"
+            f"Topic: \"{topic}...\"\n"
+            f"Consider investigating this pattern before it escalates further."
+        )
+        # Notify admins
+        admin_q = select(Authority).where(
+            and_(Authority.authority_type == "Admin", Authority.is_active == True)
+        )
+        admin_result = await db.execute(admin_q)
+        admins = admin_result.scalars().all()
+        for admin in admins:
+            db.add(Notification(
+                recipient_type="Authority",
+                recipient_id=str(admin.id),
+                complaint_id=None,
+                notification_type="trend_detected",
+                message=trend_msg,
+            ))
+        # Notify assigned authority
+        if assigned_authority_id:
+            db.add(Notification(
+                recipient_type="Authority",
+                recipient_id=str(assigned_authority_id),
+                complaint_id=None,
+                notification_type="trend_detected",
+                message=trend_msg,
+            ))
+        await db.commit()
+    except Exception as e:
+        logger.warning(f"Trend notification failed: {e}")
 
 
 # ==================== ANALYTICS (PUBLIC SUMMARY) ====================
@@ -1428,6 +1789,99 @@ async def get_public_analytics(
         "avg_resolution_hours": avg_resolution_hours,
         "satisfaction_avg": satisfaction_avg,
     }
+
+
+# ==================== AUTHORITY FILE ATTACHMENT ====================
+
+ALLOWED_ATTACHMENT_TYPES = {
+    "application/pdf",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+}
+MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+@router.post(
+    "/{complaint_id}/authority-attachment",
+    summary="Upload authority attachment",
+    description="Authority uploads a file (PDF, Excel, Word, image) to attach to a complaint",
+)
+async def upload_authority_attachment(
+    complaint_id: UUID,
+    file: UploadFile = File(...),
+    authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db),
+):
+    from src.database.models import Complaint
+    from sqlalchemy import select
+
+    result = await db.execute(select(Complaint).where(Complaint.id == complaint_id))
+    complaint = result.scalar_one_or_none()
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    # Validate MIME type
+    content_type = file.content_type or ""
+    if content_type not in ALLOWED_ATTACHMENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type '{content_type}' not allowed. Supported: PDF, Excel, Word, JPEG, PNG, WebP"
+        )
+
+    data = await file.read()
+    if len(data) > MAX_ATTACHMENT_SIZE:
+        raise HTTPException(status_code=400, detail="File exceeds 10MB limit")
+
+    complaint.authority_attachment_data = data
+    complaint.authority_attachment_filename = file.filename or "attachment"
+    complaint.authority_attachment_mimetype = content_type
+    complaint.authority_attachment_size = len(data)
+    await db.commit()
+
+    logger.info(f"Authority {authority_id} attached '{file.filename}' ({len(data)} bytes) to complaint {complaint_id}")
+    return {
+        "success": True,
+        "filename": complaint.authority_attachment_filename,
+        "size": complaint.authority_attachment_size,
+        "mimetype": complaint.authority_attachment_mimetype,
+    }
+
+
+@router.get(
+    "/{complaint_id}/authority-attachment",
+    summary="Download authority attachment",
+    description="Download the file attached by authority to a complaint",
+)
+async def download_authority_attachment(
+    complaint_id: UUID,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from src.database.models import Complaint
+    from sqlalchemy import select
+
+    result = await db.execute(select(Complaint).where(Complaint.id == complaint_id))
+    complaint = result.scalar_one_or_none()
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    if not complaint.authority_attachment_data:
+        raise HTTPException(status_code=404, detail="No attachment found for this complaint")
+
+    return Response(
+        content=complaint.authority_attachment_data,
+        media_type=complaint.authority_attachment_mimetype or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{complaint.authority_attachment_filename or "attachment"}"',
+            "Content-Length": str(complaint.authority_attachment_size or len(complaint.authority_attachment_data)),
+        }
+    )
 
 
 __all__ = ["router"]

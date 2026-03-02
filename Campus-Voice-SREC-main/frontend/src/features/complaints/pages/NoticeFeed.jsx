@@ -1,11 +1,88 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { TopNav } from '../../../components/Navbars';
 import BottomNav from '../../../components/BottomNav';
 import { EliteButton, Skeleton } from '../../../components/UI';
 import { useAuth } from '../../../context/AuthContext';
 import { useNotifications } from '../../../context/NotificationContext';
 import studentService from '../../../services/student.service';
-import { Megaphone, Calendar, AlertTriangle, Info, Wrench, RefreshCw, Users } from 'lucide-react';
+import { Megaphone, Calendar, AlertTriangle, Info, Wrench, RefreshCw, Users, Paperclip, X, Download, FileText } from 'lucide-react';
+
+// ─── Attachment Viewer Modal ─────────────────────────────────────────────────
+function AttachmentModal({ filename, mimeType, blobUrl, onClose }) {
+    useEffect(() => {
+        const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [onClose]);
+
+    const isImage = mimeType && mimeType.startsWith('image/');
+    const isPdf = mimeType === 'application/pdf' || filename?.toLowerCase().endsWith('.pdf');
+
+    return (
+        <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-fadeIn"
+            onClick={onClose}
+        >
+            <div
+                className="relative bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                        {isImage ? <Paperclip size={14} className="text-srec-primary flex-shrink-0" /> : <FileText size={14} className="text-srec-primary flex-shrink-0" />}
+                        <p className="text-sm font-semibold text-gray-800 truncate">{filename}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                        <a
+                            href={blobUrl}
+                            download={filename}
+                            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-gray-800"
+                            title="Download"
+                        >
+                            <Download size={15} />
+                        </a>
+                        <button
+                            onClick={onClose}
+                            className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-gray-800"
+                        >
+                            <X size={15} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-auto flex items-center justify-center bg-gray-50 min-h-0">
+                    {isImage ? (
+                        <img
+                            src={blobUrl}
+                            alt={filename}
+                            className="max-w-full max-h-[75vh] object-contain p-4"
+                        />
+                    ) : isPdf ? (
+                        <iframe
+                            src={blobUrl}
+                            title={filename}
+                            className="w-full h-[75vh] border-0"
+                        />
+                    ) : (
+                        <div className="text-center py-12 px-6">
+                            <FileText size={40} className="text-gray-300 mx-auto mb-3" />
+                            <p className="text-sm text-gray-600 font-medium mb-4">{filename}</p>
+                            <a
+                                href={blobUrl}
+                                download={filename}
+                                className="inline-flex items-center gap-2 px-4 py-2 bg-srec-primary text-white rounded-xl text-sm font-semibold hover:bg-srec-primaryDark transition-colors"
+                            >
+                                <Download size={14} /> Download file
+                            </a>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
 
 // Category config: icon + color palette
 const CATEGORY_CONFIG = {
@@ -31,7 +108,31 @@ export default function NoticeFeed() {
     const [skip, setSkip] = useState(0);
     const [hasMore, setHasMore] = useState(true);
     const [error, setError] = useState(null);
+    const [attachment, setAttachment] = useState(null); // { blobUrl, filename, mimeType }
+    const [attachLoading, setAttachLoading] = useState(null); // noticeId being loaded
     const LIMIT = 20;
+
+    const openAttachment = useCallback(async (noticeId, filename, mimeType) => {
+        if (attachLoading) return;
+        setAttachLoading(noticeId);
+        try {
+            const token = localStorage.getItem('token') || '';
+            const res = await fetch(`/api/authorities/notices/${noticeId}/attachment?token=${token}`);
+            if (!res.ok) throw new Error('Failed to load attachment');
+            const blob = await res.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            setAttachment({ blobUrl, filename, mimeType: mimeType || blob.type });
+        } catch (err) {
+            console.error('Attachment load error:', err);
+        } finally {
+            setAttachLoading(null);
+        }
+    }, [attachLoading]);
+
+    const closeAttachment = useCallback(() => {
+        if (attachment?.blobUrl) URL.revokeObjectURL(attachment.blobUrl);
+        setAttachment(null);
+    }, [attachment]);
 
     useEffect(() => {
         fetchNotices(true);
@@ -158,6 +259,18 @@ export default function NoticeFeed() {
                                             {notice.content}
                                         </p>
 
+                                        {/* Attachment — opens in smooth popup modal */}
+                                        {notice.attachment_filename && (
+                                            <button
+                                                onClick={() => openAttachment(notice.id, notice.attachment_filename, notice.attachment_mimetype)}
+                                                disabled={attachLoading === notice.id}
+                                                className="mt-2 inline-flex items-center gap-1.5 text-[10px] text-srec-primary hover:underline disabled:opacity-60"
+                                            >
+                                                <Paperclip size={10} className={attachLoading === notice.id ? 'animate-pulse' : ''} />
+                                                {attachLoading === notice.id ? 'Loading…' : notice.attachment_filename}
+                                            </button>
+                                        )}
+
                                         {/* Footer */}
                                         <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-gray-50">
                                             <span className="text-[10px] text-gray-500">
@@ -198,6 +311,16 @@ export default function NoticeFeed() {
                 </div>
             </div>
             {user?.role === 'Student' && <BottomNav />}
+
+            {/* Attachment viewer modal */}
+            {attachment && (
+                <AttachmentModal
+                    filename={attachment.filename}
+                    mimeType={attachment.mimeType}
+                    blobUrl={attachment.blobUrl}
+                    onClose={closeAttachment}
+                />
+            )}
         </div>
     );
 }

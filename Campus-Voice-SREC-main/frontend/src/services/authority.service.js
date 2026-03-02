@@ -84,6 +84,26 @@ const deactivateNotice = async (noticeId) => {
     return await api(`/authorities/notices/${noticeId}`, { method: 'DELETE' });
 };
 
+// Upload attachment to a notice
+const uploadNoticeAttachment = async (noticeId, file) => {
+    const token = localStorage.getItem('token');
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`/api/authorities/notices/${noticeId}/attachment`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.detail || 'Failed to upload attachment');
+    }
+    return await res.json();
+};
+
+// Get attachment download URL (public)
+const getNoticeAttachmentUrl = (noticeId) => `/api/authorities/notices/${noticeId}/attachment`;
+
 // --- Notifications (Authority/Admin) ---
 
 const getNotifications = async ({ skip = 0, limit = 20, unread_only = false } = {}) => {
@@ -117,6 +137,8 @@ const authorityService = {
     createNotice,
     getMyNotices,
     deactivateNotice,
+    uploadNoticeAttachment,
+    getNoticeAttachmentUrl,
     getNotifications,
     markNotificationRead,
     markAllNotificationsRead,

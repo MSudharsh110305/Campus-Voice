@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBadge, PriorityBadge, EliteButton } from '../../../components/UI';
 import { format } from 'date-fns';
-import { MessageSquare, ThumbsUp, Image as ImageIcon, ArrowUpCircle, MessageCircle } from 'lucide-react';
+import { MessageSquare, ThumbsUp, Image as ImageIcon, ArrowUpCircle, MessageCircle, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { VALID_STATUS_TRANSITIONS } from '../../../utils/constants';
 
@@ -35,7 +35,7 @@ function AuthenticatedImage({ complaintId, token, className = '', thumbnail = fa
     return <img src={src} alt="Complaint" className={className} />;
 }
 
-const AuthorityComplaintCard = ({ complaint, onStatusUpdate, onPostUpdate, onEscalate, token }) => {
+const AuthorityComplaintCard = ({ complaint, onStatusUpdate, onPostUpdate, onEscalate, onAttach, token }) => {
     const navigate = useNavigate();
     const [expanded, setExpanded] = useState(false);
     const validTransitions = VALID_STATUS_TRANSITIONS[complaint.status] || [];
@@ -84,6 +84,19 @@ const AuthorityComplaintCard = ({ complaint, onStatusUpdate, onPostUpdate, onEsc
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-srec-primary/10 text-srec-primary border border-srec-primary/20">
                         {complaint.category_name}
                     </span>
+                </div>
+            )}
+
+            {/* Spam dispute banner */}
+            {complaint.has_disputed && (
+                <div className="mb-3 p-2.5 bg-orange-50 border border-orange-200 rounded-xl flex items-start gap-2" onClick={(e) => e.stopPropagation()}>
+                    <ShieldAlert size={13} className="text-orange-500 flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                        <p className="text-[10px] font-bold text-orange-700 uppercase tracking-wide">Spam Disputed by Student</p>
+                        {complaint.appeal_reason && (
+                            <p className="text-[11px] text-orange-800 mt-0.5 italic">"{complaint.appeal_reason}"</p>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -153,6 +166,7 @@ const AuthorityComplaintCard = ({ complaint, onStatusUpdate, onPostUpdate, onEsc
                         Escalate
                     </button>
                 )}
+
 
                 <button
                     onClick={(e) => {

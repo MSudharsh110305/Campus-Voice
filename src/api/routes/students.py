@@ -755,6 +755,7 @@ async def get_student_notices(
             is_active=n.is_active,
             created_at=n.created_at,
             expires_at=n.expires_at,
+            attachment_filename=n.attachment_filename,
         ))
 
     return NoticeListResponse(

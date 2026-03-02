@@ -122,6 +122,8 @@ class ComplaintResponse(BaseModel):
     assigned_authority_name: Optional[str] = None
     is_marked_as_spam: bool
     spam_reason: Optional[str] = None
+    has_disputed: bool = False
+    appeal_reason: Optional[str] = None
 
     # ✅ NEW: Binary image storage fields (replaces image_url)
     has_image: bool = Field(
@@ -654,6 +656,7 @@ class DuplicateCandidate(BaseModel):
     upvotes: int
     submitted_at: datetime
     similarity_score: float = Field(..., ge=0.0, le=1.0)
+    is_own: bool = False  # True when this complaint was submitted by the requesting student
 
 
 class DuplicateCheckResponse(BaseModel):

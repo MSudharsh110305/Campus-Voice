@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import authorityService from '../../../services/authority.service';
+import complaintService from '../../../services/complaint.service';
 import ExportModal from '../../../components/ExportModal';
 import { Card, EliteButton, Select } from '../../../components/UI';
 import StatsCard from '../../../components/UI/StatsCard';
@@ -13,7 +14,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { LayoutDashboard, CheckCircle, Clock, AlertCircle, X, Download, TrendingUp } from 'lucide-react';
+import { LayoutDashboard, CheckCircle, Clock, AlertCircle, X, Download, TrendingUp, Paperclip } from 'lucide-react';
 
 const ROLE_TITLES = {
   'Warden': 'Warden Dashboard',
@@ -71,6 +72,11 @@ export default function AuthorityDashboard() {
   const [escalateReason, setEscalateReason] = useState('');
   const [escalateSubmitting, setEscalateSubmitting] = useState(false);
 
+  // Attachment modal
+  const [attachModal, setAttachModal] = useState({ open: false, complaintId: null });
+  const [attachFile, setAttachFile] = useState(null);
+  const [attachSubmitting, setAttachSubmitting] = useState(false);
+
   // Feedback messages
   const [feedback, setFeedback] = useState({ type: '', message: '' });
 
@@ -115,12 +121,14 @@ export default function AuthorityDashboard() {
 
   const loadComplaints = async () => {
     try {
-      const filter = statusFilter === 'All' ? null : statusFilter;
-      const data = await authorityService.getMyComplaints(0, 50, filter);
+      // 'Disputed' is a client-side pseudo-filter: load Spam, then filter by has_disputed
+      const apiFilter = statusFilter === 'Disputed' ? 'Spam' : (statusFilter === 'All' ? null : statusFilter);
+      const data = await authorityService.getMyComplaints(0, 50, apiFilter);
       let list = [];
       if (Array.isArray(data)) list = data;
       else if (data?.complaints) list = data.complaints;
       else if (data?.data) list = data.data;
+      if (statusFilter === 'Disputed') list = list.filter(c => c.has_disputed);
       setComplaints(list);
     } catch (err) {
       console.error('Failed to load complaints:', err);
@@ -191,6 +199,24 @@ export default function AuthorityDashboard() {
     e.stopPropagation();
     setEscalateModal({ open: true, complaintId });
     setEscalateReason('');
+  };
+
+  const handleAttach = async () => {
+    if (!attachFile) {
+      showFeedback('error', 'Please select a file to attach');
+      return;
+    }
+    setAttachSubmitting(true);
+    try {
+      await complaintService.uploadAuthorityAttachment(attachModal.complaintId, attachFile);
+      setAttachModal({ open: false, complaintId: null });
+      setAttachFile(null);
+      showFeedback('success', 'File attached successfully');
+    } catch (err) {
+      showFeedback('error', err.message || 'Failed to upload attachment');
+    } finally {
+      setAttachSubmitting(false);
+    }
   };
 
   const handleEscalate = async () => {
@@ -347,14 +373,14 @@ export default function AuthorityDashboard() {
           {/* Resolution metrics row */}
           {(resolutionRate != null || avgResolutionHours != null) && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-              <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
-                <p className="text-2xl font-bold text-srec-primary">
+              <div className="bg-white/80 backdrop-blur-sm rounded-xl border border-white/60 p-4 shadow-[0_4px_16px_-4px_rgba(0,0,0,0.06)] text-center">
+                <p className="text-2xl font-bold text-srec-primary font-heading">
                   {resolutionRate != null ? `${Math.round(resolutionRate)}%` : '—'}
                 </p>
                 <p className="text-xs text-gray-500 mt-1 font-medium">Resolution Rate</p>
               </div>
-              <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
-                <p className="text-2xl font-bold text-blue-600">
+              <div className="bg-white/80 backdrop-blur-sm rounded-xl border border-white/60 p-4 shadow-[0_4px_16px_-4px_rgba(0,0,0,0.06)] text-center">
+                <p className="text-2xl font-bold text-blue-600 font-heading">
                   {avgResolutionHours != null ? `${Math.round(avgResolutionHours)}h` : '—'}
                 </p>
                 <p className="text-xs text-gray-500 mt-1 font-medium">Avg Resolution Time</p>
@@ -362,8 +388,8 @@ export default function AuthorityDashboard() {
               {['Critical', 'High'].map(p => {
                 const pColors = { Critical: 'text-red-600', High: 'text-orange-600' };
                 return (
-                  <div key={p} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
-                    <p className={`text-2xl font-bold ${pColors[p]}`}>{dsByPriority[p] || 0}</p>
+                  <div key={p} className="bg-white/80 backdrop-blur-sm rounded-xl border border-white/60 p-4 shadow-[0_4px_16px_-4px_rgba(0,0,0,0.06)] text-center">
+                    <p className={`text-2xl font-bold ${pColors[p]} font-heading`}>{dsByPriority[p] || 0}</p>
                     <p className="text-xs text-gray-500 mt-1 font-medium">{p} Priority</p>
                   </div>
                 );
@@ -374,8 +400,8 @@ export default function AuthorityDashboard() {
           {/* Charts */}
           {weeklyTrend.length > 0 && (
             <div className="mb-8">
-              <Card className="p-6 shadow-sm border border-gray-100">
-                <h3 className="text-base font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <Card className="p-6 shadow-[0_4px_24px_-4px_rgba(0,0,0,0.08)] border border-white/60 bg-white/80 backdrop-blur-sm">
+                <h3 className="text-base font-bold text-gray-900 mb-4 flex items-center gap-2 font-heading">
                   <TrendingUp size={18} className="text-srec-primary" />
                   Weekly Complaint Trend
                 </h3>
@@ -410,7 +436,8 @@ export default function AuthorityDashboard() {
                 onChange={setStatusFilter}
                 options={[
                   { value: 'All', label: 'All Statuses' },
-                  ...STATUSES.map(s => ({ value: s, label: s }))
+                  ...STATUSES.map(s => ({ value: s, label: s })),
+                  { value: 'Disputed', label: '⚠ Disputed (Spam)' },
                 ]}
                 className="w-48 bg-white border-gray-200"
               />
@@ -442,6 +469,7 @@ export default function AuthorityDashboard() {
                   onStatusUpdate={openStatusModal}
                   onPostUpdate={openPostUpdateModal}
                   onEscalate={openEscalateModal}
+                  onAttach={(e, id) => { e.stopPropagation(); setAttachModal({ open: true, complaintId: id }); setAttachFile(null); }}
                   token={localStorage.getItem('token')}
                 />
               ))}
@@ -609,6 +637,57 @@ export default function AuthorityDashboard() {
               isLoading={escalateSubmitting}
             >
               {escalateSubmitting ? 'Escalating...' : 'Escalate'}
+            </EliteButton>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Attach File Modal */}
+      <Modal
+        open={attachModal.open}
+        onClose={() => { setAttachModal({ open: false, complaintId: null }); setAttachFile(null); }}
+        title="Attach File to Complaint"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Upload a supporting document (PDF, Excel, Word) or image. Max 10MB.
+          </p>
+          <label className="block">
+            <span className="block text-sm font-medium text-gray-700 mb-1.5">Select File</span>
+            <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center cursor-pointer hover:border-srec-primary/40 transition-colors">
+              <input
+                type="file"
+                className="hidden"
+                id="attach-file-input"
+                accept=".pdf,.xlsx,.xls,.docx,.doc,.png,.jpg,.jpeg,.webp,.gif"
+                onChange={e => setAttachFile(e.target.files[0] || null)}
+              />
+              <label htmlFor="attach-file-input" className="cursor-pointer">
+                <Paperclip size={24} className="mx-auto mb-2 text-gray-400" />
+                {attachFile ? (
+                  <p className="text-sm font-semibold text-srec-primary">{attachFile.name}</p>
+                ) : (
+                  <p className="text-sm text-gray-500">Click to browse or drag & drop</p>
+                )}
+                <p className="text-xs text-gray-400 mt-1">PDF, Excel, Word, PNG, JPG, WebP — max 10MB</p>
+              </label>
+            </div>
+          </label>
+          <div className="flex justify-end gap-3 pt-2">
+            <EliteButton
+              variant="outline"
+              onClick={() => { setAttachModal({ open: false, complaintId: null }); setAttachFile(null); }}
+              disabled={attachSubmitting}
+            >
+              Cancel
+            </EliteButton>
+            <EliteButton
+              variant="primary"
+              onClick={handleAttach}
+              disabled={attachSubmitting || !attachFile}
+              isLoading={attachSubmitting}
+            >
+              {attachSubmitting ? 'Uploading...' : 'Upload & Attach'}
             </EliteButton>
           </div>
         </div>

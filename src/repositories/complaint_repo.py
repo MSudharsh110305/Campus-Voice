@@ -317,7 +317,9 @@ class ComplaintRepository(BaseRepository[Complaint]):
         student_gender: Optional[str] = None,
         student_roll_no: Optional[str] = None,
         skip: int = 0,
-        limit: int = 100
+        limit: int = 100,
+        category_id: Optional[int] = None,
+        sort_by: str = "hot",
     ) -> List[Complaint]:
         """
         Get public feed filtered by visibility rules.
@@ -353,11 +355,13 @@ class ComplaintRepository(BaseRepository[Complaint]):
         # Bug 4 fix: Exclude Spam complaints from the public feed in addition to Closed.
         # Spam complaints (flagged by authority or auto-detected) must never be visible
         # in any public or department feed.
+        # Also exclude merged-away complaints (they point to a canonical via merged_into_id).
         conditions = [
             Complaint.visibility == "Public",
             Complaint.status != "Closed",
             Complaint.status != "Spam",
             Complaint.is_marked_as_spam == False,
+            Complaint.merged_into_id == None,  # Hide merged-away duplicates
         ]
 
         # Collect hostel category IDs
@@ -433,9 +437,11 @@ class ComplaintRepository(BaseRepository[Complaint]):
 
         conditions.append(or_(*inter_dept_conditions))
 
-        # Fetch up to 1000 matching complaints; Hacker News Hot Score sorts in Python.
-        # hot_score = max(1, upvotes - downvotes) / (age_hours + 2) ** 1.8
-        # This naturally surfaces recent high-engagement posts above stale ones.
+        # Optional category filter
+        if category_id is not None:
+            conditions.append(Complaint.category_id == category_id)
+
+        # Fetch up to 1000 matching complaints; sort in Python for flexibility.
         query = (
             select(Complaint)
             .options(selectinload(Complaint.category), selectinload(Complaint.assigned_authority))
@@ -449,6 +455,11 @@ class ComplaintRepository(BaseRepository[Complaint]):
         now_utc = datetime.now(timezone.utc)
 
         def _hot_score(c: Complaint) -> float:
+            """True HN Hot Score with logarithmic scaling.
+            log10(max(1, net_votes)) / (age_hours + 2)^1.5
+            Logarithmic scaling prevents vote-bombing: 100 votes is only 2x better than 1, not 100x.
+            Merged canonical complaints get a boost from their combined votes."""
+            import math
             submitted = c.submitted_at
             if submitted is None:
                 age_hours = 999999.0
@@ -457,9 +468,17 @@ class ComplaintRepository(BaseRepository[Complaint]):
                     submitted = submitted.replace(tzinfo=timezone.utc)
                 age_hours = max(0.0, (now_utc - submitted).total_seconds() / 3600)
             votes = max(1, (c.upvotes or 0) - (c.downvotes or 0))
-            return votes / (age_hours + 2) ** 1.8
+            log_votes = math.log10(votes)
+            return log_votes / (age_hours + 2) ** 1.5
 
-        complaints.sort(key=_hot_score, reverse=True)
+        # Apply sort order
+        if sort_by == "new":
+            complaints.sort(key=lambda c: c.submitted_at or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+        elif sort_by == "top":
+            complaints.sort(key=lambda c: (c.upvotes or 0) - (c.downvotes or 0), reverse=True)
+        else:  # default: "hot"
+            complaints.sort(key=_hot_score, reverse=True)
+
         return complaints[skip: skip + limit]
 
     async def get_high_priority(self, limit: int = 50) -> List[Complaint]:

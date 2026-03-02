@@ -16,7 +16,7 @@ import logging
 from typing import Optional
 from uuid import UUID
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import (  # ✅ FIXED IMPORT - use dependencies.get_db for session sharing
@@ -999,6 +999,81 @@ async def deactivate_notice(
 
     logger.info(f"Notice {notice_id} deactivated by authority {authority_id}")
     return {"success": True, "message": "Notice deactivated"}
+
+
+@router.post(
+    "/notices/{notice_id}/attachment",
+    summary="Upload file attachment to a notice",
+)
+async def upload_notice_attachment(
+    notice_id: int,
+    file: UploadFile = File(...),
+    authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload/replace a file attachment on an existing notice (only creator or Admin)."""
+    from src.database.models import AuthorityUpdate
+    from sqlalchemy import select
+
+    result = await db.execute(select(AuthorityUpdate).where(AuthorityUpdate.id == notice_id))
+    notice = result.scalar_one_or_none()
+    if not notice:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Notice not found")
+
+    authority_repo = AuthorityRepository(db)
+    authority = await authority_repo.get(authority_id)
+    is_admin = authority and authority.authority_type == "Admin"
+    if not is_admin and notice.authority_id != authority_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="You can only attach files to your own notices")
+
+    # Validate file size (max 10 MB) and type
+    MAX_SIZE = 10 * 1024 * 1024
+    ALLOWED_TYPES = {
+        "application/pdf", "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "image/jpeg", "image/png", "image/webp",
+    }
+    data = await file.read()
+    if len(data) > MAX_SIZE:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="File must be under 10 MB")
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Unsupported file type")
+
+    notice.attachment_data = data
+    notice.attachment_filename = file.filename
+    notice.attachment_mimetype = file.content_type
+    await db.commit()
+
+    logger.info(f"Attachment '{file.filename}' uploaded to notice {notice_id} by authority {authority_id}")
+    return {"success": True, "message": "Attachment uploaded", "filename": file.filename}
+
+
+@router.get(
+    "/notices/{notice_id}/attachment",
+    summary="Download notice attachment",
+)
+async def download_notice_attachment(
+    notice_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Download the file attachment from a notice (public)."""
+    from src.database.models import AuthorityUpdate
+    from fastapi.responses import Response
+    from sqlalchemy import select
+
+    result = await db.execute(select(AuthorityUpdate).where(AuthorityUpdate.id == notice_id))
+    notice = result.scalar_one_or_none()
+    if not notice or not notice.attachment_data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Attachment not found")
+
+    # Use inline disposition so browser opens images/PDFs directly instead of downloading
+    return Response(
+        content=notice.attachment_data,
+        media_type=notice.attachment_mimetype or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{notice.attachment_filename or "attachment"}"'},
+    )
 
 
 # ==================== STATISTICS ====================

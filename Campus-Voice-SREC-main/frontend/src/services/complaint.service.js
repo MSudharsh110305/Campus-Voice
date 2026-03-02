@@ -42,8 +42,10 @@ const getMyComplaints = async (rollNumber, limit = 50, offset = 0) => {
     return await api(`/students/my-complaints?${params}`);
 };
 
-const getPublicFeed = async (skip = 0, limit = 20) => {
+const getPublicFeed = async (skip = 0, limit = 20, { categoryId, sortBy } = {}) => {
     const params = new URLSearchParams({ skip, limit });
+    if (categoryId && categoryId !== 'All') params.set('category_id', categoryId);
+    if (sortBy) params.set('sort_by', sortBy);
     return await api(`/complaints/public-feed?${params}`);
 };
 
@@ -149,6 +151,22 @@ const getPublicAnalytics = async () => {
     return await api('/complaints/analytics/summary');
 };
 
+const uploadAuthorityAttachment = async (complaintId, file) => {
+    const token = localStorage.getItem('token');
+    const fd = new FormData();
+    fd.append('file', file);
+    const response = await fetch(`/api/complaints/${complaintId}/authority-attachment`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: fd,
+    });
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || err.error || 'Failed to upload attachment');
+    }
+    return await response.json();
+};
+
 const complaintService = {
     submitComplaint,
     getMyComplaints,
@@ -170,6 +188,7 @@ const complaintService = {
     rateComplaint,
     getChangelog,
     getPublicAnalytics,
+    uploadAuthorityAttachment,
 };
 
 export default complaintService;

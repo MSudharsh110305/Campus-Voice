@@ -5,7 +5,7 @@ import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import authorityService from '../../../services/authority.service';
 import { VOTE_TYPES, COMPLAINT_CATEGORIES } from '../../../utils/constants';
-import { ThumbsUp, ThumbsDown, FileX, Clock, History, CheckCircle2, AlertCircle, ShieldAlert, FileText, ChevronRight, ShieldCheck, Send, MessageSquareWarning } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, FileX, Clock, History, CheckCircle2, AlertCircle, ShieldAlert, FileText, ChevronRight, ShieldCheck, Send, MessageSquareWarning, Paperclip } from 'lucide-react';
 import { Skeleton, Card, Badge, Button } from '../../../components/UI';
 import { format } from 'date-fns';
 
@@ -401,7 +401,7 @@ export default function ComplaintDetails() {
             <div className="animate-fadeIn max-w-3xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
                 <button
                     onClick={() => navigate(-1)}
-                    className="mb-4 flex items-center gap-1.5 text-sm font-medium text-srec-textMuted hover:text-srec-primary transition-colors"
+                    className="mb-4 flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-srec-primary transition-colors"
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                     Back
@@ -417,7 +417,7 @@ export default function ComplaintDetails() {
                     )}
                 </div>
 
-                <Card className="overflow-hidden shadow-card">
+                <Card className="overflow-hidden shadow-[0_4px_24px_-4px_rgba(0,0,0,0.1)] bg-white/90 backdrop-blur-sm border-white/70">
                     {complaint?.has_image && (
                         <div className="relative bg-gray-100">
                             {imageLoading ? (
@@ -536,7 +536,12 @@ export default function ComplaintDetails() {
                                         </p>
                                     </div>
                                 </div>
-                                {disputeMsg ? (
+                                {complaint.has_disputed || disputeMsg?.ok ? (
+                                    <div className="flex items-center gap-2 mt-3 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 font-medium">
+                                        <CheckCircle2 size={14} className="text-amber-600 flex-shrink-0" />
+                                        Your dispute has been submitted. An admin will review your complaint shortly.
+                                    </div>
+                                ) : disputeMsg ? (
                                     <div className={`text-xs px-3 py-2 rounded-lg font-medium ${disputeMsg.ok ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                                         {disputeMsg.text}
                                     </div>
@@ -717,6 +722,25 @@ export default function ComplaintDetails() {
                                 )}
                             </div>
                         </div>
+
+                        {/* Authority Attachment */}
+                        {complaint.authority_attachment_filename && (
+                            <div className="mb-6 p-4 rounded-2xl border border-blue-100 bg-blue-50/50 flex items-center gap-3">
+                                <Paperclip size={18} className="text-blue-600 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-0.5">Authority Attachment</p>
+                                    <p className="text-sm font-semibold text-gray-800 truncate">{complaint.authority_attachment_filename}</p>
+                                </div>
+                                <a
+                                    href={`/api/complaints/${id}/authority-attachment`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex-shrink-0 text-xs font-bold text-blue-600 hover:text-blue-800 underline"
+                                >
+                                    Download
+                                </a>
+                            </div>
+                        )}
 
                         {/* Timeline & History Section */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">

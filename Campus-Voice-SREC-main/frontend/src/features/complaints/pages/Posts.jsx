@@ -7,8 +7,8 @@ import ComplaintCard from '../components/ComplaintCard';
 import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import studentService from '../../../services/student.service';
-import { Upload, X, FileX, Inbox, AlertTriangle, ThumbsUp } from 'lucide-react';
-import { VISIBILITY, COMPLAINT_CATEGORIES } from '../../../utils/constants';
+import { Upload, X, FileX, Inbox, AlertTriangle, ThumbsUp, Search, SlidersHorizontal } from 'lucide-react';
+import { VISIBILITY, COMPLAINT_CATEGORIES, STATUSES, PRIORITIES } from '../../../utils/constants';
 
 export default function Posts() {
   const { user } = useAuth();
@@ -26,10 +26,15 @@ export default function Posts() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
+  // My Posts filters
+  const [mineFilters, setMineFilters] = useState({ status: 'All', priority: 'All', search: '' });
+
   // Duplicate-check modal state
   const [dupModalOpen, setDupModalOpen] = useState(false);
   const [dupCandidates, setDupCandidates] = useState([]);
   const [isDupChecking, setIsDupChecking] = useState(false);
+  // Track votes cast in the dup modal: { [complaintId]: 'upvoted' | 'error' }
+  const [dupVotes, setDupVotes] = useState({});
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -120,6 +125,20 @@ export default function Posts() {
     await doSubmit();
   };
 
+  // Vote on a duplicate complaint directly from the modal
+  const handleDupUpvote = async (complaintId) => {
+    if (dupVotes[complaintId]) return; // already voted
+    try {
+      await complaintService.voteOnComplaint(complaintId, 'upvote');
+      setDupVotes(prev => ({ ...prev, [complaintId]: 'upvoted' }));
+      setDupCandidates(prev =>
+        prev.map(c => c.id === complaintId ? { ...c, upvotes: (c.upvotes || 0) + 1 } : c)
+      );
+    } catch (_) {
+      setDupVotes(prev => ({ ...prev, [complaintId]: 'error' }));
+    }
+  };
+
   // The actual API submission (called directly or after user confirms from modal)
   const doSubmit = async () => {
     setIsSubmitting(true);
@@ -167,7 +186,7 @@ export default function Posts() {
     }
   };
 
-  const inputClass = "w-full rounded-xl border border-srec-border bg-srec-backgroundAlt px-4 py-3 text-sm text-srec-textPrimary placeholder:text-srec-textMuted focus:bg-white focus:outline-none focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary transition-all resize-none";
+  const inputClass = "w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary transition-all resize-none";
 
   // Success screen
   if (submitted && apiResponse) {
@@ -280,7 +299,7 @@ export default function Posts() {
 
       <div className="animate-fadeIn max-w-3xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-xl font-bold text-srec-textPrimary tracking-tight">Posts</h1>
+          <h1 className="text-xl font-bold text-gray-900 tracking-tight font-heading">Posts</h1>
 
           {/* Pill tab switcher */}
           <div className="flex bg-srec-backgroundAlt rounded-full p-1 border border-srec-borderLight">
@@ -306,7 +325,7 @@ export default function Posts() {
         </div>
 
         {activeTab === 'create' && (
-          <Card className="p-5 sm:p-6 shadow-sm">
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-[0_4px_24px_-4px_rgba(0,0,0,0.08)] p-5 sm:p-6">
             {formError && (
               <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
                 {formError}
@@ -393,45 +412,67 @@ export default function Posts() {
 
             {/* Duplicate warning modal */}
             {dupModalOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-y-auto">
-                  <div className="p-5 border-b border-srec-borderLight flex items-center gap-3">
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-backdrop">
+                <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto animate-modal-in">
+                  <div className="p-5 border-b border-gray-100 flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
                       <AlertTriangle size={18} className="text-amber-600" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-srec-textPrimary text-sm">Similar complaints found</h3>
-                      <p className="text-xs text-srec-textMuted mt-0.5">Consider upvoting instead of re-submitting</p>
+                      <h3 className="font-bold text-gray-900 text-sm">Similar complaints found</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">Consider upvoting instead of re-submitting</p>
                     </div>
                   </div>
                   <div className="p-5 space-y-3">
-                    {dupCandidates.map((c) => (
-                      <div key={c.id} className="p-3 bg-srec-backgroundAlt rounded-xl border border-srec-borderLight">
-                        <p className="text-xs text-srec-textSecondary line-clamp-3">{c.rephrased_text}</p>
-                        <div className="flex items-center gap-3 mt-2">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${c.status === 'Resolved' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {c.status}
-                          </span>
-                          <span className="text-xs text-srec-textMuted flex items-center gap-1">
-                            <ThumbsUp size={11} /> {c.upvotes}
-                          </span>
-                          <span className="text-xs text-srec-textMuted ml-auto">
-                            {Math.round(c.similarity_score * 100)}% match
-                          </span>
+                    {dupCandidates.map((c) => {
+                      const voteState = dupVotes[c.id];
+                      const voted = voteState === 'upvoted';
+                      const isResolved = c.status === 'Resolved' || c.status === 'Closed';
+                      const isOwnComplaint = c.is_own;
+                      return (
+                        <div key={c.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                          <p className="text-xs text-gray-700 line-clamp-3">{c.rephrased_text}</p>
+                          <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isResolved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {c.status}
+                            </span>
+                            <span className="text-xs text-gray-500 flex items-center gap-1">
+                              <ThumbsUp size={11} /> {c.upvotes}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              {Math.round(c.similarity_score * 100)}% match
+                            </span>
+                            <div className="ml-auto">
+                              {voted ? (
+                                <span className="text-xs text-green-600 font-semibold flex items-center gap-1">
+                                  <ThumbsUp size={11} /> Upvoted
+                                </span>
+                              ) : isResolved || isOwnComplaint ? null : (
+                                <button
+                                  onClick={() => handleDupUpvote(c.id)}
+                                  disabled={!!voteState}
+                                  className="text-xs font-semibold px-2.5 py-1 rounded-lg border flex items-center gap-1 transition-colors border-srec-primary/30 text-srec-primary hover:bg-srec-primarySoft disabled:opacity-50"
+                                >
+                                  <ThumbsUp size={11} />
+                                  Upvote
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
-                  <div className="p-5 border-t border-srec-borderLight flex gap-3">
+                  <div className="p-5 border-t border-gray-100 flex gap-3">
                     <button
                       onClick={() => setDupModalOpen(false)}
-                      className="flex-1 py-2.5 rounded-xl border border-srec-border text-srec-textSecondary text-sm font-medium hover:bg-srec-backgroundAlt transition-colors"
+                      className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={doSubmit}
-                      className="flex-1 py-2.5 rounded-xl bg-srec-primary text-white text-sm font-semibold hover:bg-srec-primaryHover transition-colors"
+                      className="flex-1 py-2.5 rounded-xl bg-srec-primary text-white text-sm font-semibold hover:bg-srec-primaryDark transition-colors shadow-btn"
                     >
                       Submit anyway
                     </button>
@@ -439,48 +480,107 @@ export default function Posts() {
                 </div>
               </div>
             )}
-          </Card>
+          </div>
         )}
 
         {/* My Posts tab */}
-        {activeTab === 'mine' && (
-          <div className="space-y-3">
-            {(!Array.isArray(myPosts) || myPosts.length === 0) ? (
-              <div className="text-center py-16 bg-white rounded-2xl border border-srec-border shadow-card">
-                <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-srec-backgroundAlt flex items-center justify-center">
-                  <Inbox size={26} className="text-srec-textMuted" />
+        {activeTab === 'mine' && (() => {
+          const filteredPosts = (Array.isArray(myPosts) ? myPosts : []).filter(p => {
+            if (mineFilters.status !== 'All' && p.status !== mineFilters.status) return false;
+            if (mineFilters.priority !== 'All' && p.priority !== mineFilters.priority) return false;
+            if (mineFilters.search) {
+              const q = mineFilters.search.toLowerCase();
+              const text = (p.rephrased_text || p.original_text || '').toLowerCase();
+              if (!text.includes(q)) return false;
+            }
+            return true;
+          });
+
+          return (
+            <div className="space-y-3">
+              {/* Filter bar */}
+              {myPosts.length > 0 && (
+                <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-[0_2px_12px_-2px_rgba(0,0,0,0.06)] p-3 flex flex-wrap gap-2 items-center">
+                  <SlidersHorizontal size={14} className="text-gray-400 flex-shrink-0" />
+                  <div className="relative flex-1 min-w-[140px]">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={12} />
+                    <input
+                      type="text"
+                      placeholder="Search..."
+                      value={mineFilters.search}
+                      onChange={e => setMineFilters(f => ({ ...f, search: e.target.value }))}
+                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary outline-none transition-all"
+                    />
+                  </div>
+                  <select
+                    value={mineFilters.status}
+                    onChange={e => setMineFilters(f => ({ ...f, status: e.target.value }))}
+                    className="py-1.5 px-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary outline-none"
+                  >
+                    <option value="All">All Status</option>
+                    {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <select
+                    value={mineFilters.priority}
+                    onChange={e => setMineFilters(f => ({ ...f, priority: e.target.value }))}
+                    className="py-1.5 px-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary outline-none"
+                  >
+                    <option value="All">All Priority</option>
+                    {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  {(mineFilters.status !== 'All' || mineFilters.priority !== 'All' || mineFilters.search) && (
+                    <button
+                      onClick={() => setMineFilters({ status: 'All', priority: 'All', search: '' })}
+                      className="text-xs text-gray-400 hover:text-srec-danger flex items-center gap-1"
+                    >
+                      <X size={11} /> Reset
+                    </button>
+                  )}
                 </div>
-                <p className="text-srec-textPrimary text-base font-semibold">No posts yet</p>
-                <p className="text-srec-textMuted text-sm mt-1 max-w-xs mx-auto">
-                  Your submitted complaints will appear here
-                </p>
-                <button
-                  className="mt-4 text-sm text-srec-primary font-semibold hover:underline"
-                  onClick={() => setActiveTab('create')}
-                >
-                  Raise your first issue
-                </button>
-              </div>
-            ) : (
-              myPosts.map((post) => (
-                <ComplaintCard
-                  key={post.id || post.complaint_id}
-                  id={post.id || post.complaint_id}
-                  desc={post.rephrased_text || post.original_text}
-                  category={post.category_name || COMPLAINT_CATEGORIES[post.category_id]}
-                  has_image={post.has_image}
-                  author={post.is_anonymous ? 'Anonymous' : (post.author || post.student_roll_no)}
-                  status={post.status}
-                  priority={post.priority}
-                  upvotes={post.upvotes}
-                  timestamp={post.submitted_at || post.created_at}
-                  isOwner={true}
-                  assigned_authority_name={post.assigned_authority_name || null}
-                />
-              ))
-            )}
-          </div>
-        )}
+              )}
+
+              {filteredPosts.length === 0 ? (
+                <div className="text-center py-16 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-[0_4px_24px_-4px_rgba(0,0,0,0.08)]">
+                  <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
+                    <Inbox size={26} className="text-gray-400" />
+                  </div>
+                  <p className="text-gray-900 text-base font-semibold">
+                    {myPosts.length === 0 ? 'No posts yet' : 'No posts match your filters'}
+                  </p>
+                  <p className="text-gray-500 text-sm mt-1 max-w-xs mx-auto">
+                    {myPosts.length === 0 ? 'Your submitted complaints will appear here' : 'Try adjusting your filters'}
+                  </p>
+                  {myPosts.length === 0 && (
+                    <button
+                      className="mt-4 text-sm text-srec-primary font-semibold hover:underline"
+                      onClick={() => setActiveTab('create')}
+                    >
+                      Raise your first issue
+                    </button>
+                  )}
+                </div>
+              ) : (
+                filteredPosts.map((post) => (
+                  <ComplaintCard
+                    key={post.id || post.complaint_id}
+                    id={post.id || post.complaint_id}
+                    rephrased_text={post.rephrased_text}
+                    desc={post.rephrased_text || post.original_text}
+                    category={post.category_name || COMPLAINT_CATEGORIES[post.category_id]}
+                    has_image={post.has_image}
+                    author={post.is_anonymous ? 'Anonymous' : (post.author || post.student_roll_no)}
+                    status={post.status}
+                    priority={post.priority}
+                    upvotes={post.upvotes}
+                    timestamp={post.submitted_at || post.created_at}
+                    isOwner={true}
+                    assigned_authority_name={post.assigned_authority_name || null}
+                  />
+                ))
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {user?.role === 'Student' && <BottomNav />}

@@ -6,11 +6,13 @@ import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import { CheckCircle2, ChevronDown, Inbox } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 
 const LIMIT = 20;
 
 export default function Changelog() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [entries, setEntries] = useState([]);
   const [total, setTotal] = useState(0);
   const [skip, setSkip] = useState(0);
@@ -52,6 +54,21 @@ export default function Changelog() {
       <TopNav />
 
       <div className="max-w-3xl mx-auto px-4 pt-4 pb-24 md:pl-24 animate-fadeIn">
+        {/* Community tab bar */}
+        <div className="flex gap-1 mb-4 bg-white/70 backdrop-blur-sm border border-white/60 rounded-xl p-1 shadow-sm">
+          <button
+            onClick={() => navigate('/petitions')}
+            className="flex-1 py-2 rounded-lg text-xs font-semibold text-gray-500 hover:text-gray-800 hover:bg-gray-100/60 transition-all"
+          >
+            Petitions
+          </button>
+          <button
+            className="flex-1 py-2 rounded-lg text-xs font-bold bg-srec-primary text-white shadow-sm transition-all"
+          >
+            Wins
+          </button>
+        </div>
+
         {/* Header */}
         <div className="mb-6 p-5 bg-gradient-to-r from-srec-primary via-green-800 to-emerald-700 rounded-2xl text-white shadow-md relative overflow-hidden">
           <div className="absolute inset-0 opacity-10 pointer-events-none select-none">
@@ -64,7 +81,7 @@ export default function Changelog() {
               <h1 className="text-lg font-bold tracking-tight">What's Fixed</h1>
             </div>
             <p className="text-sm text-emerald-200/80">
-              Public complaints that have been resolved
+              Popular resolved complaints — issues that students upvoted and got fixed
             </p>
           </div>
         </div>
