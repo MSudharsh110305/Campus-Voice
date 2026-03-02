@@ -30,7 +30,12 @@ import Posts from './features/complaints/pages/Posts';
 import Notifications from './features/complaints/pages/Notifications';
 import NoticeFeed from './features/complaints/pages/NoticeFeed';
 import Changelog from './features/complaints/pages/Changelog';
-import AdminAnalytics from './features/admin/pages/AdminAnalytics';
+// AdminAnalytics removed — analytics merged into AdminDashboard
+import AdminPetitions from './features/admin/pages/AdminPetitions';
+import AdminRepresentatives from './features/admin/pages/AdminRepresentatives';
+import PetitionsPage from './features/complaints/pages/PetitionsPage';
+import AuthorityPetitions from './features/admin/pages/AuthorityPetitions';
+import AuthorityRepresentatives from './features/admin/pages/AuthorityRepresentatives';
 
 function ProtectedRoute({ children, allow, redirectTo = "/login" }) {
   const { user } = useAuth();
@@ -130,6 +135,22 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/wins"
+          element={
+            <ProtectedRoute allow={['Student', 'Admin']}>
+              <Changelog />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/petitions"
+          element={
+            <ProtectedRoute allow={['Student', 'Admin']}>
+              <PetitionsPage />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Admin Routes - Nested under AdminLayout */}
         <Route
@@ -149,6 +170,9 @@ export default function App() {
           <Route path="departments/:deptCode" element={<AdminDepartmentDetail />} />
           <Route path="notifications" element={<AdminNotifications />} />
           <Route path="students" element={<AdminStudents />} />
+          <Route path="petitions" element={<AdminPetitions />} />
+          <Route path="representatives" element={<AdminRepresentatives />} />
+          <Route path="analytics" element={<Navigate to="/admin" replace />} />
           <Route path="profile" element={<AuthorityProfile noLayout={true} />} />
         </Route>
 
@@ -182,6 +206,22 @@ export default function App() {
           element={
             <ProtectedRoute allow={['Authority', 'Admin']} redirectTo="/authority-login">
               <AuthorityNotices />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/authority-petitions"
+          element={
+            <ProtectedRoute allow={['Authority', 'Admin']} redirectTo="/authority-login">
+              <AuthorityPetitions />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/authority-representatives"
+          element={
+            <ProtectedRoute allow={['Authority', 'Admin']} redirectTo="/authority-login">
+              <AuthorityRepresentatives />
             </ProtectedRoute>
           }
         />

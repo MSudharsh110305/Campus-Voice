@@ -4,7 +4,7 @@ import { useAuth } from '../../../context/AuthContext';
 import authorityService from '../../../services/authority.service';
 import AuthoritySidebar from '../components/AuthoritySidebar';
 import AuthorityHeader from '../components/AuthorityHeader';
-import { Megaphone, Plus, Trash2, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { Megaphone, Plus, Trash2, X, CheckCircle, AlertCircle, Paperclip, Download } from 'lucide-react';
 import { NOTICE_CATEGORIES, NOTICE_PRIORITIES, GENDER, STAY_TYPE, DEPARTMENT_LIST } from '../../../utils/constants';
 
 const PRIORITY_STYLES = {
@@ -49,6 +49,7 @@ export default function AuthorityNotices() {
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [form, setForm] = useState(buildEmptyForm);
+    const [attachmentFile, setAttachmentFile] = useState(null);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -100,9 +101,24 @@ export default function AuthorityNotices() {
 
         setSubmitting(true);
         try {
-            await authorityService.createNotice(payload);
+            const created = await authorityService.createNotice(payload);
+            if (attachmentFile && created?.id) {
+                try {
+                    await authorityService.uploadNoticeAttachment(created.id, attachmentFile);
+                } catch (attachErr) {
+                    console.error('Attachment upload failed:', attachErr);
+                    // Notice created successfully, just attachment failed
+                    setSuccess('Notice sent! (Attachment upload failed — try re-uploading)');
+                    setForm(buildEmptyForm());
+                    setAttachmentFile(null);
+                    setShowForm(false);
+                    await loadNotices();
+                    return;
+                }
+            }
             setSuccess('Notice sent successfully!');
             setForm(buildEmptyForm());
+            setAttachmentFile(null);
             setShowForm(false);
             await loadNotices();
         } catch (err) {
@@ -311,6 +327,36 @@ export default function AuthorityNotices() {
                                         </div>
                                     </div>
 
+                                    {/* Attachment */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
+                                            <Paperclip size={14} className="text-gray-400" />
+                                            Attach File <span className="font-normal text-gray-400 text-xs">(optional · PDF, Word, Excel, image · max 10 MB)</span>
+                                        </label>
+                                        <input
+                                            type="file"
+                                            accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp"
+                                            onChange={e => setAttachmentFile(e.target.files[0] || null)}
+                                            className="block w-full text-sm text-gray-600
+                                                       file:mr-3 file:py-2 file:px-3
+                                                       file:rounded-lg file:border-0
+                                                       file:text-xs file:font-semibold
+                                                       file:bg-srec-primarySoft file:text-srec-primary
+                                                       hover:file:bg-srec-primarySoft/80
+                                                       cursor-pointer"
+                                        />
+                                        {attachmentFile && (
+                                            <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-500">
+                                                <Paperclip size={11} />
+                                                {attachmentFile.name}
+                                                <button type="button" onClick={() => setAttachmentFile(null)}
+                                                    className="text-red-400 hover:text-red-600 ml-1">
+                                                    <X size={12} />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+
                                     <div className="flex justify-end gap-3 pt-2">
                                         <EliteButton variant="outline" type="button" onClick={() => setShowForm(false)}>Cancel</EliteButton>
                                         <EliteButton variant="primary" type="submit" disabled={submitting} isLoading={submitting}>
@@ -356,6 +402,17 @@ export default function AuthorityNotices() {
                                                     <p className="mt-2 text-xs text-amber-600">
                                                         Expires: {new Date(notice.expires_at).toLocaleDateString()}
                                                     </p>
+                                                )}
+                                                {notice.attachment_filename && (
+                                                    <a
+                                                        href={authorityService.getNoticeAttachmentUrl(notice.id)}
+                                                        download={notice.attachment_filename}
+                                                        className="mt-2 inline-flex items-center gap-1.5 text-xs text-srec-primary hover:underline"
+                                                        onClick={e => e.stopPropagation()}
+                                                    >
+                                                        <Download size={11} />
+                                                        {notice.attachment_filename}
+                                                    </a>
                                                 )}
                                             </div>
                                             <button

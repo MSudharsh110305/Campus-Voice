@@ -4,46 +4,96 @@ import { useAuth } from '../../../context/AuthContext';
 import ExportModal from '../../../components/ExportModal';
 import adminService from '../../../services/admin.service';
 import complaintService from '../../../services/complaint.service';
-import { Card, Select, Skeleton, EliteButton, STATUS_COLORS } from '../../../components/UI';
+import { Card, Skeleton, EliteButton, STATUS_COLORS } from '../../../components/UI';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend, BarChart, Bar
+  ResponsiveContainer, PieChart, Pie, Cell, Legend,
+  BarChart, Bar, LabelList,
 } from 'recharts';
-import { AlertTriangle, CheckCircle, Users, FileText, Activity, ArrowUpRight, Download, Star, TrendingUp } from 'lucide-react';
-import AdminComplaintCard from '../components/AdminComplaintCard';
+import {
+  AlertTriangle, CheckCircle, Users, FileText, Activity,
+  Download, Star, TrendingUp, Clock,
+} from 'lucide-react';
 
-// Simple stats card for admin dashboard
-function StatCard({ label, value, icon: Icon, color = 'blue', sub, onClick }) {
-  const colorMap = {
-    blue:   { icon: 'bg-blue-50 text-blue-600 border border-blue-100',            bar: 'from-blue-400 to-blue-600',       link: 'text-blue-700' },
-    green:  { icon: 'bg-emerald-50 text-emerald-700 border border-emerald-100',   bar: 'from-emerald-500 to-green-600',   link: 'text-emerald-700' },
-    red:    { icon: 'bg-red-50 text-red-600 border border-red-100',               bar: 'from-red-400 to-rose-500',        link: 'text-red-600' },
-    amber:  { icon: 'bg-amber-50 text-amber-600 border border-amber-100',         bar: 'from-amber-400 to-orange-500',    link: 'text-amber-700' },
-    purple: { icon: 'bg-violet-50 text-violet-600 border border-violet-100',      bar: 'from-violet-400 to-purple-500',   link: 'text-violet-700' },
-  };
-  const cfg = colorMap[color] || colorMap.blue;
+// ── Expanded color palette for charts ──────────────────────────────────────
+const PIE_COLORS = [
+  '#14532D', '#B8952E', '#22C55E', '#C82828', '#6366F1',
+  '#0EA5E9', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899',
+];
+
+// ── Dept name → short code mapping ─────────────────────────────────────────
+const DEPT_CODE_MAP = {
+  'Computer Science & Engineering': 'CSE',
+  'Electronics & Communication Engineering': 'ECE',
+  'Mechanical Engineering': 'MECH',
+  'Electrical & Electronics Engineering': 'EEE',
+  'Information Technology': 'IT',
+  'Civil Engineering': 'CIVIL',
+  'Biomedical Engineering': 'BIO',
+  'Aeronautical Engineering': 'AERO',
+  'Electronics & Instrumentation Engineering': 'EIE',
+  'Robotics and Automation': 'RAA',
+  'Management Studies': 'MBA',
+  'Artificial Intelligence and Data Science': 'AIDS',
+  'M.Tech in Computer Science and Engineering': 'MTECH',
+  'English': 'ENG',
+  'Physics': 'PHY',
+  'Chemistry': 'CHEM',
+  'Mathematics': 'MATH',
+};
+
+const getDeptCode = (name) => {
+  if (DEPT_CODE_MAP[name]) return DEPT_CODE_MAP[name];
+  // Extract code from parentheses e.g. "XYZ (ABC)" → "ABC"
+  const m = name.match(/\(([A-Z]+)\)/);
+  if (m) return m[1];
+  // First letters of each word, max 5 chars
+  return name.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 5);
+};
+
+// ── KPI Card ────────────────────────────────────────────────────────────────
+function KPICard({ label, value, icon: Icon, accentColor, sub, onClick }) {
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-200 ${onClick ? 'cursor-pointer hover:shadow-md hover:border-gray-200 group' : ''}`}
+      className={`bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60
+                  shadow-[0_4px_24px_-4px_rgba(0,0,0,0.08)] overflow-hidden
+                  transition-all duration-300
+                  ${onClick ? 'cursor-pointer hover:shadow-[0_8px_32px_-4px_rgba(0,0,0,0.12)] hover:-translate-y-0.5 group' : ''}`}
     >
-      <div className={`h-1 w-full bg-gradient-to-r ${cfg.bar}`} />
-      <div className="p-5">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-medium text-gray-500">{label}</span>
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${cfg.icon} ${onClick ? 'group-hover:scale-110 transition-transform duration-200' : ''}`}>
-            <Icon size={20} />
+      <div className="flex h-full">
+        <div className="w-1 rounded-r-full self-stretch" style={{ background: accentColor }} />
+        <div className="p-4 flex-1">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">{label}</span>
+            <div
+              className="w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:shadow-md"
+              style={{ background: `${accentColor}14`, color: accentColor }}
+            >
+              <Icon size={15} />
+            </div>
           </div>
+          <p className="text-2xl font-heading font-bold text-gray-900 leading-tight animate-count-up">{value ?? '—'}</p>
+          {sub && <p className="text-[11px] text-gray-500 mt-1.5 leading-tight">{sub}</p>}
         </div>
-        <p className="text-3xl font-bold text-gray-900">{value ?? '—'}</p>
-        {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
-        {onClick && <p className={`text-xs mt-2 opacity-0 group-hover:opacity-100 transition-opacity font-semibold ${cfg.link}`}>View details →</p>}
       </div>
     </div>
   );
 }
 
-const PIE_COLORS = ['#14532D', '#B8952E', '#22C55E', '#C82828', '#6366F1'];
+// ── Custom donut label (percentage only, no overlap) ─────────────────────────
+const renderDonutLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+  if (percent < 0.06) return null;
+  const RADIAN = Math.PI / 180;
+  const r = innerRadius + (outerRadius - innerRadius) * 0.6;
+  const x = cx + r * Math.cos(-midAngle * RADIAN);
+  const y = cy + r * Math.sin(-midAngle * RADIAN);
+  return (
+    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight="600">
+      {`${Math.round(percent * 100)}%`}
+    </text>
+  );
+};
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -55,20 +105,30 @@ export default function AdminDashboard() {
   const [publicAnalytics, setPublicAnalytics] = useState(null);
   const [error, setError] = useState(null);
   const [showExport, setShowExport] = useState(false);
+  const [analyticsDays, setAnalyticsDays] = useState(30);
 
   useEffect(() => {
     if (!user || user.role !== 'Admin') return;
-    loadOverview();
-    loadAnalytics();
-    loadPublicAnalytics();
+    loadAll();
   }, [user]);
 
-  const loadOverview = async () => {
+  useEffect(() => {
+    if (!user || user.role !== 'Admin') return;
+    adminService.getAnalytics(analyticsDays).then(setAnalytics).catch(console.error);
+  }, [analyticsDays]);
+
+  const loadAll = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await adminService.getSystemOverview();
-      setOverview(data);
+      const [ov, an, pa] = await Promise.all([
+        adminService.getSystemOverview(),
+        adminService.getAnalytics(analyticsDays),
+        complaintService.getPublicAnalytics(),
+      ]);
+      setOverview(ov);
+      setAnalytics(an);
+      setPublicAnalytics(pa);
     } catch (err) {
       setError(err.message || 'Failed to load dashboard');
     } finally {
@@ -76,31 +136,17 @@ export default function AdminDashboard() {
     }
   };
 
-  const loadAnalytics = async () => {
-    try {
-      const data = await adminService.getAnalytics(30);
-      setAnalytics(data);
-    } catch (err) {
-      console.error('Failed to load analytics:', err);
-    }
-  };
-
-  const loadPublicAnalytics = async () => {
-    try {
-      const data = await complaintService.getPublicAnalytics();
-      setPublicAnalytics(data);
-    } catch (err) {
-      console.error('Failed to load public analytics:', err);
-    }
-  };
-
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32 rounded-2xl" />)}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {[1,2,3,4,5,6].map(i => <Skeleton key={i} className="h-28 rounded-2xl" />)}
         </div>
-        <Skeleton className="h-96 rounded-2xl" />
+        <Skeleton className="h-80 rounded-2xl" />
+        <div className="grid grid-cols-5 gap-6">
+          <Skeleton className="col-span-3 h-64 rounded-2xl" />
+          <Skeleton className="col-span-2 h-64 rounded-2xl" />
+        </div>
       </div>
     );
   }
@@ -111,15 +157,12 @@ export default function AdminDashboard() {
         <AlertTriangle className="text-red-500 mb-4" size={48} />
         <h2 className="text-xl font-bold text-gray-900 mb-2">Dashboard Error</h2>
         <p className="text-gray-500 mb-6">{error}</p>
-        <EliteButton onClick={loadOverview}>Retry</EliteButton>
+        <EliteButton onClick={loadAll}>Retry</EliteButton>
       </div>
     );
   }
 
-  // --- Map real API fields ---
-  // overview: { total_students, total_authorities, total_complaints,
-  //             recent_complaints_7d, complaints_by_status, complaints_by_priority,
-  //             complaints_by_category, image_statistics }
+  // ── Data extraction ───────────────────────────────────────────────────────
   const byStatus = overview?.complaints_by_status || {};
   const byPriority = overview?.complaints_by_priority || {};
   const byCategory = overview?.complaints_by_category || {};
@@ -130,30 +173,22 @@ export default function AdminDashboard() {
   const recent7d = overview?.recent_complaints_7d || 0;
   const resolved = byStatus['Resolved'] || 0;
   const criticalCount = byPriority['Critical'] || 0;
-  const resolutionRate = totalComplaints > 0
-    ? Math.round((resolved / totalComplaints) * 100)
-    : 0;
+  const resolutionRate = totalComplaints > 0 ? Math.round((resolved / totalComplaints) * 100) : 0;
 
-  // analytics: { period_days, total_complaints, resolved_complaints,
-  //              resolution_rate_percent, avg_resolution_time_hours, daily_complaints: [{date, count}] }
-  // Chart expects array with date + count
   const dailyData = analytics?.daily_complaints || [];
-
-  // Build pie data from complaints_by_category
   const categoryPieData = Object.entries(byCategory).map(([name, value]) => ({ name, value }));
-
-  // Build status bar data
-  const statusData = Object.entries(byStatus).map(([name, value]) => ({ name, value }));
-
-  // Public analytics extras
-  const deptData = Object.entries(publicAnalytics?.top_departments || {}).map(([name, value]) => ({ name, value }));
-  const satisfactionAvg = publicAnalytics?.satisfaction_avg;
   const avgResolutionH = publicAnalytics?.avg_resolution_hours ?? analytics?.avg_resolution_time_hours;
+  const satisfactionAvg = publicAnalytics?.satisfaction_avg;
+
+  // Department bar data — use short codes on axis
+  const deptData = Object.entries(publicAnalytics?.top_departments || {})
+    .map(([name, value]) => ({ name, code: getDeptCode(name), value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8);
 
   const exportSections = [
     {
-      id: 'overview',
-      label: 'System Overview',
+      id: 'overview', label: 'System Overview',
       stats: [
         { label: 'Total Complaints', value: totalComplaints },
         { label: 'Total Students', value: totalStudents },
@@ -165,26 +200,17 @@ export default function AdminDashboard() {
       ],
     },
     {
-      id: 'by_status',
-      label: 'Complaints by Status',
+      id: 'by_status', label: 'Complaints by Status',
       tableHeaders: ['Status', 'Count'],
       tableRows: Object.entries(byStatus).map(([s, c]) => [s, c]),
     },
     {
-      id: 'by_priority',
-      label: 'Complaints by Priority',
+      id: 'by_priority', label: 'Complaints by Priority',
       tableHeaders: ['Priority', 'Count'],
       tableRows: ['Critical', 'High', 'Medium', 'Low'].map(p => [p, byPriority[p] || 0]),
     },
-    {
-      id: 'by_category',
-      label: 'Complaints by Category',
-      tableHeaders: ['Category', 'Count'],
-      tableRows: Object.entries(byCategory).map(([c, v]) => [c, v]),
-    },
     ...(analytics ? [{
-      id: 'analytics',
-      label: `Analytics (Last ${analytics.period_days || 30} Days)`,
+      id: 'analytics', label: `Analytics (Last ${analyticsDays} Days)`,
       stats: [
         { label: 'Total Submitted', value: analytics.total_complaints },
         { label: 'Resolved', value: analytics.resolved_complaints },
@@ -192,93 +218,120 @@ export default function AdminDashboard() {
         { label: 'Avg Resolution Time', value: analytics.avg_resolution_time_hours != null ? `${Math.round(analytics.avg_resolution_time_hours)}h` : '—' },
       ],
     }] : []),
-    ...(dailyData.length > 0 ? [{
-      id: 'daily_trend',
-      label: 'Daily Complaint Trend',
-      tableHeaders: ['Date', 'Count'],
-      tableRows: dailyData.map(d => [d.date, d.count]),
-    }] : []),
   ];
 
   return (
-    <div className="space-y-8 max-w-[1600px] mx-auto">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Executive Dashboard</h1>
-          <p className="text-gray-500 mt-1">Real-time overview of system performance and grievance resolution</p>
+    <div className="space-y-6 max-w-[1600px] mx-auto">
+
+      {/* ── HEADER ─────────────────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-heading font-bold text-gray-900 tracking-tight">Executive Dashboard</h1>
+            <p className="text-gray-500 text-sm mt-0.5">Real-time overview of campus grievance resolution</p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <EliteButton variant="outline" onClick={loadAll} className="text-sm">Refresh</EliteButton>
+            <EliteButton onClick={() => setShowExport(true)} className="flex items-center gap-1.5 text-sm">
+              <Download size={14} /> Export
+            </EliteButton>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <EliteButton variant="outline" onClick={loadOverview}>Refresh Data</EliteButton>
-          <EliteButton onClick={() => setShowExport(true)} className="flex items-center gap-2">
-            <Download size={16} /> Export
-          </EliteButton>
+
+        {/* Status chips inline in header */}
+        <div className="flex flex-wrap gap-2">
+          {['Raised', 'In Progress', 'Resolved', 'Closed', 'Spam'].map((s) => {
+            const c = STATUS_COLORS[s] || STATUS_COLORS['Raised'];
+            return (
+              <button
+                key={s}
+                onClick={() => navigate(`/admin/complaints?status=${encodeURIComponent(s)}`)}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border transition-all hover:-translate-y-px hover:shadow-sm ${c.bg} ${c.border} ${c.text}`}
+              >
+                <span className="font-bold">{byStatus[s] || 0}</span>
+                <span className="opacity-70">{s}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          label="Total Complaints"
+      {/* ── ROW 1: 6 KPI CARDS ─────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <KPICard
+          label="Complaints"
           value={totalComplaints}
           icon={FileText}
-          color="blue"
+          accentColor="#3B82F6"
           sub={`${recent7d} in last 7 days`}
           onClick={() => navigate('/admin/complaints')}
         />
-        <StatCard
+        <KPICard
           label="Resolution Rate"
           value={`${resolutionRate}%`}
           icon={CheckCircle}
-          color="green"
-          sub={`${resolved} resolved of ${totalComplaints} total`}
+          accentColor="#10B981"
+          sub={`${resolved} of ${totalComplaints} resolved`}
           onClick={() => analyticsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
         />
-        <StatCard
+        <KPICard
           label="Critical Issues"
           value={criticalCount}
           icon={AlertTriangle}
-          color="red"
+          accentColor="#EF4444"
           sub={`${byPriority['High'] || 0} High priority`}
           onClick={() => navigate('/admin/complaints?priority=Critical')}
         />
-        <StatCard
-          label="Total Users"
+        <KPICard
+          label="Avg Resolution"
+          value={avgResolutionH != null ? `${Math.round(avgResolutionH)}h` : '—'}
+          icon={Clock}
+          accentColor="#F59E0B"
+          sub="Average time to resolve"
+        />
+        <KPICard
+          label="Satisfaction"
+          value={satisfactionAvg != null ? `${satisfactionAvg} ★` : '—'}
+          icon={Star}
+          accentColor="#B8952E"
+          sub="Avg student rating / 5"
+        />
+        <KPICard
+          label="Active Users"
           value={totalStudents + totalAuthorities}
           icon={Users}
-          color="purple"
-          sub={`${totalStudents} students · ${totalAuthorities} authorities`}
+          accentColor="#8B5CF6"
+          sub={`${totalStudents} students · ${totalAuthorities} staff`}
           onClick={() => navigate('/admin/authorities')}
         />
       </div>
 
-      {/* Status breakdown — clickable chips using canonical STATUS_COLORS */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-        {['Raised', 'In Progress', 'Resolved', 'Closed', 'Spam'].map((status) => {
-          const count = byStatus[status] || 0;
-          const c = STATUS_COLORS[status] || STATUS_COLORS['Raised'];
-          return (
-            <div
-              key={status}
-              onClick={() => navigate(`/admin/complaints?status=${encodeURIComponent(status)}`)}
-              className={`rounded-xl border px-4 py-3 text-center cursor-pointer transition-all duration-200 hover:shadow-card-hover hover:-translate-y-px ${c.bg} ${c.border} ${c.text}`}
-            >
-              <p className="text-2xl font-bold leading-tight">{count}</p>
-              <p className="text-xs font-semibold mt-1 opacity-80">{status}</p>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Charts Section */}
+      {/* ── ROW 2: CHARTS ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Daily Trend */}
-        <Card className="lg:col-span-2 p-6 shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
-            <Activity size={20} className="text-srec-primary" />
-            Complaint Volume (Last {analytics?.period_days || 30} Days)
-          </h3>
-          <div className="h-72 w-full">
+        {/* Daily Trend AreaChart */}
+        <Card className="lg:col-span-2 p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <Activity size={18} className="text-srec-primary" />
+              Complaint Volume
+            </h3>
+            <div className="flex gap-1">
+              {[7, 30].map(d => (
+                <button
+                  key={d}
+                  onClick={() => setAnalyticsDays(d)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    analyticsDays === d
+                      ? 'bg-srec-primary text-white'
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="h-60 w-full">
             {dailyData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={dailyData}>
@@ -289,37 +342,22 @@ export default function AdminDashboard() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                  <XAxis
-                    dataKey="date"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: '#9CA3AF', fontSize: 11 }}
-                    tickFormatter={v => v?.slice(5)} // Show MM-DD
-                  />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 11 }} />
-                  <Tooltip
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="count"
-                    stroke="#14532D"
-                    strokeWidth={2.5}
-                    fillOpacity={1}
-                    fill="url(#colorCount)"
-                  />
+                  <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 10 }} tickFormatter={v => v?.slice(5)} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 10 }} />
+                  <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', fontSize: 12 }} />
+                  <Area type="monotone" dataKey="count" stroke="#14532D" strokeWidth={2.5} fillOpacity={1} fill="url(#colorCount)" />
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center text-gray-400">No analytics data yet</div>
+              <div className="flex h-full items-center justify-center text-gray-300 text-sm">No data yet</div>
             )}
           </div>
         </Card>
 
-        {/* Category Pie */}
-        <Card className="p-6 shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-900 mb-6">By Category</h3>
-          <div className="h-72 w-full">
+        {/* Category Donut */}
+        <Card className="p-5 shadow-sm border border-gray-100">
+          <h3 className="text-base font-bold text-gray-900 mb-4">By Category</h3>
+          <div className="h-60 w-full">
             {categoryPieData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -327,112 +365,83 @@ export default function AdminDashboard() {
                     data={categoryPieData}
                     cx="50%"
                     cy="45%"
-                    innerRadius={55}
-                    outerRadius={80}
-                    paddingAngle={4}
+                    innerRadius={50}
+                    outerRadius={75}
+                    paddingAngle={3}
                     dataKey="value"
+                    labelLine={false}
+                    label={renderDonutLabel}
                   >
-                    {categoryPieData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                    {categoryPieData.map((_, i) => (
+                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip />
-                  <Legend verticalAlign="bottom" height={36} iconSize={10} />
+                  <Tooltip formatter={(v, n) => [v, n]} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: 12 }} />
+                  <Legend verticalAlign="bottom" height={32} iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center text-gray-400">No data yet</div>
+              <div className="flex h-full items-center justify-center text-gray-300 text-sm">No data yet</div>
             )}
           </div>
         </Card>
       </div>
 
-      {/* Analytics Summary Row */}
-      <div ref={analyticsRef} className="scroll-mt-6">
-        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">
-          Resolution Analytics (last {analytics?.period_days || 30} days)
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
-            <p className="text-2xl font-bold text-gray-900">{analytics?.total_complaints || 0}</p>
-            <p className="text-xs text-gray-500 mt-1 font-medium">Total Submitted</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
-            <p className="text-2xl font-bold text-green-600">{analytics?.resolved_complaints || 0}</p>
-            <p className="text-xs text-gray-500 mt-1 font-medium">Resolved</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
-            <p className="text-2xl font-bold text-srec-primary">
-              {analytics?.resolution_rate_percent != null
-                ? `${Math.round(analytics.resolution_rate_percent)}%`
-                : '—'}
-            </p>
-            <p className="text-xs text-gray-500 mt-1 font-medium">Resolution Rate</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
-            <p className="text-2xl font-bold text-blue-600">
-              {avgResolutionH != null ? `${Math.round(avgResolutionH)}h` : '—'}
-            </p>
-            <p className="text-xs text-gray-500 mt-1 font-medium">Avg Resolution Time</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm text-center">
-            <p className="text-2xl font-bold text-amber-600 flex items-center justify-center gap-1">
-              <Star size={18} className="fill-amber-400 text-amber-400" />
-              {satisfactionAvg != null ? satisfactionAvg : '—'}
-            </p>
-            <p className="text-xs text-gray-500 mt-1 font-medium">Satisfaction Avg / 5</p>
-          </div>
-        </div>
+      {/* ── ROW 3: DEPT BAR + PRIORITY GRID ────────────────────────────────── */}
+      <div ref={analyticsRef} className="scroll-mt-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
 
-        {/* Top Departments chart */}
-        {deptData.length > 0 && (
-          <div className="mt-4 bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
-            <h4 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
-              <TrendingUp size={15} className="text-srec-primary" />
-              Top Departments by Complaint Volume
-            </h4>
-            <ResponsiveContainer width="100%" height={Math.min(deptData.length * 36, 240)}>
-              <BarChart data={deptData} layout="vertical" margin={{ top: 0, right: 24, bottom: 0, left: 80 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11, fill: '#9CA3AF' }} allowDecimals={false} axisLine={false} tickLine={false} />
-                <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: '#6B7280' }} width={80} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                <Bar dataKey="value" name="Complaints" fill="#14532D" radius={[0, 4, 4, 0]}>
+        {/* Department vertical bar chart */}
+        <Card className="lg:col-span-3 p-5 shadow-sm border border-gray-100">
+          <h3 className="text-base font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <TrendingUp size={17} className="text-srec-primary" />
+            Top Departments
+          </h3>
+          {deptData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={deptData} margin={{ top: 16, right: 12, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
+                <XAxis dataKey="code" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#6B7280', fontWeight: 600 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9CA3AF' }} allowDecimals={false} />
+                <Tooltip
+                  cursor={{ fill: '#F9FAFB' }}
+                  formatter={(v, _, props) => [v, props.payload?.name || '']}
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: 12 }}
+                />
+                <Bar dataKey="value" name="Complaints" radius={[4, 4, 0, 0]}>
                   {deptData.map((_, i) => (
                     <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                   ))}
+                  <LabelList dataKey="value" position="top" style={{ fontSize: 10, fill: '#6B7280', fontWeight: 600 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-          </div>
-        )}
+          ) : (
+            <div className="flex h-48 items-center justify-center text-gray-300 text-sm">No department data</div>
+          )}
+        </Card>
 
-        {/* Priority breakdown */}
-        {Object.keys(byPriority).length > 0 && (
-          <div className="mt-4 bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
-            <h4 className="text-sm font-bold text-gray-700 mb-3">Priority Breakdown (all time)</h4>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {['Critical', 'High', 'Medium', 'Low'].map(p => {
-                const pColors = {
-                  Critical: 'text-red-600 bg-red-50 border-red-100',
-                  High: 'text-orange-600 bg-orange-50 border-orange-100',
-                  Medium: 'text-amber-600 bg-amber-50 border-amber-100',
-                  Low: 'text-gray-600 bg-gray-50 border-gray-100',
-                };
-                return (
-                  <div
-                    key={p}
-                    onClick={() => navigate(`/admin/complaints?priority=${p}`)}
-                    className={`rounded-xl border px-4 py-3 text-center cursor-pointer hover:shadow-sm transition-all ${pColors[p]}`}
-                  >
-                    <p className="text-xl font-bold">{byPriority[p] || 0}</p>
-                    <p className="text-xs font-semibold mt-0.5">{p}</p>
-                  </div>
-                );
-              })}
-            </div>
+        {/* Priority Grid */}
+        <Card className="lg:col-span-2 p-5 shadow-sm border border-gray-100">
+          <h3 className="text-base font-bold text-gray-900 mb-4">Priority Breakdown</h3>
+          <div className="grid grid-cols-2 gap-3 h-[calc(100%-2.5rem)]">
+            {[
+              { key: 'Critical', color: '#EF4444', bg: '#FEF2F2', border: '#FECACA', label: 'Critical' },
+              { key: 'High',     color: '#F97316', bg: '#FFF7ED', border: '#FED7AA', label: 'High' },
+              { key: 'Medium',   color: '#F59E0B', bg: '#FFFBEB', border: '#FDE68A', label: 'Medium' },
+              { key: 'Low',      color: '#6B7280', bg: '#F9FAFB', border: '#E5E7EB', label: 'Low' },
+            ].map(({ key, color, bg, border, label }) => (
+              <div
+                key={key}
+                onClick={() => navigate(`/admin/complaints?priority=${key}`)}
+                className="rounded-xl border p-3 text-center cursor-pointer hover:shadow-sm hover:-translate-y-px transition-all duration-200 flex flex-col items-center justify-center"
+                style={{ background: bg, borderColor: border }}
+              >
+                <p className="text-2xl font-bold" style={{ color }}>{byPriority[key] || 0}</p>
+                <p className="text-xs font-semibold mt-1" style={{ color: `${color}CC` }}>{label}</p>
+              </div>
+            ))}
           </div>
-        )}
+        </Card>
       </div>
 
       <ExportModal

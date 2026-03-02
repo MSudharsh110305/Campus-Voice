@@ -19,10 +19,16 @@ body,
 }
 
 body {
-  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  background-color: #F7F9F7;
+}
+
+/* Heading font */
+.font-heading {
+  font-family: 'Manrope', 'Inter', system-ui, sans-serif;
 }
 
 /* Thin scrollbar for webkit browsers */
@@ -31,71 +37,109 @@ body {
 ::-webkit-scrollbar-thumb { background: #C5D0C5; border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: #8A9B8A; }
 
-/* Success Animation Styles */
+/* ==================== ANIMATIONS ==================== */
+
+/* Page fade in */
+@keyframes pageFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fadeIn { animation: pageFadeIn 0.3s ease-out forwards; }
+
+/* Staggered slide up for cards */
+@keyframes slideUpCard {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up { animation: slideUpCard 0.4s ease-out forwards; }
+
+/* Success circle + checkmark */
 @keyframes drawCircle {
-  from {
-    stroke-dashoffset: 339.292;
-  }
-
-  to {
-    stroke-dashoffset: 0;
-  }
+  from { stroke-dashoffset: 339.292; }
+  to { stroke-dashoffset: 0; }
 }
-
 @keyframes checkmark {
-  from {
-    stroke-dashoffset: 40;
-  }
-
-  to {
-    stroke-dashoffset: 0;
-  }
+  from { stroke-dashoffset: 40; }
+  to { stroke-dashoffset: 0; }
 }
-
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-drawCircle { animation: drawCircle 0.6s ease-out forwards; }
+.animate-checkmark { animation: checkmark 0.5s ease-out 0.6s forwards; }
+.animate-fadeInDelay { animation: fadeIn 0.6s ease-out 1.2s forwards; opacity: 0; }
 
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Progress bar shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.progress-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
 }
 
-.animate-drawCircle {
-  animation: drawCircle 0.6s ease-out forwards;
+/* Vote button bounce */
+@keyframes voteBounce {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.15); }
+  60% { transform: scale(0.95); }
+  100% { transform: scale(1); }
 }
+.animate-vote-bounce { animation: voteBounce 0.3s ease-out; }
 
-.animate-checkmark {
-  animation: checkmark 0.5s ease-out 0.6s forwards;
+/* Modal slide up */
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
+.animate-modal-in { animation: modalSlideUp 0.25s ease-out forwards; }
 
-.animate-fadeInDelay {
-  animation: fadeIn 0.6s ease-out 1.2s forwards;
-  opacity: 0;
+/* Backdrop fade */
+@keyframes backdropFade {
+  from { opacity: 0; backdrop-filter: blur(0px); }
+  to { opacity: 1; backdrop-filter: blur(4px); }
 }
+.animate-backdrop { animation: backdropFade 0.2s ease-out forwards; }
 
-
-
-
-
-
-body {
-  background-color: #F7F9F7;
+/* KPI count-up animation helper (used with JS) */
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
+.animate-count-up { animation: countUp 0.5s ease-out forwards; }
 
-/* Glass morphism utility */
+/* ==================== GLASS MORPHISM ==================== */
+
 .glass {
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
 
-@keyframes pageFadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+.card-glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
 }
 
-.animate-fadeIn { animation: pageFadeIn 0.2s ease-out forwards; }
+/* ==================== UTILITY CLASSES ==================== */
+
+/* Smooth progress bar transitions */
+.progress-smooth {
+  transition: width 0.7s ease-out;
+}
+
+/* Tab content crossfade */
+.tab-crossfade-enter {
+  opacity: 0;
+  transform: translateY(4px);
+}
+.tab-crossfade-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 150ms ease-out, transform 150ms ease-out;
+}

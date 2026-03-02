@@ -9,39 +9,46 @@ export default {
     extend: {
       colors: {
         srec: {
-          // Core greens — SREC logo palette
-          primary: "#14532D",
-          primaryHover: "#155D31",
-          primaryLight: "#22C55E",
-          primarySoft: "#DCFCE7",
-          primaryMuted: "#86EFAC",
+          // ── New palette: Celadon → Muted Teal → Hunter Green → Carbon Black ──
+          celadon:     "#a1cca5",   // Celadon  — light accent, hover fills
+          mutedTeal:   "#8fb996",   // Muted Teal — muted borders & icons
+          hunterGreen: "#415d43",   // Hunter Green — primary action (buttons, active)
+          carbonBlack: "#111d13",   // Carbon Black — text, dark hover
 
-          // Gold accents — warm logo gold
-          gold: "#B8952E",
+          // ── Token aliases (used everywhere via Tailwind classes) ──
+          primary:      "#415d43",  // Hunter Green
+          primaryHover: "#111d13",  // Carbon Black on hover
+          primaryDark:  "#111d13",  // Carbon Black
+          primaryLight: "#709775",  // Muted Teal 2 — secondary icons
+          primarySoft:  "#edf5ee",  // Very light celadon tint
+          primaryMuted: "#8fb996",  // Muted Teal — soft borders
+
+          // Gold accents — warm logo gold (unchanged)
+          gold:      "#B8952E",
           goldLight: "#F5E2A0",
           goldMuted: "#D4B86A",
 
-          // Backgrounds — subtle green-tinted whites
-          background: "#F7F9F7",
-          backgroundAlt: "#F0F4F0",
-          card: "#FFFFFF",
-          cardHover: "#FCFDFB",
+          // Backgrounds
+          background:    "#f5faf5",  // Slightly green-tinted white
+          backgroundAlt: "#edf5ee",  // Celadon tint
+          card:          "#FFFFFF",
+          cardHover:     "#f8fcf8",
 
           // Text hierarchy
-          textPrimary: "#0F1A0F",
-          textSecondary: "#4B5E4B",
-          textMuted: "#8A9B8A",
+          textPrimary:   "#111d13",  // Carbon Black
+          textSecondary: "#415d43",  // Hunter Green
+          textMuted:     "#709775",  // Muted Teal 2
 
-          // Borders — green-tinted grays
-          border: "#E2E8E2",
-          borderLight: "#EFF2EF",
-          borderHover: "#C5D0C5",
+          // Borders
+          border:      "#c8deca",    // Soft green border
+          borderLight: "#ddeedd",    // Very light green border
+          borderHover: "#8fb996",    // Muted Teal on hover
 
-          // Danger — deep warm crimson (replaces flat bright red)
-          danger: "#C82828",
+          // Danger / warning (unchanged — semantic)
+          danger:      "#C82828",
           dangerLight: "#FEE2E2",
-          dangerDark: "#9B1C1C",
-          warning: "#D97706",
+          dangerDark:  "#9B1C1C",
+          warning:     "#D97706",
         },
         brand: {
           light: '#6ee7b7',
@@ -92,7 +99,7 @@ export default {
       },
       boxShadow: {
         // Refined layered shadows
-        'soft': '0 1px 3px rgba(20,83,45,0.06), 0 1px 2px rgba(20,83,45,0.04)',
+        'soft': '0 1px 3px rgba(65,93,67,0.06), 0 1px 2px rgba(65,93,67,0.04)',
         'card': '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
         'card-hover': '0 4px 14px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04)',
         'elevated': '0 8px 24px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06)',
@@ -101,8 +108,8 @@ export default {
         // Button depth shadows — key addition
         'btn': '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08)',
         'btn-hover': '0 4px 10px rgba(0,0,0,0.14), 0 2px 4px rgba(0,0,0,0.08)',
-        'btn-primary': '0 2px 6px rgba(20,83,45,0.30), 0 1px 3px rgba(20,83,45,0.20)',
-        'btn-primary-hover': '0 4px 14px rgba(20,83,45,0.35), 0 2px 6px rgba(20,83,45,0.20)',
+        'btn-primary': '0 2px 6px rgba(65,93,67,0.32), 0 1px 3px rgba(65,93,67,0.22)',
+        'btn-primary-hover': '0 4px 14px rgba(65,93,67,0.38), 0 2px 6px rgba(65,93,67,0.22)',
         'btn-danger': '0 2px 6px rgba(200,40,40,0.28), 0 1px 3px rgba(200,40,40,0.16)',
         'btn-danger-hover': '0 4px 12px rgba(200,40,40,0.35), 0 2px 4px rgba(200,40,40,0.18)',
         // Neumorphic shadows
@@ -123,7 +130,7 @@ export default {
       },
       keyframes: {
         'slide-up': {
-          '0%': { transform: 'translateY(8px)', opacity: '0' },
+          '0%': { transform: 'translateY(12px)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
         },
         'scale-in': {
@@ -134,14 +141,25 @@ export default {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
         },
+        'shimmer': {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
+        'count-up': {
+          '0%': { opacity: '0', transform: 'translateY(4px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
       },
       animation: {
-        'slide-up': 'slide-up 0.2s ease-out forwards',
+        'slide-up': 'slide-up 0.4s ease-out forwards',
         'scale-in': 'scale-in 0.15s ease-out forwards',
-        'fade-in': 'fade-in 0.2s ease-out forwards',
+        'fade-in': 'fade-in 0.3s ease-out forwards',
+        'shimmer': 'shimmer 2s infinite',
+        'count-up': 'count-up 0.5s ease-out forwards',
       },
       fontFamily: {
-        sans: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        heading: ['Manrope', 'Inter', 'system-ui', 'sans-serif'],
       },
       letterSpacing: {
         tightest: '-0.04em',

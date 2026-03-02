@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import { Card, Skeleton, RaiseButton, Button, Select } from '../../../components/UI';
@@ -7,113 +7,90 @@ import BottomNav from '../../../components/BottomNav';
 import ComplaintCard from '../components/ComplaintCard';
 import NewComplaintModal from '../components/NewComplaintModal';
 import complaintService from '../../../services/complaint.service';
-import { AlertCircle, SlidersHorizontal, Search, X, Inbox } from 'lucide-react';
+import {
+  AlertCircle, SlidersHorizontal, Search, X, Inbox,
+} from 'lucide-react';
 import { STATUSES, PRIORITIES, COMPLAINT_CATEGORIES } from '../../../utils/constants';
 
-const initialFeed = [];
+// ─────────────────────────── helpers ────────────────────────────────────────
+const extractComplaints = (data) => {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.complaints)) return data.complaints;
+  if (data && Array.isArray(data.data)) return data.data;
+  return [];
+};
 
+// ═══════════════════════ Main Component ═════════════════════════════════════
 export default function StudentHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
+
   const [loading, setLoading] = useState(true);
-  const [feed, setFeed] = useState(initialFeed);
-  const [activeTab, setActiveTab] = useState('feed'); // feed / mine
   const [showModal, setShowModal] = useState(false);
+  const [feed, setFeed] = useState([]);
   const [skip, setSkip] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [myPostsLoading, setMyPostsLoading] = useState(false);
-
-  // Filters for My Posts tab
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
-    status: 'All',
-    priority: 'All',
-    category_id: 'All',
-    search: '',
+    status: 'All', priority: 'All', category_id: 'All', search: '', sortBy: 'hot',
   });
 
-  useEffect(() => {
-    fetchFeed();
-  }, [activeTab, filters]);
+  const firstName = user?.name?.split(' ')[0] || user?.roll_no || 'Student';
 
-  const fetchFeed = async () => {
-    if (activeTab === 'feed') {
-      try {
-        setLoading(true);
-        setSkip(0);
-        setHasMore(true);
-
-        let data;
-        const hasActiveFilters = filters.status !== 'All' || filters.priority !== 'All' || filters.search !== '';
-
-        if (hasActiveFilters) {
-          const apiFilters = {
-            skip: 0,
-            limit: 20,
-            ...(filters.status !== 'All' && { status: filters.status }),
-            ...(filters.priority !== 'All' && { priority: filters.priority }),
-            ...(filters.search !== '' && { search: filters.search })
-          };
-          data = await complaintService.getAdvancedFilteredComplaints(apiFilters);
-        } else {
-          data = await complaintService.getPublicFeed(0, 20);
-        }
-
-        if (Array.isArray(data)) {
-          setFeed(data);
-          setHasMore(data.length === 20);
-        } else if (data && Array.isArray(data.complaints)) {
-          setFeed(data.complaints);
-          setHasMore(data.complaints.length === 20);
-        } else if (data && Array.isArray(data.data)) {
-          setFeed(data.data);
-          setHasMore(data.data.length === 20);
-        } else {
-          setFeed([]);
-          setHasMore(false);
-        }
-        setSkip(20);
-      } catch (error) {
-        console.error("Failed to load feed:", error);
-      } finally {
-        setLoading(false);
+  // ── Feed fetch ─────────────────────────────────────────────────────────────
+  const fetchFeed = useCallback(async () => {
+    try {
+      setLoading(true);
+      setSkip(0);
+      setHasMore(true);
+      let data;
+      const hasTextFilters = filters.status !== 'All' || filters.priority !== 'All' || filters.search !== '';
+      if (hasTextFilters) {
+        const apiFilters = {
+          skip: 0, limit: 20,
+          ...(filters.status !== 'All' && { status: filters.status }),
+          ...(filters.priority !== 'All' && { priority: filters.priority }),
+          ...(filters.search !== '' && { search: filters.search }),
+          ...(filters.category_id !== 'All' && { category_id: filters.category_id }),
+        };
+        data = await complaintService.getAdvancedFilteredComplaints(apiFilters);
+      } else {
+        data = await complaintService.getPublicFeed(0, 20, {
+          categoryId: filters.category_id,
+          sortBy: filters.sortBy,
+        });
       }
+      const complaints = extractComplaints(data);
+      setFeed(complaints);
+      setHasMore(complaints.length === 20);
+      setSkip(20);
+    } catch (err) {
+      console.error('Feed error:', err);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [filters]);
 
   const loadMore = async () => {
     if (loadingMore || !hasMore) return;
-
     try {
       setLoadingMore(true);
-      const data = await complaintService.getPublicFeed(skip, 20);
-
-      let newComplaints = [];
-      if (Array.isArray(data)) {
-        newComplaints = data;
-      } else if (data && Array.isArray(data.complaints)) {
-        newComplaints = data.complaints;
-      } else if (data && Array.isArray(data.data)) {
-        newComplaints = data.data;
-      }
-
-      setFeed([...feed, ...newComplaints]);
-      setSkip(skip + 20);
-      setHasMore(newComplaints.length === 20);
-    } catch (error) {
-      console.error("Failed to load more:", error);
+      const data = await complaintService.getPublicFeed(skip, 20, {
+        categoryId: filters.category_id, sortBy: filters.sortBy,
+      });
+      const more = extractComplaints(data);
+      setFeed(prev => [...prev, ...more]);
+      setSkip(s => s + 20);
+      setHasMore(more.length === 20);
     } finally {
       setLoadingMore(false);
     }
   };
 
-  const handleNewComplaint = (newComplaint) => {
-    setFeed([newComplaint, ...feed]);
-  };
-
-  // Get first name only for greeting
-  const firstName = user?.name?.split(' ')[0] || user?.roll_no || 'Student';
+  useEffect(() => {
+    fetchFeed();
+  }, [filters]);
 
   return (
     <div className="min-h-screen bg-srec-background">
@@ -121,22 +98,18 @@ export default function StudentHome() {
       <div className="animate-fadeIn max-w-3xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
 
         {/* Greeting banner */}
-        <div className="mb-5 rounded-2xl bg-gradient-to-br from-srec-primary via-green-800 to-emerald-700 px-5 py-4 shadow-elevated shadow-green-900/10 relative overflow-hidden">
-          {/* Decorative circles */}
+        <div className="mb-4 rounded-2xl bg-gradient-to-br from-srec-primary via-green-800 to-emerald-700 px-5 py-4 shadow-elevated shadow-green-900/10 relative overflow-hidden">
           <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-white/5 pointer-events-none" />
           <div className="absolute -bottom-10 -right-3 w-24 h-24 rounded-full bg-white/5 pointer-events-none" />
-          <div className="absolute top-2 left-1/2 w-16 h-16 rounded-full bg-white/[0.03] pointer-events-none" />
           <p className="text-emerald-300/70 text-[10px] font-semibold mb-1 uppercase tracking-[0.2em]">SREC Campus Voice</p>
-          <h2 className="text-xl font-bold text-white tracking-tight">
-            Hello, {firstName}
-          </h2>
-          <p className="text-green-300/80 text-xs mt-1">Here's what's happening on campus today</p>
+          <h2 className="text-xl font-bold text-white tracking-tight font-heading">Hello, {firstName}</h2>
+          <p className="text-green-300/80 text-xs mt-1">Here&apos;s what&apos;s happening on campus today</p>
         </div>
 
-        {/* Campus Feed heading + filter toggle */}
-        <div className="flex items-center justify-between mb-4">
+        {/* Feed header + filter toggle */}
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-srec-textPrimary tracking-tight">Campus Feed</h2>
+            <h2 className="text-base font-bold text-gray-900 font-heading">Campus Feed</h2>
             {feed.length > 0 && !loading && (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-srec-primarySoft text-srec-primary border border-srec-primaryMuted/30">
                 {feed.length}
@@ -147,14 +120,28 @@ export default function StudentHome() {
             variant="ghost"
             onClick={() => setShowFilters(!showFilters)}
             className={`gap-1.5 text-xs font-semibold rounded-lg px-3 py-1.5 transition-all ${
-              showFilters
-                ? 'bg-srec-primary text-white shadow-sm'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              showFilters ? 'bg-srec-primary text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
-            <SlidersHorizontal size={14} />
-            Filters
+            <SlidersHorizontal size={14} />Filters
           </Button>
+        </div>
+
+        {/* Sort tabs */}
+        <div className="flex gap-1.5 mb-4">
+          {[{ key: 'hot', label: 'Hot' }, { key: 'new', label: 'New' }, { key: 'top', label: 'Top' }].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setFilters(f => ({ ...f, sortBy: key }))}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all border ${
+                filters.sortBy === key
+                  ? 'bg-srec-primary text-white border-srec-primary shadow-sm'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-srec-primary hover:text-srec-primary'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {showFilters && (
@@ -170,98 +157,81 @@ export default function StudentHome() {
                   onChange={(e) => setFilters({ ...filters, search: e.target.value })}
                 />
               </div>
-              <Select
-                options={['All', ...STATUSES]}
-                value={filters.status}
-                onChange={(val) => setFilters({ ...filters, status: val })}
-                className="w-full bg-white shadow-sm text-xs"
-              />
-              <Select
-                options={['All', ...PRIORITIES]}
-                value={filters.priority}
-                onChange={(val) => setFilters({ ...filters, priority: val })}
-                className="w-full bg-white shadow-sm text-xs"
-              />
-              <Button
-                variant="ghost"
-                className="text-xs font-bold text-gray-400 hover:text-srec-danger h-[38px] border border-dashed border-gray-200 rounded-xl"
-                onClick={() => setFilters({ status: 'All', priority: 'All', category_id: 'All', search: '' })}
-              >
-                <X size={12} className="mr-1" /> Reset
+              <Select options={['All', ...STATUSES]} value={filters.status} onChange={(val) => setFilters({ ...filters, status: val })} className="w-full bg-white shadow-sm text-xs" />
+              <Select options={['All', ...PRIORITIES]} value={filters.priority} onChange={(val) => setFilters({ ...filters, priority: val })} className="w-full bg-white shadow-sm text-xs" />
+              <select value={filters.category_id} onChange={(e) => setFilters({ ...filters, category_id: e.target.value })} className="w-full bg-white border border-gray-200 rounded-xl py-2 px-3 text-xs focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary outline-none transition-all">
+                <option value="All">All Categories</option>
+                <option value="1">General</option>
+                <option value="2">Department</option>
+                <option value="3">Men&apos;s Hostel</option>
+                <option value="4">Women&apos;s Hostel</option>
+                <option value="5">Disciplinary Committee</option>
+              </select>
+              <Button variant="ghost" className="text-xs font-bold text-gray-400 hover:text-srec-danger h-[38px] border border-dashed border-gray-200 rounded-xl sm:col-span-2 lg:col-span-4" onClick={() => setFilters({ status: 'All', priority: 'All', category_id: 'All', search: '', sortBy: 'hot' })}>
+                <X size={12} className="mr-1" /> Reset All Filters
               </Button>
             </div>
           </Card>
         )}
 
-        {loading && activeTab === 'feed' && (
+        {/* Feed content */}
+        {loading ? (
           <div className="space-y-3">
             <Skeleton className="h-44 rounded-2xl" />
             <Skeleton className="h-44 rounded-2xl" />
           </div>
-        )}
+        ) : (
+          <div className="space-y-3">
+            <RaiseButton onClick={() => navigate('/posts')} className="w-full">
+              <AlertCircle size={18} /> Raise an Issue
+            </RaiseButton>
 
-        <div className="space-y-3">
-          {/* Raise an Issue CTA */}
-          <RaiseButton
-            onClick={() => navigate('/posts')}
-            className="w-full"
-          >
-            <AlertCircle size={18} />
-            Raise an Issue
-          </RaiseButton>
-
-          {!loading && feed.length === 0 ? (
-            <div className="text-center py-14 bg-white rounded-2xl border border-srec-border shadow-card">
-              <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-srec-primarySoft flex items-center justify-center">
-                <Inbox size={24} className="text-srec-primary" />
-              </div>
-              <p className="text-srec-textPrimary text-base font-semibold">No posts yet</p>
-              <p className="text-srec-textMuted text-sm mt-1 max-w-xs mx-auto">
-                Be the first to raise a complaint for your campus
-              </p>
-            </div>
-          ) : (
-            <>
-              {feed.map((item) => (
-                <ComplaintCard
-                  key={item.id || item.complaint_id}
-                  id={item.id || item.complaint_id}
-                  rephrased_text={item.rephrased_text}
-                  summary={item.summary}
-                  category={item.category_name || COMPLAINT_CATEGORIES[item.category_id]}
-                  department_code={item.department_code}
-                  has_image={item.has_image}
-                  author={item.is_anonymous ? 'Anonymous' : (item.author || item.student_roll_no)}
-                  status={item.status}
-                  priority={item.priority}
-                  upvotes={item.upvotes}
-                  downvotes={item.downvotes}
-                  timestamp={item.submitted_at}
-                  assigned_authority_name={item.assigned_authority_name || null}
-                />
-              ))}
-
-              {hasMore && !loading && (
-                <div className="flex justify-center pt-2">
-                  <button
-                    onClick={loadMore}
-                    disabled={loadingMore}
-                    className="flex items-center gap-2 border border-srec-border bg-white text-srec-textSecondary rounded-xl px-6 py-2 text-sm font-semibold hover:bg-srec-primarySoft hover:border-srec-primaryMuted hover:text-srec-primary transition-all duration-200 disabled:opacity-50 shadow-card"
-                  >
-                    {loadingMore ? 'Loading...' : 'Load More'}
-                  </button>
+            {feed.length === 0 ? (
+              <div className="text-center py-14 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-[0_4px_24px_-4px_rgba(0,0,0,0.08)]">
+                <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-srec-primarySoft flex items-center justify-center">
+                  <Inbox size={24} className="text-srec-primary" />
                 </div>
-              )}
-            </>
-          )}
-        </div>
+                <p className="text-gray-900 text-base font-semibold">No posts yet</p>
+                <p className="text-gray-500 text-sm mt-1">Be the first to raise a complaint for your campus</p>
+              </div>
+            ) : (
+              <>
+                {feed.map((item) => (
+                  <ComplaintCard
+                    key={item.id || item.complaint_id}
+                    id={item.id || item.complaint_id}
+                    rephrased_text={item.rephrased_text}
+                    summary={item.summary}
+                    category={item.category_name || COMPLAINT_CATEGORIES[item.category_id]}
+                    department_code={item.department_code}
+                    has_image={item.has_image}
+                    author={item.is_anonymous ? 'Anonymous' : (item.author || item.student_roll_no)}
+                    status={item.status}
+                    priority={item.priority}
+                    upvotes={item.upvotes}
+                    downvotes={item.downvotes}
+                    timestamp={item.submitted_at}
+                    assigned_authority_name={item.assigned_authority_name || null}
+                  />
+                ))}
+                {hasMore && !loading && (
+                  <div className="flex justify-center pt-2">
+                    <button onClick={loadMore} disabled={loadingMore} className="flex items-center gap-2 border border-gray-200 bg-white text-gray-600 rounded-xl px-6 py-2 text-sm font-semibold hover:bg-srec-primarySoft hover:border-srec-primaryMuted hover:text-srec-primary transition-all disabled:opacity-50 shadow-sm">
+                      {loadingMore ? 'Loading...' : 'Load More'}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
       </div>
 
       <NewComplaintModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        onSubmit={handleNewComplaint}
+        onSubmit={(c) => setFeed(prev => [c, ...prev])}
       />
 
       {user?.role === 'Student' && <BottomNav />}
