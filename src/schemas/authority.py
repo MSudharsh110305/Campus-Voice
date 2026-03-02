@@ -632,6 +632,7 @@ class NoticeResponse(BaseModel):
     is_active: bool
     created_at: datetime
     expires_at: Optional[datetime] = None
+    attachment_filename: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

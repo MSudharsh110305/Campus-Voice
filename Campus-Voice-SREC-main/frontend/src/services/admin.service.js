@@ -129,6 +129,48 @@ const getHealthMetrics = async () => {
     return await api('/admin/health/metrics');
 };
 
+// ── Representatives ──────────────────────────────────────────────────────────
+
+const getRepresentatives = async (params = {}) => {
+    const qs = new URLSearchParams();
+    if (params.department_id) qs.set('department_id', params.department_id);
+    if (params.year) qs.set('year', params.year);
+    if (params.scope) qs.set('scope', params.scope);
+    if (params.active_only !== undefined) qs.set('active_only', params.active_only);
+    return await api(`/admin/representatives?${qs}`);
+};
+
+const appointRepresentative = async ({ student_roll_no, scope }) => {
+    return await api('/admin/representatives', {
+        method: 'POST',
+        body: JSON.stringify({ student_roll_no, scope }),
+    });
+};
+
+const removeRepresentative = async (repId) => {
+    return await api(`/admin/representatives/${repId}`, { method: 'DELETE' });
+};
+
+const getRepCapacity = async () => {
+    return await api('/admin/representatives/capacity');
+};
+
+const getAnomalies = async (days = 30) => {
+    return await api(`/admin/anomalies?days=${days}`);
+};
+
+// System Settings
+const getSystemSettings = async () => {
+    return await api('/admin/settings');
+};
+
+const updateSystemSetting = async (key, value) => {
+    return await api(`/admin/settings/${key}`, {
+        method: 'PUT',
+        body: JSON.stringify({ value: String(value) }),
+    });
+};
+
 const adminService = {
     createAuthority,
     getAllAuthorities,
@@ -148,6 +190,13 @@ const adminService = {
     getHealthMetrics,
     getStudentsByDepartment,
     getDepartmentComplaints,
+    getRepresentatives,
+    appointRepresentative,
+    removeRepresentative,
+    getRepCapacity,
+    getAnomalies,
+    getSystemSettings,
+    updateSystemSetting,
 };
 
 export default adminService;

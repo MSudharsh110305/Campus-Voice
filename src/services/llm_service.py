@@ -127,8 +127,11 @@ class LLMService:
             result["model"] = self.model
             result["status"] = "Success"
 
-            # Deterministic override: hostel → Department if academic content detected
+            # Deterministic overrides (applied in order):
+            # 1. Hostel → Department if academic content detected
             result = self._apply_academic_override(text, result)
+            # 2. Department → General if physical repair of shared resource
+            result = self._apply_repair_general_override(text, result)
 
             logger.info(
                 f"Categorization successful: {result['category']} "
@@ -224,17 +227,36 @@ Does the complaint describe ANY of:
 • General indiscipline: violating college rules, dress code violation, using mobile phone in class without permission, sleeping in class disruptively, disrespecting faculty or staff
 → YES → Category = "Disciplinary Committee"
 
+PRE-STEP — PHYSICAL REPAIR/DAMAGE OVERRIDE (check this FIRST before all other steps):
+If the complaint describes PHYSICAL DAMAGE, MALFUNCTION, or REPAIR NEED for a SHARED CAMPUS RESOURCE:
+Repair language: broken, not working, damaged, repair, maintenance, out of order, stopped working, faulty,
+  defective, needs replacement, leaking, burst, no power, no electricity, no water, not functioning
+Shared resources (always General): projector, AC, air conditioner, fan, ceiling fan, light, tube light,
+  bulb, electricity, power outlet, water tap, water pipe, furniture, chair, table, door, window,
+  toilet, bathroom, washroom, drinking water, cooler
+→ If BOTH repair language AND shared resource keyword present → Category = "General"
+→ EXCEPTION: If item is specifically a lab computer, desktop PC, workstation, server, oscilloscope,
+  PCB, circuit board, embedded system, CNC machine, lathe — these are specialized dept equipment → use STEP 2.
+
 STEP 2 — Check for ACADEMIC / DEPARTMENT issue → "Department":
-Does the complaint mention a problem with EQUIPMENT, FACILITIES, or SERVICES in academic/departmental areas:
-• Lab equipment not working, computer lab issue, projector/AV system fault, seminar hall problem
-• Printer issue (academic use), software license missing, IDE/software not working
-• Classroom infrastructure (broken furniture/AC/fan), IT equipment in academic building
+Does the complaint mention a problem with ACADEMIC SERVICES, CURRICULUM, or SPECIALIZED LAB EQUIPMENT:
+• Specialized lab equipment: oscilloscope, PCB lab, fabrication, CNC, embedded systems, circuit boards
+• Lab computers (desktop PCs, workstations, specific academic software/IDE)
+• Software license missing, IDE/software not working, compiler issues
 • Faculty/HOD request, curriculum, timetable, project submission, department office service
-• Placement, internship, career guidance, campus recruitment, training and placement cell (T&P), aptitude training, soft skills training, industry visit, placement preparation, campus drives
-NOTE: If the complaint is about STUDENT BEHAVIOR in these spaces (not the infrastructure/service itself), use STEP 1 instead.
+• Academic: exam schedule, course registration, observation book, lab record
+• Placement, internship, career guidance, campus recruitment, T&P cell, TCS NQT, AMCAT, aptitude,
+  soft skills training, mock interviews, campus drives, coding interview prep
+NOTE: General repair of shared infrastructure (projector, AC, fan, furniture) → use PRE-STEP override above.
+NOTE: If the complaint is about STUDENT BEHAVIOR in these spaces, use STEP 1 instead.
 → YES → Category = "Department"
 
-DEPARTMENT FOR PLACEMENT COMPLAINTS: Use "AIDS" if student is from AI/DS, otherwise use the student's department code. If no department context, default to the student's own department or "CSE".
+PLACEMENT/CAREER COMPLAINTS — CRITICAL RULE:
+If complaint mentions placement, internship, T&P, campus recruitment, TCS NQT, AMCAT, aptitude,
+mock interviews, coding interview, career guidance, campus drives, soft skills:
+→ target_department = ALWAYS the student's OWN department from supplementary context
+→ NEVER use AIDS unless the complaint text EXPLICITLY mentions "Artificial Intelligence" or "Data Science"
+→ If no department context provided, use "CSE" as fallback
 
 STEP 3 — Check for HOSTEL FACILITY → hostel category:
 Is the issue about something physically INSIDE a hostel building?
@@ -268,7 +290,7 @@ Valid codes: CSE, ECE, MECH, CIVIL, EEE, IT, BIO, AERO, RAA, EIE, MBA, AIDS, MTE
 - CHEM: complaints about Chemistry subject, chemistry lab, chemistry class, chemistry faculty
 - MATH: complaints about Mathematics/Maths subject, math class, mathematics faculty
 - If complaint says "my department" or "our department" without naming it → use student's department from supplementary context
-- Placement/internship/T&P complaints → use the student's own department from supplementary context (or "CSE" if unknown)
+- Placement/internship/T&P/TCS NQT/coding interview complaints → ALWAYS use the student's own department from supplementary context; NEVER use AIDS unless text explicitly mentions AI or Data Science (or "CSE" if no context)
 - If no department context at all → use "CSE" as the default
 - NEVER assign a department solely because the student belongs to it when the complaint is about a different area
 
@@ -344,6 +366,7 @@ JSON:"""
     # If the LLM returns a hostel category but the text contains any of these,
     # we override to "Department" — this is deterministic and safe because these
     # phrases never appear in genuine hostel complaints.
+    # NOTE: "projector" removed — a broken projector is a General repair issue, not Department.
     _ACADEMIC_OVERRIDE_KEYWORDS = [
         "lab ",       " lab",        "labs ",       "laboratory",
         "computer lab","cse lab",     "ece lab",     "it lab",
@@ -355,12 +378,69 @@ JSON:"""
         "project report", "project submission",
         "timetable",  "exam schedule", "course",    "curriculum",
         "software license", "software licence", "ide software",
-        "av system",  "av technician", "projector",
+        "av system",  "av technician",
         "server room","computing cluster", "lab in-charge",
         "oscilloscope","pcb ",        "fabrication lab", "workshop",
         "practicals", "practical exam",
         "printer" ,   "printing",
     ]
+
+    # Physical repair keywords — if present alongside shared resource, override to General
+    _REPAIR_KEYWORDS = [
+        "broken", "not working", "not functioning", "damaged", "repair", "maintenance",
+        "out of order", "stopped working", "faulty", "defective", "needs replacement",
+        "need replacement", "leaking", "burst pipe", "no power", "no electricity",
+        "power cut", "no water", "isn't working", "doesn't work", "not fixed",
+        "still broken", "has been broken", "require repair", "requires repair",
+    ]
+
+    # Shared campus resources — repair of these → General (not Department)
+    # Plain keywords matched as substrings (long enough to be unambiguous)
+    _SHARED_RESOURCE_KEYWORDS = [
+        "projector", "air conditioner", "air conditioning",
+        "ceiling fan", "tube light", "fluorescent light", "bulb",
+        "power outlet", "socket", "extension cord", "water tap", "water pipe",
+        "pipe burst", "furniture", "toilet", "washroom", "bathroom", "urinal",
+        "drinking water", "water cooler", "whiteboard", "blackboard",
+    ]
+    # Short words that need word-boundary matching (avoid false hits like "tab", "fan belt")
+    _SHARED_RESOURCE_PATTERNS = [
+        r"\bac\b", r"\bfan\b", r"\btap\b", r"\bchair\b", r"\bchairs\b",
+        r"\btable\b", r"\btables\b", r"\bdoor\b", r"\bwindow\b", r"\bcooler\b",
+    ]
+
+    def _apply_repair_general_override(self, text: str, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        If the LLM returned 'Department' but the complaint is actually about
+        physical repair/damage of shared campus infrastructure, override to 'General'.
+
+        A broken projector, faulty AC, or damaged furniture is a campus maintenance
+        issue (General), not a department academic issue, even if mentioned in a lab context.
+        Exception: specialized lab equipment (computers, oscilloscopes, PCBs) stays Department.
+        """
+        import re as _re
+        if result.get("category") != "Department":
+            return result
+
+        text_lower = text.lower()
+
+        has_repair = any(kw in text_lower for kw in self._REPAIR_KEYWORDS)
+        if not has_repair:
+            return result
+
+        has_shared_resource = (
+            any(kw in text_lower for kw in self._SHARED_RESOURCE_KEYWORDS)
+            or any(_re.search(pat, text_lower) for pat in self._SHARED_RESOURCE_PATTERNS)
+        )
+        if not has_shared_resource:
+            return result
+
+        result["category"] = "General"
+        logger.info(
+            "Repair override: 'Department' → 'General' "
+            "(physical repair of shared resource detected)"
+        )
+        return result
 
     def _apply_academic_override(self, text: str, result: Dict[str, Any]) -> Dict[str, Any]:
         """

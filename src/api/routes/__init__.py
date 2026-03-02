@@ -14,6 +14,7 @@ from .complaints import router as complaints_router
 from .authorities import router as authorities_router
 from .admin import router as admin_router
 from .health import router as health_router
+from .petitions import router as petitions_router
 
 
 def create_api_router() -> tuple[APIRouter, APIRouter]:
@@ -33,6 +34,7 @@ def create_api_router() -> tuple[APIRouter, APIRouter]:
     api_router.include_router(complaints_router)
     api_router.include_router(authorities_router)
     api_router.include_router(admin_router)
+    api_router.include_router(petitions_router)
     
     # Health checks at root level (no /api prefix)
     # This allows /health instead of /api/health
@@ -49,4 +51,5 @@ __all__ = [
     "authorities_router",
     "admin_router",
     "health_router",
+    "petitions_router",
 ]

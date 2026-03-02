@@ -205,6 +205,217 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                 except Exception as me:
                     logger.debug(f"Migration note (target_gender): {me}")
 
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE complaints "
+                        "ADD COLUMN IF NOT EXISTS reach INTEGER NOT NULL DEFAULT 0"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints "
+                        "ADD COLUMN IF NOT EXISTS view_count INTEGER NOT NULL DEFAULT 0"
+                    ))
+                    logger.info("✅ Migration: complaints.reach + complaints.view_count ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (reach/view_count): {me}")
+
+            # New columns for disputes + authority attachments
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS has_disputed BOOLEAN NOT NULL DEFAULT FALSE"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS appeal_reason TEXT"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS authority_attachment_data BYTEA"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS authority_attachment_filename VARCHAR(255)"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS authority_attachment_mimetype VARCHAR(100)"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS authority_attachment_size INTEGER"
+                    ))
+                    logger.info("✅ Migration: complaint dispute + authority attachment columns ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (dispute/attachment cols): {me}")
+
+            # Campus reputation for students
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE students ADD COLUMN IF NOT EXISTS campus_reputation INTEGER NOT NULL DEFAULT 0"
+                    ))
+                    logger.info("✅ Migration: students.campus_reputation ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (campus_reputation): {me}")
+
+            # Petition scope + publish flag
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE petitions ADD COLUMN IF NOT EXISTS petition_scope VARCHAR(20) NOT NULL DEFAULT 'General'"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE petitions ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT FALSE"
+                    ))
+                    logger.info("✅ Migration: petition petition_scope + is_published ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (petition scope/publish): {me}")
+
+            # Petition goal + deadline columns
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE petitions ADD COLUMN IF NOT EXISTS custom_goal INTEGER"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE petitions ADD COLUMN IF NOT EXISTS deadline TIMESTAMPTZ"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE petitions ADD COLUMN IF NOT EXISTS goal_reached_notified BOOLEAN NOT NULL DEFAULT FALSE"
+                    ))
+                    logger.info("✅ Migration: petition custom_goal + deadline + goal_reached_notified ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (petition goal/deadline): {me}")
+
+            # Petition tables — created by create_all if they don't exist, but
+            # explicitly ensured here so existing DBs pick them up on restart.
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS petitions (
+                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                            title VARCHAR(255) NOT NULL,
+                            description TEXT NOT NULL,
+                            created_by_roll_no VARCHAR(20) NOT NULL
+                                REFERENCES students(roll_no) ON DELETE CASCADE,
+                            category_id INTEGER REFERENCES complaint_categories(id) ON DELETE SET NULL,
+                            department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
+                            signature_count INTEGER NOT NULL DEFAULT 0,
+                            milestone_goal INTEGER NOT NULL DEFAULT 50,
+                            milestones_reached INTEGER[] NOT NULL DEFAULT '{}',
+                            status VARCHAR(50) NOT NULL DEFAULT 'Open',
+                            authority_response TEXT,
+                            responded_by_id BIGINT REFERENCES authorities(id) ON DELETE SET NULL,
+                            responded_at TIMESTAMPTZ,
+                            submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                    """))
+                    await conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS petition_signatures (
+                            id BIGSERIAL PRIMARY KEY,
+                            petition_id UUID NOT NULL
+                                REFERENCES petitions(id) ON DELETE CASCADE,
+                            student_roll_no VARCHAR(20) NOT NULL
+                                REFERENCES students(roll_no) ON DELETE CASCADE,
+                            signed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            CONSTRAINT uq_petition_signature UNIQUE (petition_id, student_roll_no)
+                        )
+                    """))
+                    # Indexes
+                    await conn.execute(text(
+                        "CREATE INDEX IF NOT EXISTS idx_petition_status_created "
+                        "ON petitions(status, submitted_at)"
+                    ))
+                    await conn.execute(text(
+                        "CREATE INDEX IF NOT EXISTS idx_petition_sig_petition "
+                        "ON petition_signatures(petition_id)"
+                    ))
+                    logger.info("✅ Migration: petitions + petition_signatures tables ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (petitions): {me}")
+
+            # Student representatives table
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS student_representatives (
+                            id BIGSERIAL PRIMARY KEY,
+                            student_roll_no VARCHAR(20) NOT NULL
+                                REFERENCES students(roll_no) ON DELETE CASCADE,
+                            department_id INTEGER NOT NULL
+                                REFERENCES departments(id) ON DELETE CASCADE,
+                            year INTEGER NOT NULL,
+                            scope VARCHAR(20) NOT NULL,
+                            appointed_by_id BIGINT
+                                REFERENCES authorities(id) ON DELETE SET NULL,
+                            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                            appointed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            removed_at TIMESTAMPTZ,
+                            CONSTRAINT uq_rep_student_scope UNIQUE (student_roll_no, scope)
+                        )
+                    """))
+                    await conn.execute(text(
+                        "CREATE INDEX IF NOT EXISTS idx_rep_dept_year_scope "
+                        "ON student_representatives(department_id, year, scope, is_active)"
+                    ))
+                    logger.info("✅ Migration: student_representatives table ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (student_representatives): {me}")
+
+            # Notice file attachments
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE authority_updates ADD COLUMN IF NOT EXISTS attachment_data BYTEA"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE authority_updates ADD COLUMN IF NOT EXISTS attachment_filename VARCHAR(255)"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE authority_updates ADD COLUMN IF NOT EXISTS attachment_mimetype VARCHAR(100)"
+                    ))
+                    logger.info("✅ Migration: authority_updates attachment columns ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (notice attachments): {me}")
+
+            # Complaint merge columns (LLM auto-merge for duplicate clustering)
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS "
+                        "merged_into_id UUID REFERENCES complaints(id) ON DELETE SET NULL"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS "
+                        "is_merged_canonical BOOLEAN NOT NULL DEFAULT FALSE"
+                    ))
+                    await conn.execute(text(
+                        "CREATE INDEX IF NOT EXISTS idx_complaint_merged_into "
+                        "ON complaints(merged_into_id) WHERE merged_into_id IS NOT NULL"
+                    ))
+                    logger.info("✅ Migration: complaint merge columns ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (complaint merge): {me}")
+
+            # System settings table (configurable key-value store for admin)
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS system_settings (
+                            key VARCHAR(100) PRIMARY KEY,
+                            value VARCHAR(500) NOT NULL,
+                            description TEXT,
+                            updated_by_id BIGINT REFERENCES authorities(id) ON DELETE SET NULL,
+                            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                    """))
+                    # Seed default settings if not present
+                    await conn.execute(text("""
+                        INSERT INTO system_settings (key, value, description)
+                        VALUES ('petition_cooldown_days', '7', 'Minimum days between petition creations per representative')
+                        ON CONFLICT (key) DO NOTHING
+                    """))
+                    logger.info("✅ Migration: system_settings table ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (system_settings): {me}")
+
             async with AsyncSessionLocal() as session:
                 from src.database.models import Department
                 

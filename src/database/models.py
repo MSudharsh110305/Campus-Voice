@@ -93,7 +93,12 @@ class Student(Base):
     verification_token = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now())
-    
+
+    # ── Campus Reputation ──────────────────────────────────────────────────────
+    # Earned by filing legitimate complaints, getting upvotes, having complaints resolved.
+    # Minimum threshold required to create petitions (calculated dynamically).
+    campus_reputation = Column(Integer, default=0, server_default='0', nullable=False)
+
     # Relationships
     department = relationship("Department", back_populates="students")
     complaints = relationship("Complaint", back_populates="student", cascade="all, delete-orphan")
@@ -221,6 +226,32 @@ class Complaint(Base):
     # When the parent is deleted the FK is set NULL (not cascade-deleted).
     duplicate_of_id = Column(UUID(as_uuid=True), ForeignKey("complaints.id", ondelete="SET NULL"), nullable=True, index=True)
 
+    # ── Engagement tracking ────────────────────────────────────────────────────
+    # reach: snapshot of how many students are eligible to see this complaint
+    #        (set at creation time based on category/dept/hostel rules)
+    # view_count: incremented each time a student opens the complaint detail page
+    reach = Column(Integer, default=0, server_default='0', nullable=False)
+    view_count = Column(Integer, default=0, server_default='0', nullable=False)
+
+    # ── Dispute tracking ───────────────────────────────────────────────────────
+    # Students can dispute a spam/closed complaint exactly once.
+    has_disputed = Column(Boolean, default=False, server_default='false', nullable=False)
+    appeal_reason = Column(Text, nullable=True)  # Reason provided by student when disputing spam
+
+    # ── LLM Auto-merge (duplicate clustering) ─────────────────────────────────
+    # When 10+ similar complaints are detected, LLM merges them into a single
+    # canonical complaint. merged_into_id points to the canonical; the canonical
+    # has is_merged_canonical=True. Merged-away complaints are hidden from feed.
+    merged_into_id = Column(UUID(as_uuid=True), ForeignKey("complaints.id", ondelete="SET NULL"), nullable=True, index=True)
+    is_merged_canonical = Column(Boolean, default=False, server_default='false', nullable=False)
+
+    # ── Authority file attachment ──────────────────────────────────────────────
+    # Authorities can attach a file (PDF, Excel, Word, image) to a complaint.
+    authority_attachment_data = Column(LargeBinary, nullable=True)
+    authority_attachment_filename = Column(String(255), nullable=True)
+    authority_attachment_mimetype = Column(String(100), nullable=True)
+    authority_attachment_size = Column(Integer, nullable=True)
+
     # Timestamps
     submitted_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now())
@@ -241,6 +272,9 @@ class Complaint(Base):
     # Self-referential: duplicates that point to this complaint as their canonical parent
     duplicate_complaints = relationship("Complaint", foreign_keys="Complaint.duplicate_of_id", back_populates="duplicate_of")
     duplicate_of = relationship("Complaint", foreign_keys=[duplicate_of_id], remote_side="Complaint.id", back_populates="duplicate_complaints")
+    # Self-referential: merged complaints that point to this canonical complaint
+    merged_complaints = relationship("Complaint", foreign_keys="Complaint.merged_into_id", back_populates="merged_into")
+    merged_into = relationship("Complaint", foreign_keys=[merged_into_id], remote_side="Complaint.id", back_populates="merged_complaints")
 
     __table_args__ = (
         CheckConstraint("visibility IN ('Private', 'Department', 'Public')", name="check_visibility"),
@@ -304,6 +338,10 @@ class AuthorityUpdate(Base):
     expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now())
+    # Optional file attachment
+    attachment_data = Column(LargeBinary, nullable=True)
+    attachment_filename = Column(String(255), nullable=True)
+    attachment_mimetype = Column(String(100), nullable=True)
     
     # Relationships
     authority = relationship("Authority", back_populates="authority_updates")
@@ -563,6 +601,172 @@ class AdminAuditLog(Base):
         return f"<AdminAuditLog(action={self.action}, target={self.target_type})>"
 
 
+# ==================== PETITIONS ====================
+
+
+class Petition(Base):
+    """Student-created petition for systemic issues with dynamic milestone goals."""
+    __tablename__ = "petitions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    created_by_roll_no = Column(
+        String(20), ForeignKey("students.roll_no", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    category_id = Column(
+        Integer, ForeignKey("complaint_categories.id", ondelete="SET NULL"),
+        nullable=True, index=True
+    )
+    department_id = Column(
+        Integer, ForeignKey("departments.id", ondelete="SET NULL"),
+        nullable=True, index=True
+    )
+
+    # Signature tracking (denormalised count for fast reads)
+    signature_count = Column(Integer, default=0, server_default="0", nullable=False)
+
+    # Dynamic milestone goal: 50 → 100 → 250
+    milestone_goal = Column(Integer, default=50, server_default="50", nullable=False)
+
+    # Array of milestone thresholds already triggered, e.g. [50, 100]
+    milestones_reached = Column(ARRAY(Integer), nullable=True, server_default="{}")
+
+    # Custom goal set by creator (min 50); petition closes/notifies when reached
+    custom_goal = Column(Integer, nullable=True)
+
+    # Petition expires at this datetime; signing blocked after expiry
+    deadline = Column(DateTime(timezone=True), nullable=True)
+
+    # Set True when signature_count reaches custom_goal (prevents repeat notifications)
+    goal_reached_notified = Column(Boolean, default=False, server_default="false", nullable=False)
+
+    # ── Visibility scope ───────────────────────────────────────────────────────
+    # "General": all students can see/sign
+    # "Department": only students from the creator's department (department_id is set)
+    # "Hostel": only hostel students (stay_type == 'Hostel') can see/sign
+    petition_scope = Column(String(20), default="General", server_default="'General'", nullable=False)
+
+    # ── Authority approval ─────────────────────────────────────────────────────
+    # Petition is not visible in feeds until an authority publishes it
+    is_published = Column(Boolean, default=False, server_default="false", nullable=False)
+
+    status = Column(String(50), default="Open", nullable=False, index=True)
+    authority_response = Column(Text, nullable=True)
+    responded_by_id = Column(
+        BigInteger, ForeignKey("authorities.id", ondelete="SET NULL"), nullable=True
+    )
+    responded_at = Column(DateTime(timezone=True), nullable=True)
+
+    submitted_at = Column(
+        DateTime(timezone=True), nullable=False, default=func.now(), index=True
+    )
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    creator = relationship("Student", foreign_keys=[created_by_roll_no])
+    department = relationship("Department", foreign_keys=[department_id])
+    signatures = relationship(
+        "PetitionSignature", back_populates="petition", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('Open', 'Acknowledged', 'Resolved', 'Closed')",
+            name="check_petition_status"
+        ),
+        CheckConstraint("signature_count >= 0", name="check_petition_sig_count"),
+        Index("idx_petition_status_created", "status", "submitted_at"),
+    )
+
+    def __repr__(self):
+        return f"<Petition(title={self.title[:40]}, sigs={self.signature_count})>"
+
+
+class PetitionSignature(Base):
+    """One-per-student signature on a petition."""
+    __tablename__ = "petition_signatures"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    petition_id = Column(
+        UUID(as_uuid=True), ForeignKey("petitions.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    student_roll_no = Column(
+        String(20), ForeignKey("students.roll_no", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    signed_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
+
+    # Relationships
+    petition = relationship("Petition", back_populates="signatures")
+    student = relationship("Student", foreign_keys=[student_roll_no])
+
+    __table_args__ = (
+        UniqueConstraint("petition_id", "student_roll_no", name="uq_petition_signature"),
+    )
+
+    def __repr__(self):
+        return f"<PetitionSignature(petition={str(self.petition_id)[:8]}, student={self.student_roll_no})>"
+
+
+# ==================== STUDENT REPRESENTATIVES ====================
+
+
+class StudentRepresentative(Base):
+    """Student representative — appointed by authorities to create petitions."""
+    __tablename__ = "student_representatives"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    student_roll_no = Column(
+        String(20), ForeignKey("students.roll_no", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    department_id = Column(
+        Integer, ForeignKey("departments.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    year = Column(Integer, nullable=False)
+    scope = Column(String(20), nullable=False)  # "Department" or "Hostel"
+    appointed_by_id = Column(
+        BigInteger, ForeignKey("authorities.id", ondelete="SET NULL"),
+        nullable=True
+    )
+    is_active = Column(Boolean, default=True, nullable=False)
+    appointed_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
+    removed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    student = relationship("Student")
+    department = relationship("Department")
+    appointed_by = relationship("Authority")
+
+    __table_args__ = (
+        UniqueConstraint("student_roll_no", "scope", name="uq_rep_student_scope"),
+        Index("idx_rep_dept_year_scope", "department_id", "year", "scope", "is_active"),
+    )
+
+    def __repr__(self):
+        return f"<StudentRepresentative(student={self.student_roll_no}, scope={self.scope})>"
+
+
+class SystemSetting(Base):
+    """Key-value store for configurable system settings (admin-controlled)."""
+    __tablename__ = "system_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(String(500), nullable=False)
+    description = Column(Text, nullable=True)
+    updated_by_id = Column(BigInteger, ForeignKey("authorities.id", ondelete="SET NULL"), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<SystemSetting(key={self.key}, value={self.value})>"
+
+
 # ==================== EXPORT ====================
 
 __all__ = [
@@ -582,4 +786,8 @@ __all__ = [
     "Notification",
     "Comment",
     "AdminAuditLog",
+    "Petition",
+    "PetitionSignature",
+    "StudentRepresentative",
+    "SystemSetting",
 ]

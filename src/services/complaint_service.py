@@ -351,6 +351,29 @@ class ComplaintService:
             image_verification_status="Pending" if image_bytes else None
         )
         
+        # ── Calculate reach: how many students can see this complaint ─────────────
+        try:
+            from sqlalchemy import func as sqlfunc
+            category_name = categorization.get("category", "General")
+            reach_conditions = [Student.is_active == True]
+
+            if category_name == "Men's Hostel":
+                reach_conditions += [Student.stay_type == "Hostel", Student.gender == "Male"]
+            elif category_name == "Women's Hostel":
+                reach_conditions += [Student.stay_type == "Hostel", Student.gender == "Female"]
+            elif category_name == "Department":
+                # Department complaints visible to students in target_department_id
+                if target_department_id:
+                    reach_conditions.append(Student.department_id == target_department_id)
+            # General / Disciplinary → all active students (no extra filter)
+
+            reach_query = select(sqlfunc.count()).select_from(Student).where(*reach_conditions)
+            reach_result = await self.db.execute(reach_query)
+            complaint.reach = reach_result.scalar() or 0
+            await self.db.commit()
+        except Exception as _reach_err:
+            logger.warning(f"Could not calculate reach for {complaint.id}: {_reach_err}")
+
         # ✅ NEW: Verify image if provided
         if image_bytes:
             try:
@@ -452,6 +475,27 @@ class ComplaintService:
                     logger.info(f"Complaint {complaint.id} assigned to {authority.name}")
                 else:
                     logger.warning(f"No authority found for complaint {complaint.id}")
+
+                # Notify admin for High/Critical priority complaints
+                if priority in ("High", "Critical"):
+                    try:
+                        from src.repositories.authority_repo import AuthorityRepository
+                        authority_repo = AuthorityRepository(self.db)
+                        admins = await authority_repo.get_by_type("Admin")
+                        for admin in admins:
+                            await notification_service.create_notification(
+                                self.db,
+                                recipient_type="Authority",
+                                recipient_id=str(admin.id),
+                                complaint_id=complaint.id,
+                                notification_type="high_priority_complaint",
+                                message=(
+                                    f"⚠️ {priority} priority complaint raised by {student_roll_no}: "
+                                    f"\"{rephrased_text[:100]}...\""
+                                )
+                            )
+                    except Exception as _notif_err:
+                        logger.warning(f"Failed to notify admin of high-priority complaint: {_notif_err}")
 
             except Exception as e:
                 logger.error(f"Authority routing error: {e}")

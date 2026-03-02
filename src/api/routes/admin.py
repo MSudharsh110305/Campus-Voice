@@ -17,10 +17,12 @@ import logging
 from typing import Optional
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, delete
+from pydantic import BaseModel, Field
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from src.api.dependencies import get_db, get_current_admin  # ✅ FIXED IMPORT
+from src.api.dependencies import get_db, get_current_admin, get_current_authority  # ✅ FIXED IMPORT
 from src.schemas.authority import (
     AuthorityCreate,
     AuthorityProfile,
@@ -646,6 +648,69 @@ async def get_analytics(
     }
 
 
+# ==================== Z-SCORE ANOMALY DETECTION ====================
+
+@router.get(
+    "/anomalies",
+    summary="Detect anomalies in complaint patterns",
+    description="Z-Score anomaly detection on daily complaint volumes (admin only)"
+)
+async def detect_anomalies(
+    current_authority_id: int = Depends(get_current_admin),
+    days: int = Query(30, ge=7, le=180),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Z-Score anomaly detection on daily complaint volumes.
+    Flags days where complaint count is > 2 standard deviations from mean.
+    """
+    import math
+    from sqlalchemy import text, and_
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # Get daily complaint counts
+    daily_q = text("""
+        SELECT DATE(submitted_at AT TIME ZONE 'UTC') as day, COUNT(*) as count
+        FROM complaints
+        WHERE submitted_at >= :cutoff
+        GROUP BY DATE(submitted_at AT TIME ZONE 'UTC')
+        ORDER BY day
+    """)
+    result = await db.execute(daily_q, {"cutoff": cutoff})
+    daily_rows = result.fetchall()
+
+    if len(daily_rows) < 3:
+        return {"anomalies": [], "mean": 0, "std_dev": 0, "period_days": days, "message": "Not enough data"}
+
+    counts = [row[1] for row in daily_rows]
+    mean = sum(counts) / len(counts)
+    variance = sum((c - mean) ** 2 for c in counts) / len(counts)
+    std_dev = math.sqrt(variance) if variance > 0 else 0.01
+
+    anomalies = []
+    for row in daily_rows:
+        day_str = str(row[0])
+        count = row[1]
+        z_score = (count - mean) / std_dev if std_dev > 0 else 0
+        if abs(z_score) >= 2.0:
+            anomalies.append({
+                "date": day_str,
+                "count": count,
+                "z_score": round(z_score, 2),
+                "type": "spike" if z_score > 0 else "drop",
+                "severity": "high" if abs(z_score) >= 3.0 else "moderate",
+            })
+
+    return {
+        "anomalies": anomalies,
+        "mean": round(mean, 2),
+        "std_dev": round(std_dev, 2),
+        "period_days": days,
+        "total_days_analyzed": len(daily_rows),
+    }
+
+
 # ==================== BULK OPERATIONS ====================
 
 @router.post(
@@ -1087,6 +1152,441 @@ async def get_health_metrics(
         "image_statistics": image_counts,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+
+# ==================== STUDENT REPRESENTATIVES ====================
+
+
+class AppointRepBody(BaseModel):
+    student_roll_no: str = Field(..., min_length=3, max_length=20)
+    scope: str = Field(default="Department")  # "Department" or "Hostel"
+
+
+MAX_REPS_PER_DEPT_YEAR = 3  # 3 reps per department per year
+
+
+async def _get_rep_authority_context(authority_id: int, db: AsyncSession) -> dict:
+    """Load authority info and compute permissions for representative management."""
+    from src.database.models import Authority
+    result = await db.execute(select(Authority).where(Authority.id == authority_id))
+    authority = result.scalar_one_or_none()
+    if not authority:
+        raise HTTPException(status_code=403, detail="Authority not found")
+
+    auth_type = (authority.authority_type or "").lower()
+    is_admin = authority.authority_level >= 100
+    is_hod = "hod" in auth_type
+    is_mens_warden = "men" in auth_type and "warden" in auth_type
+    is_womens_warden = "women" in auth_type and "warden" in auth_type
+    is_warden = "warden" in auth_type
+
+    if not (is_admin or is_hod or is_warden):
+        raise HTTPException(
+            status_code=403,
+            detail="Only Admin, HOD, or Warden can manage representatives"
+        )
+
+    return {
+        "authority": authority,
+        "is_admin": is_admin,
+        "is_hod": is_hod,
+        "is_warden": is_warden,
+        "is_mens_warden": is_mens_warden,
+        "is_womens_warden": is_womens_warden,
+    }
+
+
+@router.get(
+    "/representatives",
+    summary="List student representatives",
+    description="List student representatives. Admin sees all; HOD sees their dept; Warden sees hostel reps."
+)
+async def list_representatives(
+    department_id: Optional[int] = Query(None),
+    year: Optional[int] = Query(None),
+    scope: Optional[str] = Query(None),
+    active_only: bool = Query(True),
+    current_authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db),
+):
+    """List student representatives. Admin sees all; HOD sees their dept; Warden sees hostel reps."""
+    from sqlalchemy import and_
+    from src.database.models import StudentRepresentative, Student, Department, Authority
+
+    ctx = await _get_rep_authority_context(current_authority_id, db)
+
+    conditions = []
+    if active_only:
+        conditions.append(StudentRepresentative.is_active == True)
+    if department_id is not None:
+        conditions.append(StudentRepresentative.department_id == department_id)
+    if year is not None:
+        conditions.append(StudentRepresentative.year == year)
+    if scope:
+        conditions.append(StudentRepresentative.scope == scope)
+
+    # Non-admin scoping
+    if not ctx["is_admin"]:
+        if ctx["is_hod"]:
+            conditions.append(StudentRepresentative.department_id == ctx["authority"].department_id)
+            conditions.append(StudentRepresentative.scope == "Department")
+        elif ctx["is_warden"]:
+            conditions.append(StudentRepresentative.scope == "Hostel")
+
+    q = (
+        select(StudentRepresentative)
+        .options(
+            selectinload(StudentRepresentative.student),
+            selectinload(StudentRepresentative.department),
+            selectinload(StudentRepresentative.appointed_by),
+        )
+    )
+    if conditions:
+        q = q.where(and_(*conditions))
+    q = q.order_by(StudentRepresentative.department_id, StudentRepresentative.year)
+
+    result = await db.execute(q)
+    reps = result.scalars().all()
+
+    items = []
+    for r in reps:
+        items.append({
+            "id": r.id,
+            "student_roll_no": r.student_roll_no,
+            "student_name": r.student.name if r.student else None,
+            "department_id": r.department_id,
+            "department_name": r.department.name if r.department else None,
+            "department_code": r.department.code if r.department else None,
+            "year": r.year,
+            "scope": r.scope,
+            "is_active": r.is_active,
+            "appointed_by_name": r.appointed_by.name if r.appointed_by else None,
+            "appointed_at": r.appointed_at.isoformat() if r.appointed_at else None,
+            "removed_at": r.removed_at.isoformat() if r.removed_at else None,
+        })
+
+    return {"representatives": items, "total": len(items)}
+
+
+@router.post(
+    "/representatives",
+    status_code=status.HTTP_201_CREATED,
+    summary="Appoint student representative",
+)
+async def appoint_representative(
+    body: AppointRepBody,
+    current_authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db),
+):
+    """Appoint a student as a representative. HOD → Department scope only (their dept).
+    Warden → Hostel scope only (gender-specific). Admin → any scope.
+    """
+    from sqlalchemy import and_
+    from src.database.models import StudentRepresentative, Student
+
+    if body.scope not in ("Department", "Hostel"):
+        raise HTTPException(status_code=400, detail="Scope must be 'Department' or 'Hostel'")
+
+    ctx = await _get_rep_authority_context(current_authority_id, db)
+
+    # Load student
+    student_q = select(Student).where(Student.roll_no == body.student_roll_no)
+    student_result = await db.execute(student_q)
+    student = student_result.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student {body.student_roll_no} not found")
+    if not student.is_active:
+        raise HTTPException(status_code=400, detail="Student account is deactivated")
+
+    # Permission checks for non-admin authorities
+    if not ctx["is_admin"]:
+        if ctx["is_hod"]:
+            if body.scope != "Department":
+                raise HTTPException(status_code=403, detail="HOD can only appoint Department representatives")
+            if student.department_id != ctx["authority"].department_id:
+                raise HTTPException(status_code=403, detail="HOD can only appoint representatives from their own department")
+        elif ctx["is_warden"]:
+            if body.scope != "Hostel":
+                raise HTTPException(status_code=403, detail="Warden can only appoint Hostel representatives")
+            if student.stay_type != "Hostel":
+                raise HTTPException(status_code=400, detail="Only hostel students can be appointed as Hostel representatives")
+            # Gender-specific warden restriction
+            if ctx["is_mens_warden"] and student.gender not in (None, "Male"):
+                raise HTTPException(status_code=403, detail="Men's Hostel Warden can only appoint male students")
+            if ctx["is_womens_warden"] and student.gender not in (None, "Female"):
+                raise HTTPException(status_code=403, detail="Women's Hostel Warden can only appoint female students")
+
+    # Check if already a rep for this scope
+    existing_q = select(StudentRepresentative).where(
+        and_(
+            StudentRepresentative.student_roll_no == body.student_roll_no,
+            StudentRepresentative.scope == body.scope,
+            StudentRepresentative.is_active == True,
+        )
+    )
+    existing_result = await db.execute(existing_q)
+    if existing_result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail=f"Student is already an active {body.scope} representative")
+
+    # Hostel scope: must be hostel student (general check for admin)
+    if body.scope == "Hostel" and student.stay_type != "Hostel":
+        raise HTTPException(status_code=400, detail="Only hostel students can be appointed as Hostel representatives")
+
+    # Check capacity: max 3 per dept per year for Department scope
+    if body.scope == "Department":
+        count_q = select(func.count()).select_from(StudentRepresentative).where(
+            and_(
+                StudentRepresentative.department_id == student.department_id,
+                StudentRepresentative.year == student.year,
+                StudentRepresentative.scope == "Department",
+                StudentRepresentative.is_active == True,
+            )
+        )
+        current_count = (await db.execute(count_q)).scalar() or 0
+        if current_count >= MAX_REPS_PER_DEPT_YEAR:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Maximum {MAX_REPS_PER_DEPT_YEAR} Department representatives per year already appointed for this department"
+            )
+
+    rep = StudentRepresentative(
+        student_roll_no=body.student_roll_no,
+        department_id=student.department_id,
+        year=student.year,
+        scope=body.scope,
+        appointed_by_id=current_authority_id,
+        is_active=True,
+    )
+    db.add(rep)
+
+    # Notify the student
+    from src.database.models import Notification
+    db.add(Notification(
+        recipient_type="Student",
+        recipient_id=body.student_roll_no,
+        complaint_id=None,
+        notification_type="representative_appointed",
+        message=(
+            f"You have been appointed as a {body.scope} Student Representative! "
+            f"You can now create petitions on behalf of your peers (1 per week)."
+        ),
+    ))
+
+    await db.commit()
+
+    logger.info(f"Student {body.student_roll_no} appointed as {body.scope} representative by authority {current_authority_id}")
+    return {
+        "success": True,
+        "id": rep.id,
+        "student_roll_no": rep.student_roll_no,
+        "department_id": rep.department_id,
+        "year": rep.year,
+        "scope": rep.scope,
+    }
+
+
+@router.delete(
+    "/representatives/{rep_id}",
+    summary="Remove student representative",
+)
+async def remove_representative(
+    rep_id: int,
+    current_authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db),
+):
+    """Deactivate a representative. Admin can deactivate any. HOD can deactivate Dept reps in their dept. Warden can deactivate Hostel reps."""
+    from src.database.models import StudentRepresentative, Notification
+
+    ctx = await _get_rep_authority_context(current_authority_id, db)
+
+    q = select(StudentRepresentative).where(StudentRepresentative.id == rep_id)
+    result = await db.execute(q)
+    rep = result.scalar_one_or_none()
+    if not rep:
+        raise HTTPException(status_code=404, detail="Representative not found")
+    if not rep.is_active:
+        return {"success": True, "message": "Representative was already deactivated"}
+
+    # Permission check for non-admin
+    if not ctx["is_admin"]:
+        if ctx["is_hod"]:
+            if rep.scope != "Department" or rep.department_id != ctx["authority"].department_id:
+                raise HTTPException(status_code=403, detail="HOD can only remove Department representatives from their department")
+        elif ctx["is_warden"]:
+            if rep.scope != "Hostel":
+                raise HTTPException(status_code=403, detail="Warden can only remove Hostel representatives")
+
+    rep.is_active = False
+    rep.removed_at = datetime.now(timezone.utc)
+
+    # Notify the student
+    db.add(Notification(
+        recipient_type="Student",
+        recipient_id=rep.student_roll_no,
+        complaint_id=None,
+        notification_type="representative_removed",
+        message=(
+            f"Your {rep.scope} Student Representative role has been revoked. "
+            f"You can no longer create new petitions."
+        ),
+    ))
+
+    await db.commit()
+    logger.info(f"Representative {rep_id} (student {rep.student_roll_no}) removed by authority {current_authority_id}")
+    return {"success": True, "message": "Representative deactivated"}
+
+
+@router.get(
+    "/representatives/capacity",
+    summary="Show representative slots per department per year",
+)
+async def get_representative_capacity(
+    current_authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db),
+):
+    """Show how many representative slots are used/available per department per year."""
+    from sqlalchemy import and_
+    from src.database.models import StudentRepresentative, Department
+
+    # Get all departments
+    dept_q = select(Department).where(Department.is_active == True).order_by(Department.code)
+    dept_result = await db.execute(dept_q)
+    departments = dept_result.scalars().all()
+
+    # Get active rep counts grouped by dept + year + scope
+    count_q = (
+        select(
+            StudentRepresentative.department_id,
+            StudentRepresentative.year,
+            StudentRepresentative.scope,
+            func.count().label("count"),
+        )
+        .where(StudentRepresentative.is_active == True)
+        .group_by(StudentRepresentative.department_id, StudentRepresentative.year, StudentRepresentative.scope)
+    )
+    count_result = await db.execute(count_q)
+    counts = {}
+    for row in count_result.fetchall():
+        key = (row[0], row[1], row[2])  # dept_id, year, scope
+        counts[key] = row[3]
+
+    capacity = []
+    for dept in departments:
+        # Determine max years (5 for CSE M.Tech, 4 for others)
+        max_years = 5 if dept.code == "CSE" else 4
+        dept_data = {
+            "department_id": dept.id,
+            "department_code": dept.code,
+            "department_name": dept.name,
+            "max_years": max_years,
+            "years": [],
+        }
+        for year in range(1, max_years + 1):
+            dept_used = counts.get((dept.id, year, "Department"), 0)
+            hostel_used = counts.get((dept.id, year, "Hostel"), 0)
+            dept_data["years"].append({
+                "year": year,
+                "department_reps": {"used": dept_used, "max": MAX_REPS_PER_DEPT_YEAR},
+                "hostel_reps": {"used": hostel_used, "max": MAX_REPS_PER_DEPT_YEAR},
+            })
+        capacity.append(dept_data)
+
+    return {"capacity": capacity}
+
+
+# ==================== SYSTEM SETTINGS ====================
+
+
+class UpdateSettingBody(BaseModel):
+    value: str = Field(..., min_length=1, max_length=500, description="New value for the setting")
+
+
+# Known settings with their validation rules and descriptions
+_KNOWN_SETTINGS = {
+    "petition_cooldown_days": {
+        "description": "Minimum days between petition creations per representative (0 = no limit)",
+        "type": "int",
+        "min": 0,
+        "max": 365,
+    },
+}
+
+
+@router.get(
+    "/settings",
+    summary="Get system settings",
+    description="Returns all configurable system settings. Admin only.",
+)
+async def get_system_settings(
+    authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all system settings with metadata."""
+    from src.database.models import SystemSetting
+    result = await db.execute(select(SystemSetting))
+    settings = result.scalars().all()
+    items = []
+    for s in settings:
+        meta = _KNOWN_SETTINGS.get(s.key, {})
+        items.append({
+            "key": s.key,
+            "value": s.value,
+            "description": s.description or meta.get("description", ""),
+            "type": meta.get("type", "string"),
+            "min": meta.get("min"),
+            "max": meta.get("max"),
+            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+        })
+    return {"settings": items}
+
+
+@router.put(
+    "/settings/{key}",
+    summary="Update a system setting",
+    description="Update a system setting value. Admin only.",
+)
+async def update_system_setting(
+    key: str,
+    body: UpdateSettingBody,
+    authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update or create a system setting."""
+    from src.database.models import SystemSetting
+
+    if key not in _KNOWN_SETTINGS:
+        raise HTTPException(status_code=400, detail=f"Unknown setting key: {key}. Known keys: {list(_KNOWN_SETTINGS.keys())}")
+
+    meta = _KNOWN_SETTINGS[key]
+
+    # Type validation
+    if meta.get("type") == "int":
+        try:
+            int_val = int(body.value)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Setting '{key}' must be an integer")
+        if "min" in meta and int_val < meta["min"]:
+            raise HTTPException(status_code=400, detail=f"Setting '{key}' must be >= {meta['min']}")
+        if "max" in meta and int_val > meta["max"]:
+            raise HTTPException(status_code=400, detail=f"Setting '{key}' must be <= {meta['max']}")
+        value = str(int_val)
+    else:
+        value = body.value.strip()
+
+    result = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
+    setting = result.scalar_one_or_none()
+
+    if setting:
+        setting.value = value
+        setting.updated_by_id = authority_id
+        setting.updated_at = datetime.now(timezone.utc)
+    else:
+        description = meta.get("description", "")
+        db.add(SystemSetting(key=key, value=value, description=description, updated_by_id=authority_id))
+
+    await db.commit()
+    logger.info(f"Admin {authority_id} updated system setting '{key}' = '{value}'")
+    return {"success": True, "key": key, "value": value}
 
 
 __all__ = ["router"]

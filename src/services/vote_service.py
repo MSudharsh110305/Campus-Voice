@@ -267,16 +267,6 @@ class VoteService:
         except ValueError:
             return 1  # default to Medium index
 
-    def _score_to_priority(self, score: float) -> str:
-        if score >= 150:
-            return "Critical"
-        elif score >= 75:
-            return "High"
-        elif score >= 20:
-            return "Medium"
-        else:
-            return "Low"
-
     @staticmethod
     def _wilson_lower_bound(upvotes: int, downvotes: int, z: float = 1.96) -> float:
         """
@@ -286,7 +276,7 @@ class VoteService:
         A complaint with 1 upvote / 1 total is ranked below 90 upvotes / 100 total,
         even though both have a 100% / 90% ratio, because the sample is too small.
 
-        Returns a value in [0, 1]. Multiply by 200 to get the priority_score range.
+        Returns a value in [0, 1].
         """
         n = upvotes + downvotes
         if n == 0:
@@ -297,15 +287,53 @@ class VoteService:
             / (1 + z * z / n)
         )
 
+    def _engagement_priority(
+        self, upvotes: int, downvotes: int, reach: int, view_count: int
+    ) -> tuple:
+        """
+        Engagement-aware priority score combining Wilson Score + community engagement rate.
+
+        Formula:
+            vote_rate       = total_votes / max(reach, 1)   capped at 1.0
+            engagement_factor = 1.0 + (vote_rate * 2.0)     range [1.0, 3.0]
+            adjusted_score  = wilson * 100 * engagement_factor
+
+        This prevents a small group of friends inflating priority:
+            3 upvotes / reach=100  → vote_rate=0.03 → factor=1.06 → ~46  (Medium)
+            3 upvotes / reach=5    → vote_rate=0.60 → factor=2.20 → ~97  (High — small group, all engaged)
+            30 upvotes / reach=100 → vote_rate=0.30 → factor=1.60 → ~141 (High, near Critical)
+            50 upvotes / reach=100 → vote_rate=0.50 → factor=2.00 → ~186 (Critical)
+
+        Returns (adjusted_score: float, priority: str)
+        """
+        total_votes = upvotes + downvotes
+        if total_votes == 0:
+            return 0.0, "Low"
+
+        wilson = self._wilson_lower_bound(upvotes, downvotes)
+        vote_rate = min(total_votes / max(reach, 1), 1.0)
+        engagement_factor = 1.0 + (vote_rate * 2.0)          # [1.0, 3.0]
+        adjusted_score = wilson * 100 * engagement_factor     # [0, ~300]
+
+        if adjusted_score >= 150:
+            priority = "Critical"
+        elif adjusted_score >= 75:
+            priority = "High"
+        elif adjusted_score >= 25:
+            priority = "Medium"
+        else:
+            priority = "Low"
+
+        return adjusted_score, priority
+
     async def recalculate_priority(self, complaint_id: UUID) -> float:
         """
-        Recalculate priority using Wilson Score Lower Bound (Bayesian ranking).
+        Recalculate priority using engagement-aware Wilson Score.
 
-          wilson = _wilson_lower_bound(upvotes, downvotes)
-          adjusted_score = wilson * 200
+        adjusted_score = wilson(upvotes, downvotes) * 100 * engagement_factor
+        engagement_factor = 1.0 + (total_votes / max(reach, 1)) * 2.0  → [1.0, 3.0]
 
-        Maps to priority: Critical ≥ 150 (wilson ≥ 0.75) | High ≥ 75 (0.375+) |
-                          Medium ≥ 20 (0.10+) | Low < 20
+        Maps to: Critical ≥ 150 | High ≥ 75 | Medium ≥ 25 | Low < 25
 
         Guard: new priority cannot be more than 1 level away from the current priority.
         """
@@ -316,18 +344,19 @@ class VoteService:
 
         upvotes = complaint.upvotes or 0
         downvotes = complaint.downvotes or 0
-        reach = upvotes + downvotes
+        total_votes = upvotes + downvotes
 
-        if reach == 0:
+        if total_votes == 0:
             # No votes yet — nothing to update
             return complaint.priority_score or 0.0
 
-        # Wilson Score → priority_score (0–200 scale)
-        wilson = self._wilson_lower_bound(upvotes, downvotes)
-        adjusted_score = wilson * 200
+        reach = complaint.reach or 0
+        view_count = complaint.view_count or 0
 
-        # Map score → priority level
-        proposed_priority = self._score_to_priority(adjusted_score)
+        # Engagement-based score
+        adjusted_score, proposed_priority = self._engagement_priority(
+            upvotes, downvotes, reach, view_count
+        )
 
         # Guard: never change by more than 1 level per vote update.
         # Capture priority BEFORE update_priority_score() which commits and
@@ -353,9 +382,32 @@ class VoteService:
                     f"Priority updated for {complaint_id}: {old_priority} → {guarded_priority}"
                 )
 
+                # Notify admin when votes promote a complaint to High or Critical
+                if guarded_priority in ("High", "Critical") and old_priority not in ("High", "Critical"):
+                    try:
+                        from src.services.notification_service import notification_service
+                        from src.repositories.authority_repo import AuthorityRepository
+                        authority_repo = AuthorityRepository(self.db)
+                        admins = await authority_repo.get_by_type("Admin")
+                        preview = (fresh.rephrased_text or fresh.original_text or "")[:100]
+                        for admin in admins:
+                            await notification_service.create_notification(
+                                self.db,
+                                recipient_type="Authority",
+                                recipient_id=str(admin.id),
+                                complaint_id=complaint_id,
+                                notification_type="priority_promoted",
+                                message=(
+                                    f"🔺 Complaint promoted to {guarded_priority} priority via votes "
+                                    f"(was {old_priority}): \"{preview}...\""
+                                )
+                            )
+                    except Exception as _ne:
+                        logger.warning(f"Failed to notify admin of priority promotion: {_ne}")
+
         logger.info(
-            f"Vote priority for {complaint_id}: up={upvotes} down={downvotes} "
-            f"wilson={wilson:.4f} adj={adjusted_score:.2f} → {proposed_priority} "
+            f"Engagement priority for {complaint_id}: up={upvotes} down={downvotes} "
+            f"reach={reach} view={view_count} score={adjusted_score:.2f} → {proposed_priority} "
             f"(was={old_priority} guarded={guarded_priority})"
         )
 
