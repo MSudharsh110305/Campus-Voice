@@ -290,6 +290,8 @@ export default function ComplaintDetails() {
             setPostUpdateMsg({ type: 'success', text: 'Update posted. Student has been notified.' });
             setUpdateTitle('');
             setUpdateNote('');
+            // Refresh timeline so the new update appears immediately
+            setTimeout(fetchTimeline, 500);
         } catch (err) {
             const msg = err?.response?.data?.detail || err.message || 'Failed to post update';
             setPostUpdateMsg({ type: 'error', text: typeof msg === 'object' ? JSON.stringify(msg) : msg });
@@ -524,6 +526,21 @@ export default function ComplaintDetails() {
                             )}
                         </div>
 
+                        {/* ── Spam Dispute banner for authority/admin ────────── */}
+                        {isAuthorityOrAdmin && (complaint.is_marked_as_spam || complaint.status === 'Spam') && complaint.has_disputed && (
+                            <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl flex items-start gap-3">
+                                <ShieldAlert size={18} className="text-orange-500 mt-0.5 flex-shrink-0" />
+                                <div>
+                                    <p className="text-sm font-bold text-orange-700">Student Disputed Spam Classification</p>
+                                    {complaint.appeal_reason ? (
+                                        <p className="text-xs text-orange-800 mt-1 italic">"{complaint.appeal_reason}"</p>
+                                    ) : (
+                                        <p className="text-xs text-orange-600 mt-1">No reason provided. Review and update status if dispute is valid.</p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         {/* ── Spam Dispute (owner only) ───────────────────────── */}
                         {isOwner && (complaint.is_marked_as_spam || complaint.status === 'Spam') && (
                             <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-xl">
@@ -589,7 +606,7 @@ export default function ComplaintDetails() {
                         )}
 
                         {/* Read-only vote summary for admin/authority */}
-                        {isAuthorityOrAdmin && complaint.visibility !== 'Private' && (
+                        {isAuthorityOrAdmin && complaint.visibility !== 'Private' && complaint.status !== 'Spam' && (
                             <div className="flex items-center gap-4 py-3 px-4 bg-gray-50 rounded-xl border border-gray-100 mb-6">
                                 <div className="flex items-center gap-1.5 text-sm text-green-700 font-semibold">
                                     <ThumbsUp size={14} className="fill-green-600 text-green-600" />
@@ -605,8 +622,8 @@ export default function ComplaintDetails() {
                             </div>
                         )}
 
-                        {/* Voting & Interaction - Enhanced (students only, hide for Private) */}
-                        {!isAuthorityOrAdmin && complaint.visibility !== 'Private' && <div className="py-6 border-t border-b border-gray-100 mb-8 bg-gradient-to-r from-gray-50/50 to-transparent -mx-6 sm:-mx-10 px-6 sm:px-10">
+                        {/* Voting & Interaction - Enhanced (students only, hide for Private and Spam) */}
+                        {!isAuthorityOrAdmin && complaint.visibility !== 'Private' && complaint.status !== 'Spam' && <div className="py-6 border-t border-b border-gray-100 mb-8 bg-gradient-to-r from-gray-50/50 to-transparent -mx-6 sm:-mx-10 px-6 sm:px-10">
                             {isOwner ? (
                                 <p className="text-xs text-gray-400 italic">Your complaint</p>
                             ) : (
@@ -742,8 +759,8 @@ export default function ComplaintDetails() {
                             </div>
                         )}
 
-                        {/* Timeline & History Section */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
+                        {/* Timeline & History Section — hidden for spam complaints */}
+                        {complaint.status !== 'Spam' && <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
                             {/* --- Timeline --- */}
                             <div>
                                 <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5 mb-3">
@@ -806,7 +823,7 @@ export default function ComplaintDetails() {
                                     )}
                                 </div>
                             </div>
-                        </div>
+                        </div>}
 
                         {/* Image Verification Section */}
                         {complaint.has_image && complaint.image_verification_status && (() => {

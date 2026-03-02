@@ -187,6 +187,8 @@ export default function AuthorityDashboard() {
       await authorityService.postUpdate(postUpdateModal.complaintId, updateTitle.trim(), updateContent.trim());
       setPostUpdateModal({ open: false, complaintId: null });
       showFeedback('success', 'Public update posted successfully');
+      // Reload complaint list so updated_at reflects new activity
+      await loadComplaints();
     } catch (err) {
       showFeedback('error', err.message || 'Failed to post update');
     } finally {
