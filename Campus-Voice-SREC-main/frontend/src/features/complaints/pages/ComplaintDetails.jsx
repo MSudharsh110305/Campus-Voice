@@ -569,11 +569,13 @@ export default function ComplaintDetails() {
                                         <p className="text-xs text-red-600 font-medium">Think this is a mistake? Dispute it:</p>
                                         <textarea
                                             value={disputeReason}
-                                            onChange={e => setDisputeReason(e.target.value)}
+                                            onChange={e => setDisputeReason(e.target.value.slice(0, 200))}
                                             rows={2}
+                                            maxLength={200}
                                             placeholder="Briefly explain why this is a genuine complaint (optional)"
                                             className="w-full text-xs border border-red-200 rounded-lg px-3 py-2 bg-white text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
                                         />
+                                        <p className="text-right text-[10px] text-gray-400">{disputeReason.length}/200</p>
                                         <button
                                             disabled={isDisputing}
                                             onClick={async () => {

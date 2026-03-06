@@ -1095,7 +1095,7 @@ async def unflag_spam(
 )
 async def appeal_spam(
     complaint_id: UUID,
-    reason: Optional[str] = None,
+    reason: Optional[str] = Query(None, max_length=200),
     roll_no: str = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):

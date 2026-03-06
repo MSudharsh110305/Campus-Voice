@@ -459,6 +459,8 @@ async def admin_list_complaints(
             "status": c.status,
             "assigned_authority_name": c.assigned_authority.name if c.assigned_authority else None,
             "is_marked_as_spam": c.is_marked_as_spam,
+            "has_disputed": c.has_disputed,
+            "appeal_reason": c.appeal_reason,
             "has_image": c.has_image,
             "image_verified": c.image_verified,
             "image_verification_status": c.image_verification_status,
@@ -1021,6 +1023,8 @@ async def admin_get_escalations(
             "updated_at": c.updated_at.isoformat() if c.updated_at else None,
             "has_image": c.has_image,
             "is_marked_as_spam": c.is_marked_as_spam,
+            "has_disputed": c.has_disputed,
+            "appeal_reason": c.appeal_reason,
             "was_escalated": c.original_assigned_authority_id is not None,
         }
 
