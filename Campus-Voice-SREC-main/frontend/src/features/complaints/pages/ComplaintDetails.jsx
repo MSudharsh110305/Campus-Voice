@@ -763,8 +763,8 @@ export default function ComplaintDetails() {
                             </div>
                         )}
 
-                        {/* Timeline & History Section — hidden for spam complaints */}
-                        {complaint.status !== 'Spam' && <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
+                        {/* Timeline & History Section — hidden for spam unless disputed */}
+                        {(complaint.status !== 'Spam' || complaint.has_disputed) && <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
                             {/* --- Timeline --- */}
                             <div>
                                 <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5 mb-3">

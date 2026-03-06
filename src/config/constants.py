@@ -138,7 +138,7 @@ VALID_STATUS_TRANSITIONS: Dict[str, List[str]] = {
     "In Progress": ["Resolved", "Spam"],
     "Resolved": ["Closed"],
     "Closed": [],
-    "Spam": ["Closed"],
+    "Spam": ["Raised", "In Progress", "Closed"],
 }
 
 

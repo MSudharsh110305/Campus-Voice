@@ -766,10 +766,16 @@ class ComplaintService:
         
         # Update status
         complaint.status = new_status
-        
+
+        # Clear spam flags when admin un-spams a complaint
+        if old_status == "Spam" and new_status in ("Raised", "In Progress"):
+            complaint.is_marked_as_spam = False
+            complaint.spam_reason = None
+            complaint.has_disputed = False
+
         # ✅ FIXED: Use timezone-aware datetime
         current_time = datetime.now(timezone.utc)
-        
+
         # Update resolved_at if status is Resolved
         if new_status == "Resolved":
             complaint.resolved_at = current_time
