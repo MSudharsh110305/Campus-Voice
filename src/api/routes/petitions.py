@@ -104,13 +104,15 @@ async def list_petitions(
     role = current_user.get("role", "")
     user_id = current_user.get("user_id")
     is_admin = role == "Admin"
+    is_authority = role == "Authority"
 
     conditions = []
     if status_filter:
         conditions.append(Petition.status == status_filter)
 
-    # Admin sees all; others only see published petitions
-    if not is_admin:
+    # Admin sees all; Authorities see pending+published for their scope; Students see only published
+    # BUG-012 fix: authorities must also see unpublished petitions (to approve/reject them)
+    if not is_admin and not is_authority:
         conditions.append(Petition.is_published == True)
 
     # Scope-based visibility filter

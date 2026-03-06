@@ -3,6 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import { DEPARTMENT_LIST, GENDER, STAY_TYPE } from '../../../utils/constants';
 
+// BUG-008: Filter out non-engineering departments from student registration
+// (Physics, Chemistry, Mathematics, English are faculty-only departments)
+const STUDENT_DEPARTMENT_LIST = DEPARTMENT_LIST.filter(
+  (d) => !['ENG', 'PHY', 'CHEM', 'MATH'].includes(d.code)
+);
+
 export default function SignupPage() {
   const navigate = useNavigate();
   const { signup, loginStudent } = useAuth();
@@ -21,7 +27,9 @@ export default function SignupPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   // Validation Regex
-  const rollNoRegex = /^[a-zA-Z0-9]{5,20}$/;
+  // BUG-010: Roll number must be numeric-only, minimum 11 digits
+  // Format: CollegeCode(4) + YearJoined(2) + DeptCode(2) + ClassRoll(3+)
+  const rollNoRegex = /^\d{11,}$/;
   const nameRegex = /^[a-zA-Z\s]{2,255}$/;
   // Password: at least 8 chars, 1 upper, 1 lower, 1 digit
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
@@ -41,7 +49,7 @@ export default function SignupPage() {
     else if (!nameRegex.test(form.name)) next.name = 'Name must be 2-255 chars, letters only';
 
     if (!form.roll_no) next.roll_no = 'Roll number is required';
-    else if (!rollNoRegex.test(form.roll_no)) next.roll_no = 'Roll no must be 5-20 alphanumeric characters';
+    else if (!rollNoRegex.test(form.roll_no)) next.roll_no = 'Roll no must be numeric only, minimum 11 digits (e.g. 23010100231)';
 
     if (!form.department_id) next.department_id = 'Select a department';
     if (!form.gender) next.gender = 'Select gender';
@@ -143,7 +151,7 @@ export default function SignupPage() {
                   onChange={update('roll_no')}
                   aria-label="Roll number"
                   className={inputClass(errors.roll_no)}
-                  placeholder="Roll Number (e.g. 22CS231)"
+                  placeholder="Roll Number (e.g. 23010100231)"
                 />
                 {errors.roll_no && <p className="text-xs text-red-500 mt-1 ml-1">{errors.roll_no}</p>}
               </div>
@@ -159,7 +167,7 @@ export default function SignupPage() {
                     className={`${inputClass(errors.department_id)} appearance-none pr-10`}
                   >
                     <option value="">Select Department</option>
-                    {DEPARTMENT_LIST.map((d) => (
+                    {STUDENT_DEPARTMENT_LIST.map((d) => (
                       <option key={d.id} value={d.id}>{d.code} — {d.name}</option>
                     ))}
                   </select>

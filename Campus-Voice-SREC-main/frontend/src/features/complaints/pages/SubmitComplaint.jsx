@@ -17,6 +17,7 @@ export default function SubmitComplaint() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [spamWarning, setSpamWarning] = useState(null);
+  const [submitResult, setSubmitResult] = useState(null);
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
@@ -47,6 +48,15 @@ export default function SubmitComplaint() {
       // If complaint was saved but marked as spam, show a soft warning
       if (result && result.is_spam) {
         setSpamWarning(result.message || 'Your complaint was received but flagged as potential spam. You may contact admin if this is genuine.');
+      }
+
+      // Store AI analysis results for display
+      if (result) {
+        setSubmitResult({
+          category: result.category,
+          priority: result.priority,
+          assigned_authority: result.assigned_authority,
+        });
       }
 
       // Show success animation
@@ -144,9 +154,28 @@ export default function SubmitComplaint() {
             ) : (
               <>
                 <p className="text-lg text-gray-700 leading-relaxed">
-                  The complaint will be reviewed by AI and posted
+                  Your complaint has been submitted and routed.
                 </p>
-                <p className="text-base text-gray-600 leading-relaxed">
+                {submitResult && (submitResult.category || submitResult.priority || submitResult.assigned_authority) ? (
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-left mt-3 space-y-1">
+                    {submitResult.category && (
+                      <p className="text-sm text-blue-800">
+                        <span className="font-semibold">Category:</span> {submitResult.category}
+                      </p>
+                    )}
+                    {submitResult.priority && (
+                      <p className="text-sm text-blue-800">
+                        <span className="font-semibold">Priority:</span> {submitResult.priority}
+                      </p>
+                    )}
+                    {submitResult.assigned_authority && (
+                      <p className="text-sm text-blue-800">
+                        <span className="font-semibold">Assigned to:</span> {submitResult.assigned_authority}
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+                <p className="text-base text-gray-600 leading-relaxed mt-2">
                   Thank you for your feedback. Your voice helps make SREC a better place.
                 </p>
               </>

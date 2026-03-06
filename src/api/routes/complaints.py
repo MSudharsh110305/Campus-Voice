@@ -824,50 +824,56 @@ async def verify_complaint_image(
 )
 async def get_status_history(
     complaint_id: UUID,
-    complaint = Depends(get_complaint_with_visibility),
+    user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    ✅ NEW: Get status change history for complaint.
-    
-    Returns timeline of all status changes with timestamps.
-    Uses Complaint.status_updates relationship.
+    Get status change history for complaint.
+    Accessible by both students (with visibility check) and authority/admin users.
     """
-    # ✅ FIXED: Use the complaint relationship instead of StatusUpdateRepository
-    from src.repositories.complaint_repo import ComplaintRepository
     from sqlalchemy.orm import selectinload
     from sqlalchemy import select
-    from src.database.models import Complaint
-    
-    # Reload complaint with status_updates and their authorities
-    from src.database.models import StatusUpdate
+    from src.database.models import Complaint, StatusUpdate
+
     query = (
         select(Complaint)
         .options(
-            selectinload(Complaint.status_updates).selectinload(StatusUpdate.updated_by_authority)
+            selectinload(Complaint.status_updates).selectinload(StatusUpdate.updated_by_authority),
+            selectinload(Complaint.student),
         )
         .where(Complaint.id == complaint_id)
     )
     result = await db.execute(query)
     complaint_with_updates = result.scalar_one_or_none()
-    
+
     if not complaint_with_updates:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Complaint not found"
-        )
-    
-    # Build status history
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found")
+
+    # Authorities and admins can view any complaint's history
+    role = user.get("role", "")
+    if role not in ("Authority", "Admin"):
+        # Student visibility check
+        from src.repositories.student_repo import StudentRepository
+        from src.api.dependencies import check_complaint_visibility
+        student_repo = StudentRepository(db)
+        roll_no = user.get("sub")
+        student = await student_repo.get_with_department(roll_no) if roll_no else None
+        if not student or not await check_complaint_visibility(complaint_with_updates, student):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    # Build status history — separate true status changes from post-update notes
     status_updates = []
     for update in sorted(complaint_with_updates.status_updates, key=lambda x: x.updated_at):
+        is_post_update = update.old_status == update.new_status
         status_updates.append({
             "old_status": update.old_status,
             "new_status": update.new_status,
             "reason": update.reason,
+            "is_post_update": is_post_update,
             "updated_by": update.updated_by_authority.name if update.updated_by_authority else "System",
             "updated_at": update.updated_at.isoformat()
         })
-    
+
     return {
         "complaint_id": str(complaint_id),
         "current_status": complaint_with_updates.status,
@@ -882,70 +888,90 @@ async def get_status_history(
 )
 async def get_complaint_timeline(
     complaint_id: UUID,
-    complaint = Depends(get_complaint_with_visibility),
+    user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    ✅ NEW: Get complete complaint timeline.
-    
-    Includes:
-    - Submission
-    - Status changes
-    - Authority assignments
-    - Resolution
+    Get complete complaint timeline.
+    Accessible by both students (with visibility check) and authority/admin users.
+    Includes: Submission, status changes, authority post-updates, resolution.
     """
-    # ✅ FIXED: Use complaint relationship
     from sqlalchemy.orm import selectinload
     from sqlalchemy import select
-    from src.database.models import Complaint
-    
-    # Reload with relationships
+    from src.database.models import Complaint, StatusUpdate
+
     query = (
         select(Complaint)
         .options(
-            selectinload(Complaint.status_updates),
+            selectinload(Complaint.status_updates).selectinload(StatusUpdate.updated_by_authority),
             selectinload(Complaint.student),
-            selectinload(Complaint.assigned_authority)
+            selectinload(Complaint.assigned_authority),
         )
         .where(Complaint.id == complaint_id)
     )
     result = await db.execute(query)
     complaint_full = result.scalar_one_or_none()
-    
+
     if not complaint_full:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Complaint not found"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found")
+
+    # Authorities and admins can view any complaint's timeline
+    role = user.get("role", "")
+    if role not in ("Authority", "Admin"):
+        from src.repositories.student_repo import StudentRepository
+        from src.api.dependencies import check_complaint_visibility
+        student_repo = StudentRepository(db)
+        roll_no = user.get("sub")
+        student = await student_repo.get_with_department(roll_no) if roll_no else None
+        if not student or not await check_complaint_visibility(complaint_full, student):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    is_authority = role in ("Authority", "Admin")
+
     # Build timeline
     timeline = []
-    
-    # Submission
+
+    # Submission — mask student name for non-authorities
+    student_label = complaint_full.student.name if (is_authority and complaint_full.student) else "a student"
     timeline.append({
         "event": "Complaint Submitted",
         "timestamp": complaint_full.submitted_at.isoformat(),
-        "description": f"Complaint raised by {complaint_full.student.name}"
+        "description": f"Complaint raised by {student_label}",
+        "updated_by": student_label,
     })
-    
-    # Status changes
+
+    # Status changes and authority post-updates
     for update in sorted(complaint_full.status_updates, key=lambda x: x.updated_at):
-        timeline.append({
-            "event": "Status Changed",
-            "timestamp": update.updated_at.isoformat(),
-            "description": f"Status changed from {update.old_status} to {update.new_status}",
-            "reason": update.reason,
-            "updated_by": update.updated_by_authority.name if update.updated_by_authority else "System"
-        })
-    
-    # Resolution
+        by_name = update.updated_by_authority.name if update.updated_by_authority else "System"
+        is_post_update = update.old_status == update.new_status
+        if is_post_update:
+            # Authority posted a note/update without changing status
+            timeline.append({
+                "event": "Authority Update",
+                "timestamp": update.updated_at.isoformat(),
+                "description": update.reason or "Update posted",
+                "updated_by": by_name,
+            })
+        else:
+            timeline.append({
+                "event": "Status Changed",
+                "timestamp": update.updated_at.isoformat(),
+                "description": f"Status changed from {update.old_status} to {update.new_status}",
+                "reason": update.reason,
+                "updated_by": by_name,
+            })
+
+    # Resolution marker (only if not already captured by a status-change entry)
     if complaint_full.resolved_at:
         timeline.append({
             "event": "Complaint Resolved",
             "timestamp": complaint_full.resolved_at.isoformat(),
-            "description": "Complaint marked as resolved"
+            "description": "Complaint marked as resolved",
         })
-    
+
+    # Sort by timestamp ascending
+    timeline.sort(key=lambda x: x["timestamp"])
+
     return {
         "complaint_id": str(complaint_id),
         "timeline": timeline

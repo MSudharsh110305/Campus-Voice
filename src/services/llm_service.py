@@ -132,6 +132,8 @@ class LLMService:
             result = self._apply_academic_override(text, result)
             # 2. Department → General if physical repair of shared resource
             result = self._apply_repair_general_override(text, result)
+            # 3. Department → General if physical facility/hygiene complaint (BUG-014)
+            result = self._apply_facility_general_override(text, result)
 
             logger.info(
                 f"Categorization successful: {result['category']} "
@@ -281,6 +283,12 @@ For hostel complaints, determine gender using this priority order:
 
 STEP 4 — Campus-wide facility → "General":
 All campus outdoor/infrastructure issues NOT inside a hostel building and NOT academic and NOT behavioral: fallen trees, campus roads/drainage, parking, sports courts/grounds, campus wifi/internet, auditorium, open drinking water stations, bus/transport, campus gates, campus canteen, campus library building, general campus cleanliness, streetlights, rooms/areas that are not in a hostel building.
+
+CRITICAL RULE — PHYSICAL FACILITIES IN DEPARTMENT BUILDINGS → "General":
+Complaints about restrooms, toilets, washrooms, bathrooms, cleanliness, hygiene, common corridors, staircases, or other SHARED physical infrastructure — even when they mention a department building or block — must be classified as "General" (Admin Officer), NOT "Department" (HOD).
+A department name in such a complaint indicates the LOCATION, not the RESPONSIBLE PARTY.
+Examples that must be "General": "Restrooms in IT department are unclean", "washroom near CSE block smells bad", "corridor in ECE building is dirty", "toilets in the mechanical department building are not clean".
+The HOD is responsible for ACADEMIC matters only (curriculum, faculty, lab equipment, exams). Physical facility maintenance is the Admin Officer's responsibility.
 
 DEPARTMENT DETECTION (when category = "Department"):
 Valid codes: CSE, ECE, MECH, CIVIL, EEE, IT, BIO, AERO, RAA, EIE, MBA, AIDS, MTECH_CSE, ENG, PHY, CHEM, MATH
@@ -440,6 +448,35 @@ JSON:"""
             "Repair override: 'Department' → 'General' "
             "(physical repair of shared resource detected)"
         )
+        return result
+
+    # BUG-014: Physical facility/hygiene keywords — these are always General (Admin Officer),
+    # never Department (HOD), even if a dept name appears (it's just a location indicator).
+    _FACILITY_HYGIENE_KEYWORDS = [
+        "restroom", "rest room", "toilet", "washroom", "bathroom", "urinal",
+        "cleanliness", "clean", "dirty", "unclean", "hygiene", "smells", "smell",
+        "corridor", "staircase", "hallway", "common area", "dustbin", "garbage",
+        "waste", "pest", "cockroach", "rodent", "rat", "mosquito",
+    ]
+
+    def _apply_facility_general_override(self, text: str, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        BUG-014 fix: If the LLM returned 'Department' but the complaint is about
+        physical facilities/hygiene (restrooms, cleanliness, corridors), override
+        to 'General'. A dept name in such complaints is just a location indicator.
+        """
+        if result.get("category") != "Department":
+            return result
+
+        text_lower = text.lower()
+        for kw in self._FACILITY_HYGIENE_KEYWORDS:
+            if kw in text_lower:
+                result["category"] = "General"
+                logger.info(
+                    f"Facility override: 'Department' → 'General' "
+                    f"(physical facility/hygiene keyword '{kw}' detected)"
+                )
+                return result
         return result
 
     def _apply_academic_override(self, text: str, result: Dict[str, Any]) -> Dict[str, Any]:

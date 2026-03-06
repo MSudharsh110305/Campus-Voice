@@ -58,7 +58,9 @@ export default function ComplaintDetails() {
         try {
             setLoadingHistory(true);
             const data = await complaintService.getComplaintStatusHistory(id);
-            setHistory(Array.isArray(data) ? data : data?.history || []);
+            // Backend returns { status_updates: [...] } — filter out post-update entries (old_status === new_status)
+            const raw = Array.isArray(data) ? data : (data?.status_updates || data?.history || []);
+            setHistory(raw.filter(u => u.old_status !== u.new_status));
         } catch (error) {
             console.log("Could not fetch status history:", error.message);
             setHistory([]);
@@ -770,23 +772,26 @@ export default function ComplaintDetails() {
                                     {loadingTimeline ? (
                                         [1, 2].map(i => <Skeleton key={i} className="h-14 rounded-lg" />)
                                     ) : timeline.length > 0 ? (
-                                        timeline.map((event, idx) => (
+                                        timeline.map((event, idx) => {
+                                            const isUpdate = event.event === 'Authority Update';
+                                            const dotColor = idx === 0 ? 'bg-srec-primary' : isUpdate ? 'bg-amber-400' : 'bg-gray-300';
+                                            return (
                                             <div key={idx} className="relative">
-                                                <div className={`absolute -left-[19px] top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ${idx === 0 ? 'bg-srec-primary' : 'bg-gray-300'}`} />
-                                                <div className="bg-white px-3 py-2.5 rounded-lg border border-gray-100">
+                                                <div className={`absolute -left-[19px] top-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ${dotColor}`} />
+                                                <div className={`px-3 py-2.5 rounded-lg border ${isUpdate ? 'bg-amber-50 border-amber-100' : 'bg-white border-gray-100'}`}>
                                                     <div className="flex items-start justify-between gap-2">
-                                                        <p className="text-xs font-semibold text-gray-800">{event.event}</p>
+                                                        <p className={`text-xs font-semibold ${isUpdate ? 'text-amber-800' : 'text-gray-800'}`}>{event.event}</p>
                                                         <span className="text-[10px] text-gray-400 whitespace-nowrap flex-shrink-0">{format(new Date(event.timestamp), 'MMM d, h:mm a')}</span>
                                                     </div>
                                                     {event.description && (
-                                                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{sanitizeDescription(event.description)}</p>
+                                                        <p className="text-xs text-gray-600 mt-0.5 line-clamp-3">{sanitizeDescription(event.description)}</p>
                                                     )}
                                                     {event.updated_by && (
                                                         <p className="text-[10px] text-gray-400 mt-1">By {sanitizeName(event.updated_by)}</p>
                                                     )}
                                                 </div>
                                             </div>
-                                        ))
+                                        );})
                                     ) : (
                                         <p className="text-xs text-gray-400 italic py-4">No events yet</p>
                                     )}
@@ -868,9 +873,18 @@ export default function ComplaintDetails() {
                                             </span>
                                         </div>
                                     )}
-                                    {complaint.image_verification_message && (
-                                        <p className="text-xs text-gray-500 mt-2 leading-relaxed">{complaint.image_verification_message}</p>
-                                    )}
+                                    {complaint.image_verification_message && (() => {
+                                        let displayMsg = complaint.image_verification_message;
+                                        try {
+                                            const parsed = typeof displayMsg === 'string' ? JSON.parse(displayMsg) : displayMsg;
+                                            if (parsed && typeof parsed === 'object') {
+                                                displayMsg = parsed.reason || parsed.message || parsed.explanation || displayMsg;
+                                            }
+                                        } catch (_) { /* not JSON, use as-is */ }
+                                        return (
+                                            <p className="text-xs text-gray-500 mt-2 leading-relaxed">{displayMsg}</p>
+                                        );
+                                    })()}
                                 </div>
                             );
                         })()}

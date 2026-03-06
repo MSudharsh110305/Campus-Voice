@@ -405,7 +405,7 @@ TOKEN_EXPIRATION_SECONDS: int = 604800  # 7 days
 
 # Email must end with @srec.ac.in for SREC college
 EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@srec\.ac\.in$')
-ROLL_NO_PATTERN = re.compile(r'^[a-zA-Z0-9_]{5,20}$')  # Accepts purely numeric (e.g. 2201231) and alpha formats
+ROLL_NO_PATTERN = re.compile(r'^\d{11,}$')  # BUG-010: numeric-only, minimum 11 digits (CollegeCode4 + YearJoined2 + DeptCode2 + ClassRoll3+)
 PHONE_PATTERN = re.compile(r'^[6-9]\d{9}$')
 PASSWORD_PATTERN = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$')
 

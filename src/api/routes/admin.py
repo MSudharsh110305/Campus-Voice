@@ -1589,4 +1589,25 @@ async def update_system_setting(
     return {"success": True, "key": key, "value": value}
 
 
+# ==================== ADMIN NOTIFICATIONS ====================
+
+
+@router.get(
+    "/notifications/unread-count",
+    summary="Get unread notification count for the current admin",
+)
+async def get_admin_notifications_unread_count(
+    current_admin_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns the number of unread notifications for the authenticated admin."""
+    from src.repositories.notification_repo import NotificationRepository
+    notification_repo = NotificationRepository(db)
+    unread_count = await notification_repo.count_unread(
+        recipient_id=str(current_admin_id),
+        recipient_type="Authority"
+    )
+    return {"unread_count": unread_count}
+
+
 __all__ = ["router"]

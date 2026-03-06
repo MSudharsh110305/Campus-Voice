@@ -163,6 +163,8 @@ class ComplaintService:
                 # Only apply the academic override (keyword-based deterministic safety net).
                 ai_category = categorization.get("category")
                 categorization = llm_service._apply_academic_override(original_text, categorization)
+                # BUG-014: also apply facility/hygiene override
+                categorization = llm_service._apply_facility_general_override(original_text, categorization)
                 ai_category = categorization.get("category")
 
                 # Validate hostel category against student profile
@@ -388,12 +390,30 @@ class ComplaintService:
                 # Update complaint with verification results
                 complaint.image_verified = verification_result["is_relevant"]
                 complaint.image_verification_status = verification_result["status"]
+
+                # BUG-006 fix: mark complaint as spam if image is irrelevant or low confidence
+                img_is_relevant = verification_result.get("is_relevant", True)
+                img_confidence = verification_result.get("confidence_score", 1.0)
+                if not img_is_relevant or img_confidence < 0.5:
+                    complaint.is_marked_as_spam = True
+                    complaint.status = "Spam"
+                    complaint.spam_reason = (
+                        f"Image failed verification: "
+                        f"relevant={img_is_relevant}, confidence={img_confidence:.2f}"
+                    )
+                    is_spam_complaint = True
+                    spam_complaint_reason = complaint.spam_reason
+                    logger.warning(
+                        f"Complaint {complaint.id} marked as spam due to image verification failure "
+                        f"(relevant={img_is_relevant}, confidence={img_confidence:.2f})"
+                    )
+
                 await self.db.commit()
-                
+
                 image_verified = verification_result["is_relevant"]
                 image_verification_status = verification_result["status"]
                 image_verification_message = verification_result["explanation"]
-                
+
                 logger.info(
                     f"Image verification for {complaint.id}: "
                     f"Verified={image_verified}, Status={image_verification_status}"
@@ -445,11 +465,52 @@ class ComplaintService:
 
         else:
             try:
+                # BUG-017: Override department routing for common-subject complaints (Maths, Physics, Chemistry, English)
+                _subject_dept_map = {
+                    "mathematics": "MATH",
+                    "maths": "MATH",
+                    "math class": "MATH",
+                    "physics": "PHY",
+                    "chemistry": "CHEM",
+                    "english": "ENG",
+                }
+                _category_name_for_routing = categorization.get("category", "")
+                if _category_name_for_routing == "Department":
+                    _text_lower_17 = original_text.lower()
+                    for subject_kw, dept_code in _subject_dept_map.items():
+                        if subject_kw in _text_lower_17:
+                            # Re-resolve department ID from subject code
+                            from src.database.models import Department as _Dept
+                            _subj_dept_q = select(_Dept.id).where(_Dept.code == dept_code)
+                            _subj_dept_result = await self.db.execute(_subj_dept_q)
+                            _subj_dept_row = _subj_dept_result.first()
+                            if _subj_dept_row and _subj_dept_row[0] != target_department_id:
+                                logger.info(
+                                    f"BUG-017 subject override: routing to {dept_code} HOD "
+                                    f"instead of dept {target_department_id} (keyword: '{subject_kw}')"
+                                )
+                                target_department_id = _subj_dept_row[0]
+                            break
+
+                # BUG-016: Detect complaints against hostel staff by keyword and apply bypass routing
+                _text_lower = original_text.lower()
+                _hostel_staff_bypass_type = None
+                _hostel_staff_keywords = {
+                    "senior deputy warden": "Senior Deputy Warden",
+                    "deputy warden": "Men's Hostel Deputy Warden",  # generic — may be men's or women's
+                    "warden": "Men's Hostel Warden",               # generic — may be men's or women's
+                }
+                for kw, authority_type in _hostel_staff_keywords.items():
+                    if kw in _text_lower:
+                        _hostel_staff_bypass_type = authority_type
+                        break  # Use most-specific match (ordered from most to least specific)
+
                 authority = await authority_service.route_complaint(
                     self.db,
                     category_id,
                     target_department_id,
-                    categorization.get("is_against_authority", False)
+                    categorization.get("is_against_authority", False) or (_hostel_staff_bypass_type is not None),
+                    complaint_about_authority_type=_hostel_staff_bypass_type
                 )
 
                 if authority:

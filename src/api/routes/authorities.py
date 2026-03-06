@@ -1271,7 +1271,7 @@ async def get_authority_notifications(
 ):
     from src.repositories.notification_repo import NotificationRepository
     notification_repo = NotificationRepository(db)
-    authority_id = str(current_authority.id)
+    authority_id = str(current_authority)
 
     notifications = await notification_repo.get_by_recipient(
         recipient_id=authority_id,
@@ -1309,7 +1309,7 @@ async def mark_authority_notification_read(
 ):
     from src.repositories.notification_repo import NotificationRepository
     notification_repo = NotificationRepository(db)
-    authority_id = str(current_authority.id)
+    authority_id = str(current_authority)
 
     notification = await notification_repo.get(notification_id)
     if not notification:
@@ -1331,7 +1331,7 @@ async def mark_all_authority_notifications_read(
 ):
     from src.repositories.notification_repo import NotificationRepository
     notification_repo = NotificationRepository(db)
-    authority_id = str(current_authority.id)
+    authority_id = str(current_authority)
 
     count = await notification_repo.mark_all_as_read(
         recipient_id=authority_id,
@@ -1351,7 +1351,7 @@ async def delete_authority_notification(
 ):
     from src.repositories.notification_repo import NotificationRepository
     notification_repo = NotificationRepository(db)
-    authority_id = str(current_authority.id)
+    authority_id = str(current_authority)
 
     notification = await notification_repo.get(notification_id)
     if not notification:
