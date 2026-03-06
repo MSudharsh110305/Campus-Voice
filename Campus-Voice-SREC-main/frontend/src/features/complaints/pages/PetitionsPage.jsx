@@ -79,23 +79,13 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing }) {
   const goalReached = signature_count >= goal;
   const accentClass = STATUS_ACCENT[status] || STATUS_ACCENT.Open;
   const ScopeIcon = SCOPE_ICONS[petition.petition_scope] || Globe;
-  const isPending = !petition.is_published;
 
   return (
-    <div className={`bg-white/80 backdrop-blur-sm rounded-2xl border shadow-[0_4px_24px_-4px_rgba(0,0,0,0.08)] overflow-hidden
-                    hover:shadow-[0_8px_32px_-4px_rgba(0,0,0,0.12)] hover:-translate-y-0.5 transition-all duration-300
-                    ${isPending ? 'border-amber-200' : 'border-white/60'}`}>
+    <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-[0_4px_24px_-4px_rgba(0,0,0,0.08)] overflow-hidden hover:shadow-[0_8px_32px_-4px_rgba(0,0,0,0.12)] hover:-translate-y-0.5 transition-all duration-300">
       {/* Accent top bar */}
-      <div className={`h-1 w-full ${isPending ? 'bg-amber-300' : accentClass}`} />
+      <div className={`h-1 w-full ${accentClass}`} />
 
       <div className="p-4">
-        {isPending && (
-          <div className="mb-2 px-2.5 py-1.5 bg-amber-50 border border-amber-200 rounded-xl text-[10px] text-amber-800 flex items-center gap-1.5">
-            <Clock size={10} className="text-amber-600 flex-shrink-0" />
-            Awaiting authority approval before visible to others
-          </div>
-        )}
-
         <div className="flex items-start gap-2 mb-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -170,7 +160,7 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing }) {
           </div>
         )}
 
-        {!isPending && !isClosed && !isOwner && !isExpired && (
+        {!isClosed && !isOwner && !isExpired && (
           <button
             onClick={() => onSign(petition.id)}
             disabled={signing === petition.id}
@@ -183,12 +173,12 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing }) {
             {signing === petition.id ? '...' : isSigned ? '✓ Signed — Click to Unsign' : '✍ Sign this Petition'}
           </button>
         )}
-        {isExpired && !isClosed && !isPending && (
+        {isExpired && !isClosed && (
           <div className="w-full py-2 rounded-xl text-xs font-medium text-center text-gray-400 bg-gray-50 border border-dashed border-gray-200">
             This petition has expired
           </div>
         )}
-        {isOwner && !isClosed && !isPending && (
+        {isOwner && !isClosed && (
           <p className="text-center text-[10px] text-gray-400 mt-1 py-1">You created this petition</p>
         )}
         {isClosed && (
@@ -243,16 +233,17 @@ function RepresentativeBanner({ onTryCreate }) {
   }
 
   if (status.is_representative && !status.can_create) {
-    const days = status.cooldown_remaining ?? status.cooldown_days_remaining ?? 0;
+    const used = status.petitions_this_week ?? 0;
+    const limit = status.weekly_limit ?? 1;
     return (
       <div className="mb-4 p-3.5 bg-amber-50 rounded-xl border border-amber-200 flex items-center gap-3">
         <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
           <Clock size={16} className="text-amber-600" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-amber-800">Rep cooldown active</p>
+          <p className="text-xs font-semibold text-amber-800">Weekly limit reached</p>
           <p className="text-[11px] text-amber-700 mt-0.5">
-            You can create another petition in <strong>{days} day{days !== 1 ? 's' : ''}</strong>.
+            You have created <strong>{used}</strong> of <strong>{limit}</strong> petition{limit !== 1 ? 's' : ''} this week. Resets in 7 days.
           </p>
         </div>
       </div>
@@ -313,7 +304,8 @@ function CreatePetitionModal({ isOpen, onClose, onCreated, userStayType, repStat
   if (!isOpen) return null;
 
   const cooldownActive = repStatus?.is_representative && !repStatus?.can_create;
-  const cooldownDays = repStatus?.cooldown_remaining ?? repStatus?.cooldown_days_remaining ?? 0;
+  const weeklyUsed = repStatus?.petitions_this_week ?? 0;
+  const weeklyLimit = repStatus?.weekly_limit ?? 1;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -370,14 +362,14 @@ function CreatePetitionModal({ isOpen, onClose, onCreated, userStayType, repStat
             <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex items-start gap-2">
               <Clock size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
               <p className="text-[11px] text-amber-800">
-                Cooldown active — you can create another petition in <strong>{cooldownDays} day{cooldownDays !== 1 ? 's' : ''}</strong>. (1 petition per {repStatus?.cooldown_days ?? 7} days)
+                Weekly limit reached — you have created <strong>{weeklyUsed}</strong> of <strong>{weeklyLimit}</strong> petition{weeklyLimit !== 1 ? 's' : ''} this week. Resets in 7 days.
               </p>
             </div>
           ) : (
             <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 flex items-start gap-2">
               <Info size={13} className="text-blue-500 flex-shrink-0 mt-0.5" />
               <p className="text-[11px] text-blue-800">
-                Your petition needs authority approval before it becomes visible to others.
+                Your petition goes live immediately and is visible to students in your scope.
               </p>
             </div>
           )}
@@ -501,7 +493,7 @@ function CreatePetitionModal({ isOpen, onClose, onCreated, userStayType, repStat
             disabled={loading || cooldownActive}
             className="w-full py-3 bg-srec-primary text-white rounded-xl text-sm font-bold shadow-btn hover:bg-srec-primaryDark disabled:opacity-60 transition-all active:scale-[0.98]"
           >
-            {loading ? 'Creating petition...' : cooldownActive ? `Available in ${cooldownDays}d` : '🚀 Launch Petition'}
+            {loading ? 'Creating petition...' : cooldownActive ? `Weekly limit reached (${weeklyUsed}/${weeklyLimit})` : '🚀 Launch Petition'}
           </button>
 
           <p className="text-[10px] text-center text-gray-400 pb-2">

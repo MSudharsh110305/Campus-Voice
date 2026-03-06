@@ -165,9 +165,9 @@ export default function AdminRepresentatives() {
     const [showAppoint, setShowAppoint] = useState(false);
     const [search, setSearch] = useState('');
     const [scopeFilter, setScopeFilter] = useState('All');
-    // Petition cooldown setting
-    const [cooldownDays, setCooldownDays] = useState(7);
-    const [cooldownInput, setCooldownInput] = useState('7');
+    // Petition weekly limit setting
+    const [weeklyLimit, setWeeklyLimit] = useState(1);
+    const [weeklyLimitInput, setWeeklyLimitInput] = useState('1');
     const [savingCooldown, setSavingCooldown] = useState(false);
     const [cooldownMsg, setCooldownMsg] = useState('');
 
@@ -180,10 +180,10 @@ export default function AdminRepresentatives() {
             ]);
             setReps(repsData.representatives || []);
             if (settingsData?.settings) {
-                const cd = settingsData.settings.find(s => s.key === 'petition_cooldown_days');
-                if (cd) {
-                    setCooldownDays(parseInt(cd.value));
-                    setCooldownInput(cd.value);
+                const wl = settingsData.settings.find(s => s.key === 'petition_weekly_limit');
+                if (wl) {
+                    setWeeklyLimit(parseInt(wl.value));
+                    setWeeklyLimitInput(wl.value);
                 }
             }
         } catch (err) {
@@ -194,17 +194,17 @@ export default function AdminRepresentatives() {
     }, []);
 
     const handleSaveCooldown = async () => {
-        const val = parseInt(cooldownInput);
-        if (isNaN(val) || val < 0 || val > 365) {
-            setCooldownMsg('Enter a number between 0 and 365');
+        const val = parseInt(weeklyLimitInput);
+        if (isNaN(val) || val < 0 || val > 20) {
+            setCooldownMsg('Enter a number between 0 and 20');
             return;
         }
         setSavingCooldown(true);
         setCooldownMsg('');
         try {
-            await adminService.updateSystemSetting('petition_cooldown_days', val);
-            setCooldownDays(val);
-            setCooldownMsg(val === 0 ? 'Rate limit disabled.' : `Set to ${val} day${val !== 1 ? 's' : ''}.`);
+            await adminService.updateSystemSetting('petition_weekly_limit', val);
+            setWeeklyLimit(val);
+            setCooldownMsg(val === 0 ? 'No limit (unlimited).' : `Set to ${val} per week.`);
             setTimeout(() => setCooldownMsg(''), 3000);
         } catch (err) {
             setCooldownMsg('Failed to save setting');
@@ -316,20 +316,19 @@ export default function AdminRepresentatives() {
                     </div>
                 </div>
 
-                {/* Petition cooldown setting */}
+                {/* Petition weekly limit setting */}
                 <div className="ml-auto flex items-center gap-2 bg-white/80 backdrop-blur-sm border border-white/60 rounded-xl px-4 py-2 shadow-sm">
                     <Clock size={13} className="text-srec-primary flex-shrink-0" />
-                    <span className="text-xs font-medium text-gray-700 whitespace-nowrap">Petition cooldown:</span>
+                    <span className="text-xs font-medium text-gray-700 whitespace-nowrap">Petitions/week:</span>
                     <input
                         type="number"
                         min="0"
-                        max="365"
-                        value={cooldownInput}
-                        onChange={e => setCooldownInput(e.target.value)}
-                        className="w-14 px-2 py-0.5 text-xs border border-gray-200 rounded-lg text-center
+                        max="20"
+                        value={weeklyLimitInput}
+                        onChange={e => setWeeklyLimitInput(e.target.value)}
+                        className="w-12 px-2 py-0.5 text-xs border border-gray-200 rounded-lg text-center
                                    focus:ring-1 focus:ring-srec-primary/30 focus:border-srec-primary outline-none"
                     />
-                    <span className="text-xs text-gray-500">days</span>
                     <button
                         onClick={handleSaveCooldown}
                         disabled={savingCooldown}
@@ -343,7 +342,7 @@ export default function AdminRepresentatives() {
                             {cooldownMsg}
                         </span>
                     )}
-                    {parseInt(cooldownInput) === 0 && !cooldownMsg && (
+                    {parseInt(weeklyLimitInput) === 0 && !cooldownMsg && (
                         <span className="text-[10px] text-amber-600">No limit</span>
                     )}
                 </div>

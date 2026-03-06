@@ -409,7 +409,12 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                     # Seed default settings if not present
                     await conn.execute(text("""
                         INSERT INTO system_settings (key, value, description)
-                        VALUES ('petition_cooldown_days', '7', 'Minimum days between petition creations per representative')
+                        VALUES ('petition_cooldown_days', '7', 'Legacy: Minimum days between petition creations per representative')
+                        ON CONFLICT (key) DO NOTHING
+                    """))
+                    await conn.execute(text("""
+                        INSERT INTO system_settings (key, value, description)
+                        VALUES ('petition_weekly_limit', '1', 'Number of petitions a representative can create per week (0 = unlimited)')
                         ON CONFLICT (key) DO NOTHING
                     """))
                     logger.info("✅ Migration: system_settings table ensured")

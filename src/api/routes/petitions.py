@@ -26,23 +26,23 @@ from sqlalchemy.orm import selectinload
 from src.api.dependencies import get_db, get_current_student, get_current_authority, get_current_user
 
 
-# ── Rate limit: days between petition creations (default, overridable via system_settings) ──
-PETITION_COOLDOWN_DAYS = 7  # fallback if DB setting not found
+# ── Rate limit: N petitions per 7-day rolling window (admin-configurable) ──
+PETITION_WEEKLY_LIMIT_DEFAULT = 1  # fallback if DB setting not found
 
 
-async def _get_cooldown_days(db: AsyncSession) -> int:
-    """Read petition cooldown from system_settings table; fall back to PETITION_COOLDOWN_DAYS."""
+async def _get_weekly_limit(db: AsyncSession) -> int:
+    """Read petition weekly limit from system_settings; fall back to default. 0 = unlimited."""
     try:
         from src.database.models import SystemSetting
         result = await db.execute(
-            select(SystemSetting).where(SystemSetting.key == "petition_cooldown_days")
+            select(SystemSetting).where(SystemSetting.key == "petition_weekly_limit")
         )
         setting = result.scalar_one_or_none()
         if setting:
             return max(0, int(setting.value))
     except Exception:
         pass
-    return PETITION_COOLDOWN_DAYS
+    return PETITION_WEEKLY_LIMIT_DEFAULT
 
 # ── Valid petition scopes ──────────────────────────────────────────────────────
 VALID_SCOPES = {"General", "Department", "Hostel"}
@@ -88,7 +88,7 @@ def _next_milestone_goal(current_count: int, already_reached: list) -> int:
 @router.get("/", summary="List petitions")
 async def list_petitions(
     skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=500),
     status_filter: Optional[str] = Query(None, alias="status"),
     include_pending: bool = Query(False),  # Admin only
     current_user: dict = Depends(get_current_user),
@@ -110,12 +110,24 @@ async def list_petitions(
     if status_filter:
         conditions.append(Petition.status == status_filter)
 
-    # Admin sees all; Authorities see pending+published for their scope; Students see only published
-    # BUG-012 fix: authorities must also see unpublished petitions (to approve/reject them)
+    # Students see only published petitions
     if not is_admin and not is_authority:
         conditions.append(Petition.is_published == True)
 
-    # Scope-based visibility filter
+    # ── Auto-cleanup expired petitions (no background scheduler, so run on list) ──
+    if not status_filter:  # Only cleanup on unfiltered requests to avoid double-cleanup
+        try:
+            await _cleanup_expired_petitions(db)
+        except Exception as e:
+            logger.warning(f"Petition cleanup error: {e}")
+
+    # ── Scope-based visibility filter ──
+    HOSTEL_AUTHORITY_TYPES = {
+        "Warden", "Deputy Warden", "Senior Deputy Warden",
+        "Men's Hostel Warden", "Women's Hostel Warden",
+        "Men's Hostel Deputy Warden", "Women's Hostel Deputy Warden",
+    }
+
     if role == "Student" and user_id:
         try:
             student_q = select(Student).where(Student.roll_no == user_id)
@@ -132,7 +144,7 @@ async def list_petitions(
                     )
                 if student.stay_type == "Hostel":
                     scope_conditions.append(Petition.petition_scope == "Hostel")
-                # Also show own pending petitions
+                # Also show own petitions
                 scope_conditions.append(Petition.created_by_roll_no == user_id)
                 conditions.append(or_(*scope_conditions))
         except Exception as e:
@@ -144,19 +156,24 @@ async def list_petitions(
             auth_result = await db.execute(auth_q)
             auth = auth_result.scalar_one_or_none()
             if auth:
-                scope_conditions = [Petition.petition_scope == "General"]
-                if auth.department_id:
-                    scope_conditions.append(
-                        and_(
-                            Petition.petition_scope == "Department",
-                            Petition.department_id == auth.department_id,
-                        )
-                    )
-                scope_conditions.append(Petition.petition_scope == "Hostel")
-                conditions.append(or_(*scope_conditions))
+                atype = auth.authority_type or ""
+                if atype == "Admin":
+                    pass  # Admin sees all — no filter
+                elif atype == "Admin Officer":
+                    conditions.append(Petition.petition_scope == "General")
+                elif atype in HOSTEL_AUTHORITY_TYPES:
+                    conditions.append(Petition.petition_scope == "Hostel")
+                elif atype == "HOD" and auth.department_id:
+                    conditions.append(and_(
+                        Petition.petition_scope == "Department",
+                        Petition.department_id == auth.department_id,
+                    ))
+                else:
+                    # Unknown authority type — show General only
+                    conditions.append(Petition.petition_scope == "General")
         except Exception as e:
             logger.warning(f"Could not apply scope filter for authority: {e}")
-    # Admin: no scope conditions → sees everything
+    # Admin role: no scope conditions → sees everything
 
     count_q = select(func.count()).select_from(Petition)
     if conditions:
@@ -218,39 +235,26 @@ async def get_my_rep_status(
     # Collect all scopes this student has (e.g. ["Department", "Hostel"])
     scopes = list({r.scope for r in reps})
 
-    # Read configurable cooldown from DB
-    cooldown_days = await _get_cooldown_days(db)
+    # Read configurable weekly limit from DB
+    weekly_limit = await _get_weekly_limit(db)
 
-    # Check cooldown
+    # Check rate limit: N petitions per 7-day rolling window
     can_create = False
-    cooldown_remaining = 0
+    petitions_this_week = 0
     if is_representative:
-        if cooldown_days == 0:
+        if weekly_limit == 0:
             # Rate limit disabled by admin
             can_create = True
         else:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=cooldown_days)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
             recent_q = select(func.count()).select_from(Petition).where(
                 and_(
                     Petition.created_by_roll_no == roll_no,
                     Petition.submitted_at >= cutoff,
                 )
             )
-            recent_count = (await db.execute(recent_q)).scalar() or 0
-            can_create = recent_count == 0
-
-            if not can_create:
-                # Find most recent petition to calculate remaining cooldown
-                last_q = select(Petition.submitted_at).where(
-                    Petition.created_by_roll_no == roll_no
-                ).order_by(Petition.submitted_at.desc()).limit(1)
-                last_result = await db.execute(last_q)
-                last_submitted = last_result.scalar_one_or_none()
-                if last_submitted:
-                    if last_submitted.tzinfo is None:
-                        last_submitted = last_submitted.replace(tzinfo=timezone.utc)
-                    next_allowed = last_submitted + timedelta(days=cooldown_days)
-                    cooldown_remaining = max(0, (next_allowed - datetime.now(timezone.utc)).days)
+            petitions_this_week = (await db.execute(recent_q)).scalar() or 0
+            can_create = petitions_this_week < weekly_limit
 
     # Primary scope for display: prefer Department if both, else whichever exists
     primary_scope = None
@@ -263,9 +267,9 @@ async def get_my_rep_status(
         "is_representative": is_representative,
         "can_create": can_create,
         "scope": primary_scope,
-        "scopes": scopes,  # All scopes this student holds
-        "cooldown_days": cooldown_days,
-        "cooldown_remaining": cooldown_remaining,
+        "scopes": scopes,
+        "weekly_limit": weekly_limit,
+        "petitions_this_week": petitions_this_week,
     }
 
 
@@ -331,10 +335,10 @@ async def create_petition(
             detail="Only hostel students can create a Hostel-scoped petition"
         )
 
-    # Rate limit: no petition in last cooldown_days (configurable by admin)
-    cooldown_days = await _get_cooldown_days(db)
-    if cooldown_days > 0:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=cooldown_days)
+    # Rate limit: N petitions per 7-day rolling window (admin-configurable)
+    weekly_limit = await _get_weekly_limit(db)
+    if weekly_limit > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         recent_q = select(func.count()).select_from(Petition).where(
             and_(
                 Petition.created_by_roll_no == roll_no,
@@ -342,10 +346,10 @@ async def create_petition(
             )
         )
         recent_count = (await db.execute(recent_q)).scalar() or 0
-        if recent_count > 0:
+        if recent_count >= weekly_limit:
             raise HTTPException(
                 status_code=429,
-                detail=f"You can only create 1 petition every {cooldown_days} days. Please wait before creating another."
+                detail=f"You have reached the weekly limit of {weekly_limit} petition{'s' if weekly_limit != 1 else ''} per week."
             )
 
     # Determine department_id
@@ -388,8 +392,6 @@ async def create_petition(
     result = await db.execute(q)
     petition = result.scalar_one()
 
-    # Notify relevant authority for approval
-    await _notify_authority_for_approval(db, petition)
     await db.commit()
 
     logger.info(
@@ -715,64 +717,42 @@ def _petition_to_dict(petition, *, signed: bool = False) -> dict:
     }
 
 
-async def _notify_authority_for_approval(db, petition):
-    """Notify the relevant authority to approve/publish the petition."""
-    from src.database.models import Authority, Notification
+async def _cleanup_expired_petitions(db: AsyncSession):
+    """Delete petitions that expired without reaching their goal and notify their creators."""
+    from src.database.models import Petition, Notification
 
-    try:
-        authority_id = None
-        if petition.petition_scope == "Department" and petition.department_id:
-            auth_q = select(Authority).where(
-                and_(
-                    Authority.authority_type == "HOD",
-                    Authority.department_id == petition.department_id,
-                    Authority.is_active == True,
-                )
-            ).limit(1)
-            auth_result = await db.execute(auth_q)
-            auth = auth_result.scalar_one_or_none()
-            if auth:
-                authority_id = auth.id
+    now = datetime.now(timezone.utc)
+    # Find expired petitions that did NOT reach their goal
+    expired_q = select(Petition).where(
+        and_(
+            Petition.deadline != None,
+            Petition.deadline < now,
+            Petition.goal_reached_notified == False,
+        )
+    )
+    result = await db.execute(expired_q)
+    expired = result.scalars().all()
 
-        if petition.petition_scope == "Hostel":
-            # Notify Senior Deputy Warden
-            auth_q = select(Authority).where(
-                and_(
-                    Authority.authority_type.in_(["Senior Deputy Warden", "Men's Hostel Deputy Warden", "Women's Hostel Deputy Warden"]),
-                    Authority.is_active == True,
-                )
-            ).limit(1)
-            auth_result = await db.execute(auth_q)
-            auth = auth_result.scalar_one_or_none()
-            if auth:
-                authority_id = auth.id
-
-        if not authority_id:
-            # Fall back to Admin Officer
-            ao_q = select(Authority).where(
-                and_(Authority.authority_type == "Admin Officer", Authority.is_active == True)
-            ).limit(1)
-            ao_result = await db.execute(ao_q)
-            ao = ao_result.scalar_one_or_none()
-            if ao:
-                authority_id = ao.id
-
-        if authority_id:
+    for p in expired:
+        # Notify the creator that their petition was discarded
+        if p.created_by_roll_no:
+            goal = p.custom_goal or p.milestone_goal or 50
             db.add(Notification(
-                recipient_type="Authority",
-                recipient_id=str(authority_id),
+                recipient_type="Student",
+                recipient_id=p.created_by_roll_no,
                 complaint_id=None,
-                notification_type="petition_pending_approval",
+                notification_type="petition_expired",
                 message=(
-                    f'A new petition requires your approval before it goes live.\n'
-                    f'Title: "{petition.title}"\n'
-                    f'Scope: {getattr(petition, "petition_scope", "General")}\n'
-                    f'Creator: {petition.created_by_roll_no}\n'
-                    f'Description: {petition.description[:200]}'
+                    f'Your petition "{p.title[:80]}" has expired without reaching its goal '
+                    f'({p.signature_count or 0}/{goal} signatures). '
+                    f'It has been discarded. You may create a new petition.'
                 ),
             ))
-    except Exception as e:
-        logger.warning(f"Could not notify authority for petition approval: {e}")
+        await db.delete(p)
+
+    if expired:
+        await db.commit()
+        logger.info(f"Cleaned up {len(expired)} expired petition(s)")
 
 
 async def _notify_milestone(db, petition, milestone: int, triggering_roll_no: str):
@@ -882,10 +862,11 @@ async def _notify_goal_reached(db, petition, triggering_roll_no: str):
             ),
         ))
 
-    # Notify relevant authority (HOD or Admin Officer)
+    # Notify relevant authority based on scope
     try:
         authority_id = None
-        if petition.department_id:
+        scope = getattr(petition, "petition_scope", "General")
+        if scope == "Department" and petition.department_id:
             auth_q = select(Authority).where(
                 and_(
                     Authority.authority_type == "HOD",
@@ -897,8 +878,18 @@ async def _notify_goal_reached(db, petition, triggering_roll_no: str):
             auth = auth_result.scalar_one_or_none()
             if auth:
                 authority_id = auth.id
-
-        if not authority_id:
+        elif scope == "Hostel":
+            auth_q = select(Authority).where(
+                and_(
+                    Authority.authority_type.in_(["Warden", "Senior Deputy Warden", "Deputy Warden"]),
+                    Authority.is_active == True,
+                )
+            ).limit(1)
+            auth_result = await db.execute(auth_q)
+            auth = auth_result.scalar_one_or_none()
+            if auth:
+                authority_id = auth.id
+        else:  # General
             ao_q = select(Authority).where(
                 and_(Authority.authority_type == "Admin Officer", Authority.is_active == True)
             ).limit(1)
@@ -914,7 +905,7 @@ async def _notify_goal_reached(db, petition, triggering_roll_no: str):
                 complaint_id=None,
                 notification_type="petition_goal_reached",
                 message=(
-                    f'ACTION REQUIRED: Petition "{petition.title}" has reached its signature goal of {custom_goal}!\n'
+                    f'ACTION REQUIRED: Petition "{petition.title}" has reached its goal of {custom_goal} signatures!\n'
                     f'Total signatures: {petition.signature_count}\n'
                     f'Description: {petition.description[:300]}'
                 ),

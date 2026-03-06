@@ -1508,10 +1508,16 @@ class UpdateSettingBody(BaseModel):
 # Known settings with their validation rules and descriptions
 _KNOWN_SETTINGS = {
     "petition_cooldown_days": {
-        "description": "Minimum days between petition creations per representative (0 = no limit)",
+        "description": "Legacy: Minimum days between petition creations per representative (0 = no limit)",
         "type": "int",
         "min": 0,
         "max": 365,
+    },
+    "petition_weekly_limit": {
+        "description": "Number of petitions a representative can create per week (0 = unlimited)",
+        "type": "int",
+        "min": 0,
+        "max": 20,
     },
 }
 
