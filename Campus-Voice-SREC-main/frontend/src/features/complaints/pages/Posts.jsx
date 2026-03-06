@@ -250,7 +250,17 @@ export default function Posts() {
               <div className="pt-4 border-t border-gray-200">
                 <span className="text-xs text-gray-400 uppercase tracking-wide font-bold">Image Verification</span>
                 <p className={`text-sm mt-1 ${apiResponse.image_verified ? 'text-green-600' : 'text-orange-600'}`}>
-                  {apiResponse.image_verification_message || apiResponse.image_verification_status}
+                  {(() => {
+                    const msg = apiResponse.image_verification_message;
+                    if (!msg) return apiResponse.image_verification_status;
+                    try {
+                      const stripped = msg.replace(/```json\s*/g, '').replace(/```/g, '').trim();
+                      const parsed = JSON.parse(stripped);
+                      return parsed.reason || parsed.explanation || apiResponse.image_verification_status;
+                    } catch {
+                      return msg;
+                    }
+                  })()}
                 </p>
               </div>
             )}

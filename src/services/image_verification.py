@@ -188,13 +188,15 @@ class ImageVerificationService:
             
             # Parse response
             content = response.choices[0].message.content
-            
-            # Extract JSON from response
-            import json
+
+            # Extract JSON from response — strip markdown code fences if present
+            import json, re
             try:
-                # Try to parse as JSON
-                raw_result = json.loads(content)
-                # ✅ Transform to ImageVerificationResult schema format
+                clean = content.strip()
+                fence_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', clean)
+                if fence_match:
+                    clean = fence_match.group(1).strip()
+                raw_result = json.loads(clean)
                 result = self._transform_to_schema_format(raw_result, complaint_text)
             except json.JSONDecodeError:
                 # If not JSON, parse manually
