@@ -225,22 +225,21 @@ class ImageVerificationService:
 
 {"**Image Description:** " + image_description if image_description else ""}
 
-**Task:** Determine if this image is ACCEPTABLE as supporting evidence for this complaint.
+**Task:** Determine if this image is relevant supporting evidence for this complaint.
 
-**ACCEPT the image if ANY of these apply:**
-- It shows anything related to the complaint topic (food photo for food complaint, room photo for room complaint, etc.)
-- It shows the general area, location, or subject mentioned
-- It is a genuine photograph that could reasonably relate to the complaint
-- It shows the type of item/place/issue being complained about, even if the specific problem is not clearly visible
-- It is a real photo taken by a student (not perfect quality is OK)
+**ACCEPT the image if:**
+- It directly shows the subject being complained about (e.g., food/canteen area for a food complaint, a room/hostel for a hostel complaint, a broken item for a maintenance complaint)
+- It shows the specific location or issue mentioned in the complaint text
+- It clearly depicts the problem or evidence of the problem described
 
-**REJECT the image ONLY if:**
-- It is completely unrelated (e.g., a selfie for a plumbing complaint, a landscape for a food complaint)
-- It is a meme, joke image, or internet screenshot
+**REJECT the image if ANY of these apply:**
+- The image subject does not match the complaint topic (e.g., a ceiling fan for a food/canteen complaint, a classroom for a hostel complaint, a vehicle for a facilities complaint)
+- It is a meme, joke image, or internet screenshot unrelated to the issue
 - It contains offensive, inappropriate, or abusive content
-- It is clearly a test/dummy/random image
+- It is clearly a test/dummy/random image with no connection to the complaint
+- The image shows something from a completely different category than what is described (infrastructure/equipment unrelated to the complaint)
 
-**IMPORTANT: Be lenient. When in doubt, ACCEPT the image. Students may not capture the exact issue perfectly, and a loosely related photo is still useful context.**
+**CRITICAL: Be strict. The image must be relevant to the specific subject of the complaint. A photo of something that exists on campus but is unrelated to the complaint topic should be REJECTED.**
 
 Respond ONLY with valid JSON:
 

@@ -25,12 +25,13 @@
 
 ---
 
-## BUG-002 — Status History & Timeline Endpoints Reject Authority Tokens
+## BUG-002 — Status History & Timeline Endpoints Reject Authority Tokens (and Complaint Owner)
 
 **Status:** ✅ Fixed
 
 - [x] Changed `get_complaint_with_visibility` dependency → `get_current_user` on both `/{id}/status-history` and `/{id}/timeline` endpoints in `complaints.py`
 - [x] Authorities/admins bypass visibility check; students still go through the existing visibility rules
+- [x] **Root cause of persistent 403**: Both endpoints used `user.get("sub")` to extract roll_no, but `get_current_user` returns `user_id` (not `sub`). Result: `roll_no = None` → student lookup fails → 403 even for the complaint owner. Fixed to `user.get("user_id")`.
 
 ---
 
@@ -66,6 +67,7 @@
 **Status:** ✅ Fixed
 
 - [x] Post-verification logic in `complaint_service.py` now checks: if `is_relevant=False` OR `confidence < 0.5`, sets `complaint.is_marked_as_spam=True`, `complaint.status="Spam"`, and populates `spam_reason`
+- [x] **Root cause of persisting**: Image verification prompt was explicitly "Be lenient. When in doubt, ACCEPT the image." causing irrelevant images (e.g., a fan for a food complaint) to pass. Prompt rewritten to be strict: image must directly show the subject of the complaint; unrelated campus objects are rejected.
 
 ---
 

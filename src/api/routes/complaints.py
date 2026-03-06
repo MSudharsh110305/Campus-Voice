@@ -852,11 +852,11 @@ async def get_status_history(
     # Authorities and admins can view any complaint's history
     role = user.get("role", "")
     if role not in ("Authority", "Admin"):
-        # Student visibility check
+        # Student visibility check — owner can always see their own complaint history
         from src.repositories.student_repo import StudentRepository
         from src.api.dependencies import check_complaint_visibility
         student_repo = StudentRepository(db)
-        roll_no = user.get("sub")
+        roll_no = user.get("user_id")
         student = await student_repo.get_with_department(roll_no) if roll_no else None
         if not student or not await check_complaint_visibility(complaint_with_updates, student):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -921,7 +921,7 @@ async def get_complaint_timeline(
         from src.repositories.student_repo import StudentRepository
         from src.api.dependencies import check_complaint_visibility
         student_repo = StudentRepository(db)
-        roll_no = user.get("sub")
+        roll_no = user.get("user_id")
         student = await student_repo.get_with_department(roll_no) if roll_no else None
         if not student or not await check_complaint_visibility(complaint_full, student):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
