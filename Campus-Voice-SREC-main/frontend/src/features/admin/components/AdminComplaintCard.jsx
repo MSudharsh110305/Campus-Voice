@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { StatusBadge, PriorityBadge, EliteButton } from '../../../components/UI';
+import { StatusBadge, PriorityBadge } from '../../../components/UI';
 import {
     Clock,
     User,
     ShieldCheck,
-    Tag,
     Eye,
     AlertTriangle,
     ArrowRight,
@@ -45,7 +44,6 @@ function AuthenticatedImage({ complaintId, token, className = '', thumbnail = fa
     return <img src={src} alt="Complaint" className={className} />;
 }
 
-// Top accent bar color by priority
 const PRIORITY_ACCENT = {
     'Critical': 'bg-red-500',
     'High':     'bg-orange-400',
@@ -55,7 +53,6 @@ const PRIORITY_ACCENT = {
 
 export default function AdminComplaintCard({ complaint, token, authorities = [], onDelete, onReassign }) {
     const navigate = useNavigate();
-    const [expanded, setExpanded] = useState(false);
     const [showActions, setShowActions] = useState(false);
     const [selectedAuthority, setSelectedAuthority] = useState('');
     const [isReassigning, setIsReassigning] = useState(false);
@@ -68,7 +65,7 @@ export default function AdminComplaintCard({ complaint, token, authorities = [],
         setIsReassigning(true);
         try {
             await onReassign(complaint.id, parseInt(selectedAuthority));
-            setActionMsg({ type: 'success', text: 'Reassigned' });
+            setActionMsg({ type: 'success', text: 'Reassigned successfully' });
             setTimeout(() => setActionMsg(null), 2500);
         } catch (err) {
             setActionMsg({ type: 'error', text: err.message || 'Failed' });
@@ -91,131 +88,138 @@ export default function AdminComplaintCard({ complaint, token, authorities = [],
         }
     };
 
-    const summary = complaint.rephrased_text || complaint.original_text || '';
-    const TRUNCATE_LEN = 160;
-    const isLong = summary.length > TRUNCATE_LEN;
-    const truncated = expanded || !isLong ? summary : summary.slice(0, TRUNCATE_LEN) + '…';
-
+    const bodyText = complaint.rephrased_text || complaint.original_text || '';
     const accentColor = PRIORITY_ACCENT[complaint.priority] || PRIORITY_ACCENT['Low'];
+    const isSpam = complaint.is_marked_as_spam;
+    const isDisputed = isSpam && complaint.has_disputed;
 
     return (
         <div
-            className="bg-white rounded-2xl border border-gray-100 hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden flex flex-col"
+            className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer overflow-hidden flex flex-col"
             onClick={() => navigate(`/complaint/${complaint.id}`)}
         >
-            {/* Top accent bar colored by priority */}
-            <div className={`h-1 w-full ${accentColor}`} />
+            {/* Priority accent bar */}
+            <div className={`h-0.5 w-full ${accentColor}`} />
 
-            <div className="p-4 flex gap-3 flex-1">
-                {/* Main content */}
-                <div className="flex-1 min-w-0 flex flex-col gap-3">
-                {/* Row 1: StatusBadge + PriorityBadge + ID */}
-                <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                        <StatusBadge status={complaint.status} />
-                        <PriorityBadge priority={complaint.priority} />
-                        {complaint.is_marked_as_spam && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-600 border border-red-200">
-                                <AlertTriangle size={9} />Spam
-                            </span>
-                        )}
-                        {complaint.is_marked_as_spam && complaint.has_disputed && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-50 text-orange-600 border border-orange-200">
-                                <ShieldAlert size={9} />Disputed
-                            </span>
+            {/* Card body */}
+            <div className="p-4 flex flex-col gap-3 flex-1">
+
+                {/* ── Row 1: Header — badges left, ID + image right ── */}
+                <div className="flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                        {/* Status + Priority always on one line */}
+                        <div className="flex items-center gap-1.5">
+                            <StatusBadge status={complaint.status} />
+                            <PriorityBadge priority={complaint.priority} />
+                        </div>
+                        {/* Spam + Disputed tags on a separate line — only when present */}
+                        {isSpam && (
+                            <div className="flex items-center gap-1.5 mt-1.5">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-px rounded text-[10px] font-semibold bg-red-50 text-red-600 border border-red-200">
+                                    <AlertTriangle size={8} />Spam
+                                </span>
+                                {isDisputed && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-px rounded text-[10px] font-semibold bg-orange-50 text-orange-600 border border-orange-200">
+                                        <ShieldAlert size={8} />Disputed
+                                    </span>
+                                )}
+                            </div>
                         )}
                     </div>
-                    <span className="text-[10px] text-gray-400 font-mono shrink-0">
-                        #{complaint.id?.substring(0, 8)}
+
+                    {/* Right side: ID + optional thumbnail stacked */}
+                    <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                        <span className="text-[10px] text-gray-400 font-mono">#{complaint.id?.substring(0, 8)}</span>
+                        {complaint.has_image && token && (
+                            <div className="w-14 h-14 rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                                <AuthenticatedImage
+                                    complaintId={complaint.id}
+                                    token={token}
+                                    thumbnail={true}
+                                    className="w-full h-full object-cover"
+                                />
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* ── Row 2: Student + Authority info ── */}
+                <div className="rounded-xl bg-gray-50 border border-gray-100 px-3 py-2 space-y-1">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                        <User size={10} className="text-srec-primary shrink-0" />
+                        <span className="text-xs font-semibold text-gray-900 truncate">
+                            {complaint.student_name || 'Unknown'}
+                        </span>
+                        {complaint.student_roll_no && (
+                            <>
+                                <span className="text-gray-300 text-xs">·</span>
+                                <span className="text-[10px] font-mono text-srec-primary font-bold shrink-0">
+                                    {complaint.student_roll_no}
+                                </span>
+                            </>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                        <ShieldCheck size={10} className="text-green-500 shrink-0" />
+                        <span className="text-[11px] text-gray-500 truncate">
+                            {complaint.assigned_authority_name
+                                ? complaint.assigned_authority_name
+                                : <span className="italic text-gray-400">Unassigned</span>
+                            }
+                        </span>
+                    </div>
+                </div>
+
+                {/* ── Row 3: Category + complaint body ── */}
+                <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-semibold text-srec-primary uppercase tracking-wider mb-1">
+                        {complaint.category_name || 'General'}
+                    </p>
+                    <p className="text-xs text-gray-700 leading-relaxed line-clamp-2">
+                        {bodyText || 'No description provided.'}
+                    </p>
+                </div>
+
+                {/* ── Row 4: Meta footer — visibility + time ── */}
+                <div className="flex items-center gap-2 text-[10px] text-gray-400 mt-auto">
+                    <Eye size={9} />
+                    <span className={
+                        complaint.visibility === 'Public' ? 'text-green-600 font-medium' :
+                        complaint.visibility === 'Department' ? 'text-blue-600 font-medium' : ''
+                    }>
+                        {complaint.visibility || 'Private'}
+                    </span>
+                    <span className="ml-auto flex items-center gap-1">
+                        <Clock size={9} />
+                        {format(new Date(complaint.submitted_at), 'MMM dd, h:mm a')}
                     </span>
                 </div>
 
-                {/* Row 2: Student info */}
-                <div className="bg-srec-primary/5 border border-srec-primary/10 rounded-xl px-3 py-2 space-y-1">
-                    <div className="flex items-center gap-2 text-xs text-gray-600">
-                        <User size={11} className="text-srec-primary shrink-0" />
-                        <span className="font-semibold text-gray-900 truncate">{complaint.student_name || 'Unknown'}</span>
-                        <span className="text-gray-300">·</span>
-                        <span className="font-mono text-srec-primary font-bold text-[10px]">{complaint.student_roll_no || '—'}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-gray-500">
-                        <ShieldCheck size={11} className="text-green-500 shrink-0" />
-                        {complaint.assigned_authority_name
-                            ? <span className="truncate">{complaint.assigned_authority_name}</span>
-                            : <span className="italic text-gray-400">Unassigned</span>
-                        }
-                    </div>
-                </div>
-
-
-{/* Row 3: Complaint text */}
-                <p className="text-sm text-gray-700 leading-relaxed font-semibold line-clamp-1">
-                    {complaint.category_name || 'General Complaint'}
-                </p>
-                <div onClick={(e) => e.stopPropagation()}>
-                    <p className="text-xs text-gray-500 leading-relaxed">
-                        {truncated}
-                    </p>
-                    {isLong && (
-                        <button
-                            onClick={() => setExpanded(v => !v)}
-                            className="text-[11px] text-srec-primary font-semibold mt-1 hover:underline"
-                        >
-                            {expanded ? 'Show less' : 'Read more'}
-                        </button>
-                    )}
-                </div>
-
-                {/* Row 4: Category + Visibility + Time */}
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-400 mt-auto">
-                    {complaint.category_name && (
-                        <div className="flex items-center gap-1">
-                            <Tag size={10} />
-                            <span>{complaint.category_name}</span>
-                        </div>
-                    )}
-                    <div className="flex items-center gap-1">
-                        <Eye size={10} />
-                        <span className={
-                            complaint.visibility === 'Public' ? 'text-green-600' :
-                            complaint.visibility === 'Department' ? 'text-blue-600' : 'text-gray-400'
-                        }>
-                            {complaint.visibility}
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-1 ml-auto">
-                        <Clock size={10} />
-                        <span>{format(new Date(complaint.submitted_at), 'MMM dd, h:mm a')}</span>
-                    </div>
-                </div>
-
-                {/* Row 5: Actions */}
+                {/* ── Row 5: Action buttons ── */}
                 <div className="border-t border-gray-100 pt-3 space-y-2" onClick={(e) => e.stopPropagation()}>
                     {actionMsg && (
-                        <p className={`text-xs font-medium px-2 py-1 rounded ${actionMsg.type === 'success' ? 'text-green-700 bg-green-50' : 'text-red-600 bg-red-50'}`}>
+                        <p className={`text-xs font-medium px-2 py-1 rounded-lg ${actionMsg.type === 'success' ? 'text-green-700 bg-green-50' : 'text-red-600 bg-red-50'}`}>
                             {actionMsg.text}
                         </p>
                     )}
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <EliteButton
-                            size="sm"
-                            variant="outline"
+                    <div className="flex items-center gap-2">
+                        <button
                             onClick={() => navigate(`/complaint/${complaint.id}`)}
-                            className="flex items-center gap-1 text-xs"
+                            className="flex-1 flex items-center justify-center gap-1 text-xs py-1.5 px-3 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors font-medium"
                         >
-                            Details <ArrowRight size={12} />
-                        </EliteButton>
+                            Details <ArrowRight size={11} />
+                        </button>
                         {(onDelete || onReassign) && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); setShowActions(v => !v); }}
-                                className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+                                className={`flex-1 text-xs py-1.5 px-3 rounded-lg border transition-colors font-medium ${showActions ? 'border-srec-primary/30 bg-srec-primary/5 text-srec-primary' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
                             >
-                                Manage
+                                {showActions ? 'Close' : 'Manage'}
                             </button>
                         )}
                     </div>
                     {showActions && (
-                        <div className="bg-gray-50 rounded-xl border border-gray-200 p-3 space-y-2">
+                        <div className="bg-gray-50 rounded-xl border border-gray-100 p-2.5 space-y-2">
                             {onReassign && authorities.length > 0 && (
                                 <div className="flex items-center gap-2">
                                     <select
@@ -232,9 +236,9 @@ export default function AdminComplaintCard({ complaint, token, authorities = [],
                                     <button
                                         disabled={!selectedAuthority || isReassigning}
                                         onClick={handleReassign}
-                                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-srec-primary text-white hover:bg-srec-primaryHover disabled:opacity-50 transition-colors"
+                                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-srec-primary text-white hover:bg-srec-primaryHover disabled:opacity-50 transition-colors shrink-0"
                                     >
-                                        <RefreshCw size={11} /> {isReassigning ? '…' : 'Reassign'}
+                                        <RefreshCw size={10} /> {isReassigning ? '…' : 'Reassign'}
                                     </button>
                                 </div>
                             )}
@@ -244,25 +248,12 @@ export default function AdminComplaintCard({ complaint, token, authorities = [],
                                     onClick={handleDelete}
                                     className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors w-full justify-center"
                                 >
-                                    <Trash2 size={12} /> {isDeleting ? 'Deleting…' : 'Delete Complaint'}
+                                    <Trash2 size={11} /> {isDeleting ? 'Deleting…' : 'Delete Complaint'}
                                 </button>
                             )}
                         </div>
                     )}
                 </div>
-                </div>{/* end main content */}
-
-                {/* Thumbnail image on right — compact, no horizontal expansion */}
-                {complaint.has_image && token && (
-                    <div className="w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden bg-gray-100 self-start mt-0">
-                        <AuthenticatedImage
-                            complaintId={complaint.id}
-                            token={token}
-                            thumbnail={true}
-                            className="w-full h-full object-cover"
-                        />
-                    </div>
-                )}
             </div>
         </div>
     );
