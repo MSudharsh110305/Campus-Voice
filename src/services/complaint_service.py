@@ -1103,6 +1103,9 @@ class ComplaintService:
             "assigned_authority": complaint.assigned_authority.name if complaint.assigned_authority else None,
             "is_spam": complaint.is_marked_as_spam,
             "spam_reason": complaint.spam_reason,
+            "is_marked_as_spam": complaint.is_marked_as_spam,
+            "has_disputed": complaint.has_disputed,
+            "appeal_reason": complaint.appeal_reason,
             # Image fields
             "has_image": complaint.has_image,
             "image_verified": complaint.image_verified,
