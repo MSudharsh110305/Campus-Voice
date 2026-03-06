@@ -225,7 +225,7 @@ export default function AdminPetitions() {
   const fetchPetitions = useCallback(async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ skip: 0, limit: 200 });
+      const params = new URLSearchParams({ skip: 0, limit: 100 });
       if (statusFilter) params.set('status', statusFilter);
       const data = await api(`/petitions/?${params}`);
       setPetitions(data?.petitions || []);

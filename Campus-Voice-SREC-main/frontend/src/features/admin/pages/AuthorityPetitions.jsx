@@ -344,7 +344,7 @@ export default function AuthorityPetitions() {
   const fetchPetitions = useCallback(async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ skip: 0, limit: 200 });
+      const params = new URLSearchParams({ skip: 0, limit: 100 });
       const data = await api(`/petitions/?${params}`);
       setPetitions(data?.petitions || []);
     } catch (err) {

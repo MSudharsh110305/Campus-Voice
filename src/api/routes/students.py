@@ -15,7 +15,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies import get_db, get_current_student  # ✅ FIXED IMPORT
+from src.api.dependencies import get_db, get_current_student, get_current_user  # ✅ FIXED IMPORT
 from src.schemas.student import (
     StudentRegister,
     StudentLogin,
@@ -571,22 +571,24 @@ async def mark_all_notifications_read(
     description="Get count of unread notifications for current student"
 )
 async def get_unread_count(
-    roll_no: str = Depends(get_current_student),
+    user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    ✅ NEW: Get unread notification count.
-    
-    Returns count of unread notifications for current student.
+    Get unread notification count.
+
+    Uses get_current_user (JWT-only, no DB lookup) instead of get_current_student
+    to avoid opening an extra DB connection on this frequently-polled endpoint.
+    BUG-019 fix: prevents connection pool exhaustion under concurrent polling.
     """
+    if user.get("role") != "Student":
+        raise HTTPException(status_code=403, detail="Student access required")
+    roll_no = user.get("user_id")
     notification_repo = NotificationRepository(db)
-    
-    # Get unread count
     count = await notification_repo.count_unread(
         recipient_type="Student",
         recipient_id=roll_no
     )
-    
     return UnreadCountResponse(
         unread_count=count
     )

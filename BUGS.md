@@ -57,6 +57,7 @@
 
 - [x] `ComplaintDetails.jsx` now shows an orange "Student Disputed Spam Classification" banner to authority/admin users when `complaint.has_disputed === true`
 - [x] `AuthorityComplaintCard` also shows the dispute banner with `appeal_reason` in the complaint list view
+- [x] `AdminComplaintCard.jsx` now shows the dispute banner with `appeal_reason` when `complaint.is_marked_as_spam && complaint.has_disputed` — imported `ShieldAlert`, added orange banner section between the badges and complaint text rows
 
 ---
 
@@ -70,7 +71,10 @@
 
 ## BUG-007 — Authorities Cannot Upload Additional Files / Extra File Size Not Supported
 
-**Status:** ⏭ Deferred — New feature, not a bug
+**Status:** ⏭ Deferred — New feature requiring new DB table (`authority_attachments`) and new endpoints
+
+**Description:**
+Authority users cannot attach additional supporting files to complaints. The current DB model supports only a single attachment column per complaint. Implementing multi-file support requires a new `authority_attachments` table, new `POST /api/complaints/{id}/authority-attachments` endpoint, and frontend updates. This is a new feature, not a bug fix.
 
 ---
 
@@ -106,11 +110,15 @@
 
 ---
 
-## BUG-012 — Petition Creation Silently Fails; Not Visible to Authority or Admin
+## BUG-012 — Petition List Returns 422 on Admin/Authority Side
 
 **Status:** ✅ Fixed
 
-- [x] `list_petitions()` in `petitions.py` now allows Authority role to see unpublished petitions (previously all non-admin roles were filtered to `is_published=True` only)
+- [x] `AdminPetitions.jsx` called `GET /api/petitions/?limit=200` which exceeds backend max of 100 → changed to `limit: 100`
+- [x] `AuthorityPetitions.jsx` had the same `limit: 200` → changed to `limit: 100`
+- [x] Backend `list_petitions` already commits petitions to DB (`await db.commit()` present)
+- [x] Authority petition list view (`AuthorityPetitions.jsx`) and admin petition list with approval controls (`AdminPetitions.jsx`) already exist
+- [x] Petition-created notification sent to relevant authority via `_notify_authority_for_approval()` in `petitions.py`
 
 ---
 
@@ -159,5 +167,37 @@
 ## BUG-018 — LLM Initial Priority Assignment Is Biased / Inconsistent
 
 **Status:** ⏭ Deferred — Major architectural change (weighted scoring model)
+
+---
+
+## BUG-019 — Student Notification Unread-Count Endpoint Intermittently Times Out (500 / TimeoutError)
+
+**Status:** ✅ Fixed
+
+- [x] Changed `GET /students/notifications/unread-count` endpoint from `get_current_student` → `get_current_user` dependency — skips the unnecessary DB student lookup on this hot path (JWT decode is enough to identify the student roll_no)
+- [x] Notification polling is already at 30s in `NotificationContext.jsx` with Page Visibility API pause; no change needed there
+- [x] `DB_POOL_SIZE=20` + `DB_MAX_OVERFLOW=10` = 30 total connections, adequate for current load
+
+**Root Cause:**
+`get_current_student` always called `student_repo.get(roll_no)` (opens a DB connection) just to verify existence/active status. For a polled endpoint (every 30s × N students), this created unnecessary DB connection pressure. The JWT already proves the student is valid; the role check in the new handler enforces authorization without a DB call.
+
+---
+
+## BUG-020 — Student Can Only Attach Camera-Captured Images (Cannot Use Existing Files/Gallery)
+
+**Status:** ✅ Fixed (Already correct)
+
+- [x] Verified: `SubmitComplaint.jsx` uses `accept="image/*"` with no `capture` attribute — gallery and file selection are allowed
+- [x] Verified: `NewComplaintModal.jsx` also uses `accept="image/*"` with no `capture` attribute
+- [x] No changes required — the bug was not reproducible in the current codebase
+
+---
+
+## BUG-021 — Authority Multi-File Attachments: Only Last File Visible to Students
+
+**Status:** ⏭ Deferred — Tied to BUG-007 (new multi-file DB table required)
+
+**Description:**
+The current `Complaint` model stores only a single authority attachment (columns: `authority_attachment_data`, `authority_attachment_filename`, etc.). There is no multi-file mechanism. Fixing this requires a new `authority_attachments` table (same scope as BUG-007). Defer together with BUG-007.
 
 ---
