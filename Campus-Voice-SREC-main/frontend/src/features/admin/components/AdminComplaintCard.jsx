@@ -221,12 +221,12 @@ export default function AdminComplaintCard({ complaint, token, authorities = [],
                     {showActions && (
                         <div className="bg-gray-50 rounded-xl border border-gray-100 p-2.5 space-y-2">
                             {onReassign && authorities.length > 0 && (
-                                <div className="flex items-center gap-2">
+                                <div className="space-y-1.5">
                                     <select
                                         value={selectedAuthority}
                                         onChange={e => setSelectedAuthority(e.target.value)}
                                         onClick={e => e.stopPropagation()}
-                                        className="flex-1 text-xs bg-white border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-srec-primary/30"
+                                        className="w-full text-xs bg-white border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-srec-primary/30"
                                     >
                                         <option value="">Select authority…</option>
                                         {authorities.map(a => (
@@ -236,9 +236,9 @@ export default function AdminComplaintCard({ complaint, token, authorities = [],
                                     <button
                                         disabled={!selectedAuthority || isReassigning}
                                         onClick={handleReassign}
-                                        className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-srec-primary text-white hover:bg-srec-primaryHover disabled:opacity-50 transition-colors shrink-0"
+                                        className="w-full flex items-center justify-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-srec-primary text-white hover:bg-srec-primaryHover disabled:opacity-50 transition-colors"
                                     >
-                                        <RefreshCw size={10} /> {isReassigning ? '…' : 'Reassign'}
+                                        <RefreshCw size={10} /> {isReassigning ? 'Reassigning…' : 'Reassign'}
                                     </button>
                                 </div>
                             )}

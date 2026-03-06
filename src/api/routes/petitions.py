@@ -370,7 +370,7 @@ async def create_petition(
         deadline=deadline,
         goal_reached_notified=False,
         milestones_reached=[],
-        is_published=False,  # Requires authority approval before visible
+        is_published=True,  # Immediately visible — no approval step
     )
     db.add(petition)
     await db.flush()
@@ -463,8 +463,6 @@ async def sign_petition(
     petition = result.scalar_one_or_none()
     if not petition:
         raise HTTPException(status_code=404, detail="Petition not found")
-    if not petition.is_published:
-        raise HTTPException(status_code=400, detail="This petition is pending authority approval and cannot be signed yet")
     if petition.status in ("Resolved", "Closed"):
         raise HTTPException(status_code=400, detail="Cannot sign a closed petition")
 
