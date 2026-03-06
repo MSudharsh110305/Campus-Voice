@@ -29,6 +29,177 @@ from src.config.constants import PRIORITY_SCORES
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Deterministic category override layer
+# Called AFTER LLM categorization to catch known LLM mistakes using keyword rules.
+# Pure Python — no LLM call, no DB call.
+# ---------------------------------------------------------------------------
+
+# Keywords that unconditionally force "Disciplinary Committee" regardless of LLM output
+# Keywords that ALWAYS trigger Disciplinary Committee (student-on-student misconduct only).
+# Disciplinary Committee is for students, not for complaints against authorities.
+# Complaints against wardens/HODs/staff go up the authority chain via bypass routing.
+_STUDENT_DISCIPLINARY_KEYWORDS = [
+    "ragging", "rag ", " rag,", "rags",
+    "bully", "bullying",
+    "assault",
+    "molest",
+    "rape",
+    "hate speech",
+    "discrimination",
+    "fight", "fighting",
+    "eve teasing",
+]
+
+# These are serious but context-dependent: they trigger Disciplinary ONLY when
+# NO hostel/department authority is mentioned as the subject. If the complaint is
+# about a warden/deputy/HOD doing this, it stays in the authority's category and
+# uses bypass routing to reach the next authority up the chain.
+_AUTHORITY_MISCONDUCT_KEYWORDS = [
+    "bribery", "bribe", "corrupt", "corruption", "extortion",
+    "demanding money", "demand money", "taking money",
+    "harass", "harassment",
+    "abuse", "abusing",
+    "threat", "threaten",
+]
+
+# Authority figures — if ANY of these appear as the subject of the complaint,
+# skip the authority-misconduct Disciplinary override and let bypass routing handle it.
+_HOSTEL_AUTHORITY_SUBJECT_KEYWORDS = [
+    "warden", "deputy warden", "senior deputy warden", "sdw",
+]
+_DEPT_AUTHORITY_SUBJECT_KEYWORDS = [
+    "hod", "head of department", "head of dept",
+    "professor", "faculty", "lecturer",
+    # "staff" excluded — too generic (appears in non-authority contexts)
+    # "coordinator" excluded — too generic
+]
+
+# Keywords that indicate physical infrastructure / hygiene — these complaints belong
+# to General (Admin Officer), never to Department (HOD).
+_INFRA_GENERAL_KEYWORDS = [
+    "bathroom", "toilet", "restroom", "washroom", "urinal", "lavatory",
+    "lights", "light bulb", "bulb", "tube light", "fluorescent",
+    "electricity", "power cut", "no power", "no electricity",
+    "water supply", "drinking water", "tap water", "water pipe", "plumbing",
+    "wifi", "wi-fi", "internet connection", "network connection",
+]
+
+# Non-hostel location phrases — if the complaint text mentions these it is almost
+# certainly NOT a hostel complaint even if the LLM thinks so.
+_NON_HOSTEL_LOCATION_KEYWORDS = [
+    "cse block", "ece block", "mech block", "it block", "eee block",
+    "eie block", "bio block", "aero block", "civil block", "raa block",
+    "mba block", "aids block",
+    "department block", "academic block", "main block",
+    "classroom", "lecture hall", "seminar hall", "lab block",
+    "canteen", "food court", "library", "reading room",
+]
+
+# Strong hostel location phrases — if any of these appear the complaint IS hostel
+_HOSTEL_LOCATION_KEYWORDS = [
+    "hostel", "hostel room", "hostel mess", "hostel block",
+    "hostel corridor", "hostel gate", "hostel bathroom",
+    "hostel water", "hostel electricity", "hostel wifi",
+    "mess food", "mess hall", "dorm", "dormitory", "boarding",
+    "hostel warden", "warden room",
+]
+
+
+def _override_category(text: str, llm_category: str, student_gender: str) -> str:
+    """
+    Deterministic post-processing layer applied after LLM categorization.
+
+    Catches known LLM mistakes using keyword rules without any LLM or DB calls.
+    Logs every override with the reason.
+
+    Args:
+        text: Original complaint text
+        llm_category: Category returned by the LLM (or fallback)
+        student_gender: Student's gender ("Male", "Female", "Other", or "")
+
+    Returns:
+        Final category string (may be the same as llm_category or an override)
+    """
+    text_lower = text.lower()
+
+    # ------------------------------------------------------------------ #
+    # OVERRIDE 1: Disciplinary Committee                                   #
+    # ONLY for student-on-student misconduct (ragging, assault, etc.).    #
+    # Complaints about authorities (warden/HOD misconduct) stay in their  #
+    # category and use authority bypass routing instead.                  #
+    # ------------------------------------------------------------------ #
+
+    # Step 1a: Always-Disciplinary keywords (student misconduct, no exceptions)
+    for kw in _STUDENT_DISCIPLINARY_KEYWORDS:
+        if kw in text_lower:
+            if llm_category != "Disciplinary Committee":
+                logger.warning(
+                    f"Category override: {llm_category} -> Disciplinary Committee "
+                    f"| reason: student-misconduct keyword '{kw}' | text: {text[:80]}"
+                )
+            return "Disciplinary Committee"
+
+    # Step 1b: Authority-misconduct keywords — only trigger Disciplinary if the
+    # complaint is NOT about a named authority (warden/HOD/faculty).
+    # If an authority is named as the subject, bypass routing handles it.
+    _is_about_hostel_authority = any(kw in text_lower for kw in _HOSTEL_AUTHORITY_SUBJECT_KEYWORDS)
+    _is_about_dept_authority = any(kw in text_lower for kw in _DEPT_AUTHORITY_SUBJECT_KEYWORDS)
+    _is_about_any_authority = _is_about_hostel_authority or _is_about_dept_authority
+
+    if not _is_about_any_authority:
+        for kw in _AUTHORITY_MISCONDUCT_KEYWORDS:
+            if kw in text_lower:
+                if llm_category != "Disciplinary Committee":
+                    logger.warning(
+                        f"Category override: {llm_category} -> Disciplinary Committee "
+                        f"| reason: misconduct keyword '{kw}' (no authority named) | text: {text[:80]}"
+                    )
+                return "Disciplinary Committee"
+    else:
+        # Log that we're skipping Disciplinary override because complaint is about an authority
+        for kw in _AUTHORITY_MISCONDUCT_KEYWORDS:
+            if kw in text_lower:
+                logger.info(
+                    f"Skipping Disciplinary override for '{kw}' — complaint is about an authority "
+                    f"(hostel_auth={_is_about_hostel_authority}, dept_auth={_is_about_dept_authority}) "
+                    f"| will use bypass routing | text: {text[:80]}"
+                )
+                break
+
+    # ------------------------------------------------------------------ #
+    # OVERRIDE 2: Department -> General                                    #
+    # If LLM says Department but text is about physical infra/hygiene.    #
+    # ------------------------------------------------------------------ #
+    if llm_category == "Department":
+        for kw in _INFRA_GENERAL_KEYWORDS:
+            if kw in text_lower:
+                logger.warning(
+                    f"Category override: Department -> General "
+                    f"| reason: infra/hygiene keyword '{kw}' | text: {text[:80]}"
+                )
+                return "General"
+
+    # ------------------------------------------------------------------ #
+    # OVERRIDE 3: Hostel -> General                                        #
+    # If LLM says hostel but text clearly places the issue OUTSIDE hostel. #
+    # Only override when text has a non-hostel location keyword AND no     #
+    # strong hostel location keyword is present.                           #
+    # ------------------------------------------------------------------ #
+    if llm_category in ("Men's Hostel", "Women's Hostel"):
+        has_hostel_location = any(kw in text_lower for kw in _HOSTEL_LOCATION_KEYWORDS)
+        if not has_hostel_location:
+            for kw in _NON_HOSTEL_LOCATION_KEYWORDS:
+                if kw in text_lower:
+                    logger.warning(
+                        f"Category override: {llm_category} -> General "
+                        f"| reason: non-hostel location keyword '{kw}' | text: {text[:80]}"
+                    )
+                    return "General"
+
+    return llm_category
+
+
 class ComplaintService:
     """Service for complaint operations"""
     
@@ -158,37 +329,43 @@ class ComplaintService:
                 # 2. Categorize and get priority (✅ NOW INCLUDES department detection)
                 categorization = await llm_service.categorize_complaint(original_text, context)
 
-                # Bug 2 fix: Do NOT force-correct hostel category based on student
-                # stay_type. The LLM prompt now categorises purely on complaint text.
-                # Only apply the academic override (keyword-based deterministic safety net).
+                # Apply deterministic overrides in order:
+                # 1. Hostel → Department if academic content detected (existing)
                 ai_category = categorization.get("category")
                 categorization = llm_service._apply_academic_override(original_text, categorization)
-                # BUG-014: also apply facility/hygiene override
+                # BUG-014: 2. Department → General if physical facility/hygiene
                 categorization = llm_service._apply_facility_general_override(original_text, categorization)
+                # 3. New post-processing override layer (catches bribery, infra, hostel misroute)
+                ai_category = categorization.get("category")
+                final_category = _override_category(
+                    original_text, ai_category, student.gender or ""
+                )
+                if final_category != ai_category:
+                    categorization["category"] = final_category
                 ai_category = categorization.get("category")
 
-                # Validate hostel category against student profile
+                # Validate hostel category against student profile (Rules H1, H4)
                 if ai_category in ("Men's Hostel", "Women's Hostel"):
-                    # Check stay type - Day scholars cannot submit hostel complaints
+                    # H1: Day scholars cannot submit hostel complaints at all
                     if student.stay_type == "Day Scholar":
                         raise ValueError("Day scholars cannot submit hostel complaints")
 
-                    # Auto-correct hostel category to match student gender.
-                    # LLM doesn't know the student's gender, so it may guess wrong.
-                    # Silently correct rather than rejecting valid hostel complaints.
-                    if ai_category == "Men's Hostel" and student.gender == "Female":
-                        logger.info(
-                            f"Auto-correcting hostel category: Men's Hostel → Women's Hostel for female student {student_roll_no}"
+                    # H4: Guard against cross-gender hostel submissions.
+                    # The LLM may not know the student's gender and could assign the
+                    # wrong hostel category.  Instead of silently correcting, we now
+                    # reject with HTTP 403 so the student is aware of the mismatch.
+                    # A ValueError raised here propagates to the route as HTTP 400
+                    # (existing handler); the route will then surface it correctly.
+                    # We use a dedicated sentinel prefix so the route can convert it
+                    # to 403 specifically.
+                    if ai_category == "Men's Hostel" and student.gender != "Male":
+                        raise ValueError(
+                            "HOSTEL_GENDER_MISMATCH: You cannot submit a complaint for the opposite hostel"
                         )
-                        categorization["category"] = "Women's Hostel"
-                        ai_category = "Women's Hostel"
-
-                    elif ai_category == "Women's Hostel" and student.gender == "Male":
-                        logger.info(
-                            f"Auto-correcting hostel category: Women's Hostel → Men's Hostel for male student {student_roll_no}"
+                    if ai_category == "Women's Hostel" and student.gender != "Female":
+                        raise ValueError(
+                            "HOSTEL_GENDER_MISMATCH: You cannot submit a complaint for the opposite hostel"
                         )
-                        categorization["category"] = "Men's Hostel"
-                        ai_category = "Men's Hostel"
 
                 # 3. Rephrase for professionalism.
                 # If rephrase_complaint returns None (gibberish/repeated words), flag as spam
@@ -290,8 +467,19 @@ class ComplaintService:
                 f"Cross-department complaint: student dept={student.department_id} → target dept={target_department_id}"
             )
 
-        # Calculate initial priority score
-        priority = categorization.get("priority", "Medium")
+        # Calculate initial priority via hybrid multi-signal system
+        from src.services.priority_service import calculate_initial_priority
+        _priority_result = await calculate_initial_priority(
+            text=original_text,
+            category_name=categorization.get("category", "General"),
+            groq_client=llm_service.groq_client,
+        )
+        priority = _priority_result["priority"]
+        logger.info(
+            f"Priority signals for {student_roll_no}: {_priority_result['signals']} "
+            f"| llm_adj={_priority_result['llm_adjustment']} ({_priority_result['llm_reason']}) "
+            f"| final={priority} (score={_priority_result['score']})"
+        )
         priority_score = PRIORITY_SCORES.get(priority, 50.0)
 
         # Status: Spam if flagged, otherwise Raised
@@ -328,6 +516,15 @@ class ComplaintService:
                 # Continue without image
                 image_bytes = None
         
+        # DC1: Disciplinary Committee complaints are ALWAYS Private.
+        # They must never appear in the public feed.
+        final_category_name = categorization.get("category", "General")
+        if final_category_name == "Disciplinary Committee":
+            visibility = "Private"
+            logger.info(
+                f"Forcing visibility=Private for Disciplinary Committee complaint from {student_roll_no}"
+            )
+
         # ✅ UPDATED: Create complaint with AI-determined category and target department
         # Spam complaints are saved with is_marked_as_spam=True, status="Spam"
         complaint = await self.complaint_repo.create(
@@ -342,6 +539,7 @@ class ComplaintService:
             is_marked_as_spam=is_spam_complaint,
             spam_reason=spam_complaint_reason if is_spam_complaint else None,
             complaint_department_id=target_department_id,
+            complainant_department_id=student.department_id,  # Rule D2: track submitter's dept
             is_cross_department=is_cross_department,
             is_anonymous=is_anonymous,
             # ✅ NEW: Binary image fields
@@ -492,26 +690,70 @@ class ComplaintService:
                                 target_department_id = _subj_dept_row[0]
                             break
 
-                # BUG-016: Detect complaints against hostel staff by keyword and apply bypass routing
+                # Authority bypass routing for hostel complaints:
+                # If a student complains ABOUT a specific hostel authority, that authority
+                # is skipped and the complaint goes directly to the next authority up the chain.
+                #
+                # Chain (Men's or Women's Hostel):
+                #   Warden (lvl 5) → Deputy Warden (lvl 10) → Senior Deputy Warden (lvl 15) → Admin (lvl 100)
+                #
+                # "complaint about warden"        → assign to Deputy Warden (min level: 10)
+                # "complaint about deputy warden" → assign to Senior Deputy Warden (min level: 15)
+                # "complaint about SDW"           → assign to Admin (min level: 100)
                 _text_lower = original_text.lower()
-                _hostel_staff_bypass_type = None
-                _hostel_staff_keywords = {
-                    "senior deputy warden": "Senior Deputy Warden",
-                    "deputy warden": "Men's Hostel Deputy Warden",  # generic — may be men's or women's
-                    "warden": "Men's Hostel Warden",               # generic — may be men's or women's
-                }
-                for kw, authority_type in _hostel_staff_keywords.items():
-                    if kw in _text_lower:
-                        _hostel_staff_bypass_type = authority_type
-                        break  # Use most-specific match (ordered from most to least specific)
+                _hostel_bypass_min_level = None  # if set, skip to this authority level or above
 
-                authority = await authority_service.route_complaint(
-                    self.db,
-                    category_id,
-                    target_department_id,
-                    categorization.get("is_against_authority", False) or (_hostel_staff_bypass_type is not None),
-                    complaint_about_authority_type=_hostel_staff_bypass_type
-                )
+                _hostel_chain = [
+                    ("senior deputy warden", 100),  # complained about SDW → Admin
+                    ("sdw",                  100),  # SDW abbreviation → Admin
+                    ("deputy warden",         15),  # complained about Deputy → SDW
+                    ("warden",                10),  # complained about Warden → Deputy Warden
+                ]
+                _category_name_for_routing = categorization.get("category", "")
+                if _category_name_for_routing in ("Men's Hostel", "Women's Hostel"):
+                    for kw, min_level in _hostel_chain:
+                        if kw in _text_lower:
+                            _hostel_bypass_min_level = min_level
+                            logger.info(
+                                f"Hostel authority bypass: '{kw}' in complaint → "
+                                f"assigning to authority with level >= {min_level}"
+                            )
+                            break
+
+                if _hostel_bypass_min_level is not None:
+                    # Direct DB query: find lowest-level active authority at or above the bypass level
+                    from src.repositories.authority_repo import AuthorityRepository as _AR
+                    from src.database.models import Authority as _Auth
+                    _ar = _AR(self.db)
+                    _bypass_result = await self.db.execute(
+                        select(_Auth)
+                        .where(
+                            _Auth.is_active == True,
+                            _Auth.authority_level >= _hostel_bypass_min_level,
+                        )
+                        .order_by(_Auth.authority_level.asc())
+                        .limit(1)
+                    )
+                    authority = _bypass_result.scalar_one_or_none()
+                    if authority:
+                        logger.info(
+                            f"Bypass assignment: {authority.name} (level={authority.authority_level})"
+                        )
+                    else:
+                        logger.warning(
+                            f"No authority found at level >= {_hostel_bypass_min_level}, falling back to normal routing"
+                        )
+                        authority = await authority_service.route_complaint(
+                            self.db, category_id, target_department_id,
+                            is_against_authority=False,
+                        )
+                else:
+                    authority = await authority_service.route_complaint(
+                        self.db,
+                        category_id,
+                        target_department_id,
+                        categorization.get("is_against_authority", False),
+                    )
 
                 if authority:
                     complaint.assigned_authority_id = authority.id

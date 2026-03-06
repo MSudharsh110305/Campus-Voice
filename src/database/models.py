@@ -205,6 +205,11 @@ class Complaint(Base):
     complaint_department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
     is_cross_department = Column(Boolean, default=False, nullable=False)
 
+    # Rule D2: Track the submitter's department so both target dept AND submitter's dept
+    # see the complaint when it is a cross-department filing.
+    # Nullable so existing rows are unaffected.
+    complainant_department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
+
     # ── v2: Anonymity ──────────────────────────────────────────────────────────
     # When True the submitter's name/roll_no is hidden from other students in the
     # public feed; authorities and admin can still see the full identity.

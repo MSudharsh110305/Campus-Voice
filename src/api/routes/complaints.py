@@ -134,6 +134,14 @@ async def create_complaint(
         error_message = str(e)
         logger.warning(f"Complaint rejected for {roll_no}: {error_message}")
 
+        # Rule H4: cross-gender hostel submission → 403 Forbidden
+        if error_message.startswith("HOSTEL_GENDER_MISMATCH:"):
+            human_message = error_message.split("HOSTEL_GENDER_MISMATCH:", 1)[1].strip()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=human_message
+            )
+
         is_missing_image = "image" in error_message.lower() and "required" in error_message.lower()
 
         if is_missing_image:
@@ -207,87 +215,77 @@ async def get_complaints(
         sort_by=sort_by or "hot",
     )
 
-    # Count using same visibility logic (✅ UPDATED: Only Public)
-    # Bug 4 fix: Exclude Spam from the count as well.
+    # Count using same visibility logic as get_public_feed (mirrors all visibility rules)
     from src.database.models import ComplaintCategory
+    cat_id_query = select(ComplaintCategory.id, ComplaintCategory.name)
+    cat_id_result = await db.execute(cat_id_query)
+    cat_name_to_id = {row[1]: row[0] for row in cat_id_result.all()}
+
+    mens_hostel_id = cat_name_to_id.get("Men's Hostel")
+    womens_hostel_id = cat_name_to_id.get("Women's Hostel")
+    general_id = cat_name_to_id.get("General")
+    disciplinary_id = cat_name_to_id.get("Disciplinary Committee")
+    department_cat_id = cat_name_to_id.get("Department")
+
     count_conditions = [
         Complaint.visibility == "Public",
         Complaint.status != "Closed",
         Complaint.status != "Spam",
         Complaint.is_marked_as_spam == False,
+        Complaint.merged_into_id == None,
     ]
 
-    # Get hostel category IDs for filtering
-    mens_hostel_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Men's Hostel")
-    womens_hostel_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Women's Hostel")
-    general_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "General")
-    disciplinary_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Disciplinary Committee")
+    # DC1: Always exclude Disciplinary Committee from public feed count
+    if disciplinary_id:
+        count_conditions.append(Complaint.category_id != disciplinary_id)
 
-    mens_hostel_result = await db.execute(mens_hostel_query)
-    womens_hostel_result = await db.execute(womens_hostel_query)
-    general_result = await db.execute(general_query)
-    disciplinary_result = await db.execute(disciplinary_query)
-
-    mens_hostel_id = mens_hostel_result.scalar()
-    womens_hostel_id = womens_hostel_result.scalar()
-    general_id = general_result.scalar()
-    disciplinary_id = disciplinary_result.scalar()
-
-    # Hide hostel complaints based on stay type and gender
+    # H1: Day Scholars never see hostel complaints
     if student.stay_type == "Day Scholar":
         if mens_hostel_id:
             count_conditions.append(Complaint.category_id != mens_hostel_id)
         if womens_hostel_id:
             count_conditions.append(Complaint.category_id != womens_hostel_id)
     else:
-        # Hostel students: filter by gender
+        # H2: Hostel students see only their gender's hostel
         if student.gender == "Male" and womens_hostel_id:
             count_conditions.append(Complaint.category_id != womens_hostel_id)
         elif student.gender == "Female" and mens_hostel_id:
             count_conditions.append(Complaint.category_id != mens_hostel_id)
 
-    # Inter-department filtering (mirrors get_public_feed logic):
-    # 1. Same department, 2. Cross-dept (both sides), 3. Self, 4. General, 5. Disciplinary, 6. Hostel
-    from src.database.models import Student as StudentModel
-    inter_dept_conditions = [
-        Complaint.complaint_department_id == student.department_id,
-    ]
+    visible_conditions = []
 
-    # Cross-dept: show to submitter's department too
-    cross_dept_sq = (
-        select(Complaint.id)
-        .join(StudentModel, Complaint.student_roll_no == StudentModel.roll_no)
-        .where(
-            and_(
-                Complaint.is_cross_department == True,
-                StudentModel.department_id == student.department_id
-            )
-        )
-        .scalar_subquery()
-    )
-    inter_dept_conditions.append(Complaint.id.in_(cross_dept_sq))
-
-    # Self-visibility
-    inter_dept_conditions.append(Complaint.student_roll_no == student.roll_no)
-
+    # G1: General visible to all
     if general_id:
-        inter_dept_conditions.append(Complaint.category_id == general_id)
-    if disciplinary_id:
-        inter_dept_conditions.append(Complaint.category_id == disciplinary_id)
+        visible_conditions.append(Complaint.category_id == general_id)
 
-    # Hostel students can see hostel complaints regardless of department
+    # H3: Hostel visible to all same-gender hostel students
     if student.stay_type != "Day Scholar":
         if student.gender == "Male" and mens_hostel_id:
-            inter_dept_conditions.append(Complaint.category_id == mens_hostel_id)
+            visible_conditions.append(Complaint.category_id == mens_hostel_id)
         elif student.gender == "Female" and womens_hostel_id:
-            inter_dept_conditions.append(Complaint.category_id == womens_hostel_id)
+            visible_conditions.append(Complaint.category_id == womens_hostel_id)
         elif student.gender not in ("Male", "Female"):
-            if mens_hostel_id:
-                inter_dept_conditions.append(Complaint.category_id == mens_hostel_id)
-            if womens_hostel_id:
-                inter_dept_conditions.append(Complaint.category_id == womens_hostel_id)
+            hostel_ids = [i for i in [mens_hostel_id, womens_hostel_id] if i is not None]
+            if hostel_ids:
+                visible_conditions.append(Complaint.category_id.in_(hostel_ids))
 
-    count_conditions.append(or_(*inter_dept_conditions))
+    # D1/D2/D4: Department complaints — target dept OR submitter's dept
+    if department_cat_id:
+        dept_visible = or_(
+            Complaint.complaint_department_id == student.department_id,
+            Complaint.complainant_department_id == student.department_id,
+        )
+        visible_conditions.append(
+            and_(Complaint.category_id == department_cat_id, dept_visible)
+        )
+
+    # Self-visibility
+    visible_conditions.append(Complaint.student_roll_no == student.roll_no)
+
+    if visible_conditions:
+        count_conditions.append(or_(*visible_conditions))
+    else:
+        count_conditions.append(False)
 
     # Apply category filter to count as well
     if category_id is not None:
@@ -1345,7 +1343,7 @@ async def rate_complaint(
     )
 
 
-# ==================== IMPROVED DUPLICATE DETECTION ====================
+# ==================== HYBRID DUPLICATE DETECTION ====================
 
 # Common stop words to exclude from token matching
 _STOP_WORDS = {
@@ -1356,26 +1354,146 @@ _STOP_WORDS = {
     'we', 'it', 'its', 'this', 'that', 'very', 'so', 'and', 'or', 'but',
     'there', 'their', 'they', 'what', 'when', 'where', 'which', 'who',
     'how', 'all', 'also', 'just', 'get', 'got', 'still', 'please',
+    'since', 'been', 'even', 'too', 'now', 'days', 'day', 'week',
+    'month', 'months', 'time', 'has', 'always', 'never', 'need',
+    'needs', 'want', 'due', 'said', 'told', 'every', 'each',
 }
 
-# Expand common abbreviations and synonyms before comparison
+# ── Synonym / normalisation table ─────────────────────────────────────────────
+# Rules are applied in order, so put multi-word patterns BEFORE single-word ones.
 _SYNONYMS = [
-    (r'\bac\b', 'air conditioner'),
-    (r'\ba\.c\b', 'air conditioner'),
-    (r'\bwifi\b', 'wireless internet'),
-    (r'\bwi-fi\b', 'wireless internet'),
-    (r'\bwashroom\b', 'toilet bathroom'),
-    (r'\bwc\b', 'toilet bathroom'),
-    (r'\brest room\b', 'toilet bathroom'),
-    (r'\bcanteen\b', 'cafeteria food'),
-    (r'\bmess\b', 'cafeteria food'),
-    (r'\blight\b', 'electricity power'),
-    (r'\bpower\b', 'electricity power'),
-    (r'\belectricity\b', 'electricity power'),
-    (r'\bprofessor\b', 'faculty teacher'),
-    (r'\bprof\b', 'faculty teacher'),
-    (r'\bfaculty\b', 'faculty teacher'),
-    (r'\blab\b', 'laboratory'),
+    # ── Devices & technology ──────────────────────────────────────────────────
+    (r'\ba\.c\b',               'air conditioner'),
+    (r'\bac\b',                 'air conditioner'),
+    (r'\bwi-fi\b',              'wireless internet'),
+    (r'\bwifi\b',               'wireless internet'),
+    (r'\bbroadband\b',          'internet'),
+    (r'\bnet\b',                'internet'),          # "net not working" → internet
+    (r'\bnetwork\b',            'internet'),
+    (r'\bcctv\b',               'camera security'),
+    (r'\btube light\b',         'bulb electricity'),
+    (r'\btubelight\b',          'bulb electricity'),
+    (r'\bswitchboard\b',        'socket switch'),
+    (r'\bgeyser\b',             'hot water heater'),
+    (r'\binverter\b',           'power backup electricity'),
+    (r'\bgenerator\b',          'power backup electricity'),
+    (r'\bups\b',                'power backup electricity'),
+    (r'\bro\b',                 'water purifier'),
+    (r'\bwater purifier\b',     'water purifier'),
+    (r'\bwater cooler\b',       'water cooler'),
+    (r'\bpurifier\b',           'water purifier'),
+
+    # ── Restroom / sanitation ─────────────────────────────────────────────────
+    (r'\brest room\b',          'toilet bathroom'),
+    (r'\brestroom\b',           'toilet bathroom'),
+    (r'\bwashroom\b',           'toilet bathroom'),
+    (r'\bwc\b',                 'toilet bathroom'),
+    (r'\bloo\b',                'toilet bathroom'),
+    (r'\blavatory\b',           'toilet bathroom'),
+    (r'\blatrine\b',            'toilet bathroom'),
+    (r'\btoilets\b',            'toilet bathroom'),
+    (r'\bbathrooms\b',          'toilet bathroom'),
+    (r'\bcommode\b',            'toilet bathroom'),
+
+    # ── Food & dining ─────────────────────────────────────────────────────────
+    (r'\bcanteen\b',            'cafeteria'),
+    (r'\bmess\b',               'cafeteria'),
+    (r'\btiffin\b',             'meal food'),
+    (r'\bsnacks\b',             'snack food'),
+    (r'\bvending machine\b',    'snack food machine'),
+
+    # ── Electricity / power ───────────────────────────────────────────────────
+    (r'\belectricity\b',        'electricity power'),
+    (r'\belectrcity\b',         'electricity power'),  # transposed c/i typo
+    (r'\bpower\b',              'electricity power'),
+    (r'\blight\b',              'electricity power'),
+    (r'\bblackout\b',           'electricity power outage'),
+    (r'\bpower cut\b',          'electricity power outage'),
+    (r'\boutage\b',             'electricity power outage'),
+
+    # ── Faculty / staff (Indian college) ─────────────────────────────────────
+    (r'\bprofessor\b',          'faculty teacher'),
+    (r'\bprof\b',               'faculty teacher'),
+    (r'\bfaculty\b',            'faculty teacher'),
+    (r'\blecturer\b',           'faculty teacher'),
+    (r'\bsir\b',                'faculty teacher'),
+    (r'\bmadam\b',              'faculty teacher'),
+    (r'\bmaam\b',               'faculty teacher'),
+    (r'\bmam\b',                'faculty teacher'),
+    (r'\bhod\b',                'head department'),
+    (r'\bvice principal\b',     'admin authority'),
+    (r'\bprincipal\b',          'admin authority'),
+    (r'\bwarden\b',             'hostel authority'),
+
+    # ── Placement / career ────────────────────────────────────────────────────
+    (r'\btnp\b',                'placement'),
+    (r'\btpo\b',                'placement officer'),
+    (r'\bcampus drive\b',       'placement'),
+    (r'\boff campus\b',         'placement'),
+
+    # ── Location short forms ──────────────────────────────────────────────────
+    (r'\bdorm\b',               'hostel'),
+    (r'\bpg\b',                 'hostel'),
+    (r'\bclass room\b',         'classroom'),
+    (r'\blecture hall\b',       'classroom hall'),
+    (r'\blab\b',                'laboratory'),
+    (r'\blabs\b',               'laboratory'),
+    (r'\bblocks\b',             'block'),
+
+    # ── Academic ──────────────────────────────────────────────────────────────
+    (r'\blectures\b',           'class lecture'),
+    (r'\blecture\b',            'class lecture'),
+    (r'\bclasses\b',            'class'),
+    (r'\bexams\b',              'exam'),
+    (r'\binternal exam\b',      'exam internal'),
+    (r'\binternal\b',           'exam internal'),
+    (r'\bclass test\b',         'exam test'),
+    (r'\bassignments\b',        'assignment'),
+    (r'\bbunking\b',            'absent class'),
+    (r'\babsent\b',             'not attending'),
+
+    # ── Word-form normalisation ───────────────────────────────────────────────
+    (r'\bcleanliness\b',        'clean'),
+    (r'\bcleaned\b',            'clean'),
+    (r'\bcleaning\b',           'clean'),
+    (r'\bunclean\b',            'dirty'),
+    (r'\bfilthy\b',             'dirty'),
+    (r'\bunhygienic\b',         'dirty hygiene'),
+    (r'\bunhygenic\b',          'dirty hygiene'),   # missing 'i' typo
+    (r'\bstinking\b',           'smell stink'),
+    (r'\bsmelling\b',           'smell'),
+    (r'\bsmells\b',             'smell'),
+    (r'\bfoul\b',               'smell dirty'),
+    (r'\bmaintenance\b',        'maintain'),
+    (r'\bmaintained\b',         'maintain'),
+    (r'\brepairing\b',          'repair fix'),
+    (r'\brepaired\b',           'repair fix'),
+    (r'\brepair\b',             'fix'),
+    (r'\bfixed\b',              'fix'),
+    (r'\bfixing\b',             'fix'),
+    (r'\bnot working\b',        'break'),
+    (r'\bworking\b',            'work'),
+    (r'\bworks\b',              'work'),
+    (r'\bbroken\b',             'break'),
+    (r'\bbreaking\b',           'break'),
+    (r'\bdamaged\b',            'damage'),
+    (r'\bdamaging\b',           'damage'),
+    (r'\bleaking\b',            'leak'),
+    (r'\bleaky\b',              'leak'),
+    (r'\bflooded\b',            'flood water'),
+    (r'\bsupplied\b',           'supply'),
+    (r'\bteaching\b',           'teach'),
+    (r'\bdisturbing\b',         'disturb'),
+    (r'\bharrassing\b',         'harass'),     # common misspelling
+    (r'\bharassing\b',          'harass'),
+    (r'\bbullying\b',           'bully'),
+    (r'\bragging\b',            'ragging'),    # dropped first 'g'
+    (r'\battending\b',          'attend'),
+    (r'\bthrown\b',             'throw garbage'),
+    (r'\blittering\b',          'garbage dirty'),
+    (r'\boverflowing\b',        'overflow'),
+    (r'\bblocked\b',            'block'),
+    (r'\bclogged\b',            'block drain'),
 ]
 
 
@@ -1394,24 +1512,259 @@ def _word_tokens(text: str) -> set:
     return {w for w in _preprocess(text).split() if len(w) > 2 and w not in _STOP_WORDS}
 
 
-def _char_ngrams(text: str, n: int = 4) -> set:
-    """Character n-grams on condensed text — catches 'AC'↔'air conditioner' via bigrams."""
+def _char_ngrams(text: str, n: int = 3) -> set:
+    """
+    Character n-grams on condensed text.
+    n=3 (trigrams) chosen over 4-grams: better typo coverage since a 1-char
+    insertion/deletion only destroys 3 adjacent trigrams vs 4 quadgrams,
+    leaving more shared grams to drive the similarity score.
+    """
     normalized = "".join(_preprocess(text).split())
     return {normalized[i:i+n] for i in range(len(normalized) - n + 1)} if len(normalized) >= n else set()
 
 
-def _jaccard(a: str, b: str) -> float:
+# ── Topic clusters ────────────────────────────────────────────────────────────
+# Each cluster maps a semantic topic to its distinctive keywords.
+# Two complaints in DIFFERENT clusters cannot be duplicates even if they
+# share location words like "food court", "hostel block", "canteen", etc.
+_COMPLAINT_TOPICS: dict[str, set[str]] = {
+    "hygiene_sanitation": {
+        "dirty", "clean", "hygiene", "sanitation", "garbage", "waste",
+        "smell", "stink", "filthy", "sewage", "drain", "trash",
+        "cockroach", "pest", "rat", "mice", "insect", "mold", "mould",
+        "toilet", "bathroom", "latrine", "commode", "litter",
+        "sweep", "swept", "mop", "mopped", "scrub",
+    },
+    "food_quality": {
+        # "food" and "cafeteria" intentionally excluded — both appear as
+        # location tokens ("food court", canteen→"cafeteria meal") and cause
+        # false positives with hygiene complaints about the same venue.
+        "meal", "menu", "taste", "tasty", "tasteless",
+        "cook", "cooked", "serve", "serving", "veg", "nonveg",
+        "breakfast", "lunch", "dinner", "rice", "roti", "curry",
+        "stale", "expired", "quantity", "portion", "snack",
+        "edible", "variety", "dish", "item", "tiffin", "sambar",
+        "chapati", "quality",
+    },
+    "infrastructure": {
+        "break", "damage", "fix", "leak", "crack",
+        "door", "window", "roof", "wall", "ceiling",
+        "table", "chair", "bench", "furniture", "paint",
+        "peeling", "collapse", "maintain", "repair", "crumble",
+    },
+    "internet_connectivity": {
+        "internet", "wireless", "connectivity",
+        "connection", "bandwidth", "speed", "slow", "disconnect",
+        "signal", "router", "lan", "hotspot",
+    },
+    "electricity_hvac": {
+        "electricity", "fan", "cooling", "heating",
+        "voltage", "socket", "switch", "bulb", "tube",
+        "wiring", "circuit", "tripped", "outage",
+        "conditioner",  # 'ac' → 'air conditioner' → token 'conditioner'
+    },
+    "water_supply": {
+        "water", "supply", "shortage", "drinking", "tap", "pipe",
+        "pressure", "borewell", "tank", "overflow", "muddy", "purifier",
+        "cooler", "flood",
+    },
+    "academic_faculty": {
+        "faculty", "teacher", "class", "lecture",
+        "attendance", "marks", "grade", "exam", "assignment",
+        "syllabus", "course", "subject", "teach",
+        "notes", "material", "practical", "curriculum",
+        "attend", "absent", "internal", "test",
+    },
+    "discipline_harassment": {
+        "ragging", "harassment", "harass", "bully", "threat", "abuse",
+        "violence", "misbehave", "misconduct", "tease", "intimidate",
+        "inappropriate", "verbal", "physical", "eve",
+    },
+    "placement_career": {
+        "placement", "internship", "job", "company", "recruit",
+        "interview", "offer", "career", "opportunity",
+        "resume", "training", "drive",
+    },
+    "transport": {
+        "bus", "transport", "vehicle", "auto", "cab", "route", "driver",
+        "timing", "schedule", "commute", "fuel", "breakdown",
+    },
+    "security": {
+        "security", "guard", "camera", "theft", "stolen",
+        "lock", "entry", "access", "badge", "safe",
+    },
+    "library": {
+        "book", "library", "journal", "reading", "reference",
+        "return", "resource", "catalog",
+    },
+    "financial": {
+        "scholarship", "stipend", "fee", "refund", "dues",
+        "payment", "challan", "fine", "penalty",
+    },
+    "hostel_admin": {
+        # "night" removed — too ambiguous, fires on "every night" in unrelated complaints
+        "curfew", "permission", "outing", "leave",
+        "visitor", "warden", "authority", "rule", "regulation",
+    },
+}
+
+# Location / venue words that appear in many complaint types.
+# Complaints sharing ONLY these words should not be penalised less by cluster logic —
+# that is already handled because location words don't belong to topic clusters.
+_LOCATION_WORDS = {
+    "hostel", "block", "floor", "building", "classroom", "laboratory",
+    "department", "college", "campus", "ground", "field", "corridor",
+    "hall", "gate", "parking", "workshop", "gym", "quarter",
+    "court",  # as in 'food court' — location, not topic
+}
+
+
+def _get_topic_clusters(text: str) -> frozenset:
+    """Return the set of topic cluster names matched in the text."""
+    tokens = set(_preprocess(text).split())
+    matched = set()
+    for cluster_name, keywords in _COMPLAINT_TOPICS.items():
+        if tokens & keywords:
+            matched.add(cluster_name)
+    return frozenset(matched)
+
+
+def _cluster_weight(ca: frozenset, cb: frozenset) -> float:
     """
-    Combined similarity: 60% word-level Jaccard + 40% char-4gram Jaccard.
-    Handles synonyms, abbreviations, and partial word matches better than plain word sets.
+    Multiplier that boosts same-topic pairs and penalises different-topic pairs.
+
+    - No cluster detected in either text → 1.0  (neutral, can't tell)
+    - Clusters overlap (same topic)         → 1.3  (boost)
+    - Clusters are completely disjoint      → 0.30 (heavy penalty)
+    """
+    if not ca or not cb:
+        return 1.0
+    if ca & cb:
+        return 1.3
+    return 0.30
+
+
+def _topic_tokens(text: str) -> set:
+    """Word tokens after removing stop words AND location words."""
+    return _word_tokens(text) - _LOCATION_WORDS
+
+
+def _bigram_jaccard(tokens_a: set, tokens_b: set) -> float:
+    """Jaccard over all token-pair combinations — captures (air, conditioner) regardless
+    of alphabetical position of intervening tokens."""
+    from itertools import combinations
+    if len(tokens_a) < 2 or len(tokens_b) < 2:
+        return 0.0
+    ba = set(combinations(sorted(tokens_a), 2))
+    bb = set(combinations(sorted(tokens_b), 2))
+    return len(ba & bb) / len(ba | bb) if (ba | bb) else 0.0
+
+
+def _levenshtein(s1: str, s2: str) -> int:
+    """
+    Space-optimised Levenshtein edit distance.
+    Early-exits when the length gap alone exceeds the useful threshold (3),
+    keeping the average cost negligible for short complaint tokens.
+    """
+    if s1 == s2:
+        return 0
+    m, n = len(s1), len(s2)
+    if abs(m - n) > 3:          # can't be within threshold — skip
+        return abs(m - n)
+    dp = list(range(n + 1))
+    for i in range(1, m + 1):
+        prev, dp[0] = dp[0], i
+        for j in range(1, n + 1):
+            temp = dp[j]
+            dp[j] = prev if s1[i - 1] == s2[j - 1] else 1 + min(prev, dp[j], dp[j - 1])
+            prev = temp
+    return dp[n]
+
+
+def _fuzzy_token_score(tokens_a: set, tokens_b: set) -> float:
+    """
+    Fuzzy token match ratio using Levenshtein distance.
+
+    For each token of length >= 4 in set A, check if ANY token in B is within
+    edit distance:  1 for tokens of length 4-6,  2 for length 7+.
+    Score = symmetric average of (matched_in_A / |A|) and (matched_in_B / |B|).
+
+    Handles typos like:  maintanence↔maintenance,  unhygenic↔unhygienic,
+                         recieve↔receive,  cleanliness↔cleanlyness.
+    Ignores short tokens (< 4 chars) to avoid false matches like fan↔can.
+    """
+    eligible_a = [t for t in tokens_a if len(t) >= 4]
+    eligible_b = [t for t in tokens_b if len(t) >= 4]
+    if not eligible_a or not eligible_b:
+        return 0.0
+
+    def _count_matched(src, tgt):
+        matched = 0
+        for t in src:
+            thresh = 1 if len(t) <= 6 else 2
+            for u in tgt:
+                if abs(len(t) - len(u)) > thresh:
+                    continue
+                if _levenshtein(t, u) <= thresh:
+                    matched += 1
+                    break
+        return matched
+
+    score_a = _count_matched(eligible_a, eligible_b) / len(eligible_a)
+    score_b = _count_matched(eligible_b, eligible_a) / len(eligible_b)
+    return (score_a + score_b) / 2
+
+
+def _hybrid_similarity(a: str, b: str) -> float:
+    """
+    Five-signal hybrid similarity with cluster-weight gating.
+
+    Signals
+    -------
+    1. Word Jaccard       (0.30) — exact token overlap after synonym expansion
+    2. Topic Jaccard      (0.20) — overlap on topic-only tokens (location words removed)
+    3. Bigram Jaccard     (0.10) — co-occurrence pairs; catches "air conditioner" even
+                                   when split by alphabetically-between tokens
+    4. Char-4gram Jaccard (0.15) — sub-word overlap; handles abbreviations & partials
+    5. Fuzzy token score  (0.25) — Levenshtein matching; handles typos like
+                                   maintanence, unhygenic, recieve
+
+    Cluster gate
+    ------------
+    Complaints mapped to DIFFERENT semantic clusters (hygiene vs food_quality)
+    receive a 0.30× multiplier, collapsing the score well below any threshold
+    even when they share location words like "food court" or "hostel block".
+    Same-cluster pairs receive a 1.30× boost.
     """
     wa, wb = _word_tokens(a), _word_tokens(b)
-    ca, cb = _char_ngrams(a), _char_ngrams(b)
-
     word_score = len(wa & wb) / len(wa | wb) if (wa | wb) else 0.0
+
+    ta, tb = _topic_tokens(a), _topic_tokens(b)
+    if ta and tb:
+        topic_score = len(ta & tb) / len(ta | tb)
+        bigram_score = _bigram_jaccard(ta, tb)
+        fuzzy_score = _fuzzy_token_score(ta, tb)
+    else:
+        topic_score = word_score
+        bigram_score = 0.0
+        fuzzy_score = _fuzzy_token_score(wa, wb)
+
+    ca, cb = _char_ngrams(a), _char_ngrams(b)
     char_score = len(ca & cb) / len(ca | cb) if (ca | cb) else 0.0
 
-    return 0.6 * word_score + 0.4 * char_score
+    raw = (
+        0.30 * word_score
+        + 0.20 * topic_score
+        + 0.10 * bigram_score
+        + 0.15 * char_score
+        + 0.25 * fuzzy_score
+    )
+
+    clusters_a = _get_topic_clusters(a)
+    clusters_b = _get_topic_clusters(b)
+    weight = _cluster_weight(clusters_a, clusters_b)
+
+    return min(1.0, raw * weight)
 
 
 @router.post(
@@ -1455,15 +1808,15 @@ async def check_duplicate(
     result = await db.execute(query)
     candidates = result.scalars().all()
 
-    THRESHOLD = 0.10          # Lowered: catch more potential duplicates
-    LIKELY_DUP_THRESHOLD = 0.18  # Lowered: flag as likely dup sooner
+    THRESHOLD = 0.12          # Minimum score to surface as a candidate
+    LIKELY_DUP_THRESHOLD = 0.25  # Score above which we warn the student
     query_text = (body.text or "").strip()
 
     # Compute improved similarity against each candidate
     scored = []
     for c in candidates:
         text = c.rephrased_text or c.original_text or ""
-        score = _jaccard(query_text, text)
+        score = _hybrid_similarity(query_text, text)
         if score >= THRESHOLD:
             scored.append((score, c))
 
@@ -1498,7 +1851,7 @@ async def check_duplicate(
 # ==================== LLM AUTO-MERGE FOR DUPLICATE CLUSTERS ====================
 
 MERGE_THRESHOLD_COUNT = 10     # Minimum duplicates to trigger merge
-MERGE_SIMILARITY_MIN = 0.20   # Minimum Jaccard similarity to count as cluster member
+MERGE_SIMILARITY_MIN = 0.22   # Minimum hybrid similarity to count as cluster member
 
 
 async def _check_and_merge_duplicates(db: AsyncSession, new_complaint):
@@ -1544,7 +1897,7 @@ async def _check_and_merge_duplicates(db: AsyncSession, new_complaint):
         cluster = [(new_complaint, 1.0)]  # Include the new complaint itself
         for c in candidates:
             text = c.rephrased_text or c.original_text or ""
-            score = _jaccard(new_text, text)
+            score = _hybrid_similarity(new_text, text)
             if score >= MERGE_SIMILARITY_MIN:
                 cluster.append((c, score))
 

@@ -38,6 +38,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
         is_marked_as_spam: bool = False,
         spam_reason: Optional[str] = None,
         complaint_department_id: Optional[int] = None,
+        complainant_department_id: Optional[int] = None,
         is_cross_department: bool = False,
         is_anonymous: bool = False,
         # ✅ NEW: Image binary parameters
@@ -92,6 +93,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
             is_marked_as_spam=is_marked_as_spam,
             spam_reason=spam_reason,
             complaint_department_id=complaint_department_id,
+            complainant_department_id=complainant_department_id,
             is_cross_department=is_cross_department,
             is_anonymous=is_anonymous,
             submitted_at=current_time,
@@ -324,38 +326,46 @@ class ComplaintRepository(BaseRepository[Complaint]):
         """
         Get public feed filtered by visibility rules.
 
+        Visibility rules enforced:
+          H1 — Day Scholars never see hostel complaints
+          H2 — Male hostel students see only Men's Hostel; Female see only Women's Hostel
+          H3 — Hostel complaints are cross-department (all same-gender hostel students see them)
+          D1 — Same-department students see Department complaints
+          D2 — Cross-dept: both target dept AND submitter's dept see the complaint
+          D3 — Other departments do NOT see department complaints
+          D4 — Day Scholars and hostel students from same dept both see dept complaints
+          G1 — All students see General complaints (unless Private)
+          DC1 — Disciplinary Committee complaints NEVER appear in public feed
+
         Args:
             student_stay_type: Student's stay type (Hostel/Day Scholar)
             student_department_id: Student's department ID
             student_gender: Student's gender (Male/Female/Other) for hostel filtering
+            student_roll_no: Student's roll number for self-visibility
             skip: Number to skip
             limit: Maximum results
+            category_id: Optional category filter
+            sort_by: Sort order (hot/new/top)
 
         Returns:
             List of complaints
         """
-        from src.database.models import Student
+        # Resolve category IDs once
+        cat_id_query = select(ComplaintCategory.id, ComplaintCategory.name)
+        cat_id_result = await self.session.execute(cat_id_query)
+        cat_name_to_id: dict = {row[1]: row[0] for row in cat_id_result.all()}
 
-        # Get category IDs for hostel categories
-        mens_hostel_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Men's Hostel")
-        womens_hostel_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Women's Hostel")
-        mens_hostel_result = await self.session.execute(mens_hostel_query)
-        womens_hostel_result = await self.session.execute(womens_hostel_query)
-        mens_hostel_id = mens_hostel_result.scalar()
-        womens_hostel_id = womens_hostel_result.scalar()
+        mens_hostel_id = cat_name_to_id.get("Men's Hostel")
+        womens_hostel_id = cat_name_to_id.get("Women's Hostel")
+        general_id = cat_name_to_id.get("General")
+        disciplinary_id = cat_name_to_id.get("Disciplinary Committee")
+        department_id = cat_name_to_id.get("Department")
 
-        # Get General and Disciplinary Committee category IDs
-        general_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "General")
-        disciplinary_query = select(ComplaintCategory.id).where(ComplaintCategory.name == "Disciplinary Committee")
-        general_result = await self.session.execute(general_query)
-        disciplinary_result = await self.session.execute(disciplinary_query)
-        general_id = general_result.scalar()
-        disciplinary_id = disciplinary_result.scalar()
-
-        # Bug 4 fix: Exclude Spam complaints from the public feed in addition to Closed.
-        # Spam complaints (flagged by authority or auto-detected) must never be visible
-        # in any public or department feed.
-        # Also exclude merged-away complaints (they point to a canonical via merged_into_id).
+        # Base conditions applied to EVERY complaint in the feed:
+        # - Must be Public visibility (Private = only submitter sees it)
+        # - Must not be Closed or Spam
+        # - DC1: Disciplinary Committee complaints NEVER appear in public feed
+        # - Hide merged-away duplicates (they have a canonical complaint)
         conditions = [
             Complaint.visibility == "Public",
             Complaint.status != "Closed",
@@ -364,78 +374,70 @@ class ComplaintRepository(BaseRepository[Complaint]):
             Complaint.merged_into_id == None,  # Hide merged-away duplicates
         ]
 
-        # Collect hostel category IDs
-        hostel_category_ids = [cid for cid in [mens_hostel_id, womens_hostel_id] if cid is not None]
+        # DC1: Always exclude Disciplinary Committee from public feed
+        if disciplinary_id:
+            conditions.append(Complaint.category_id != disciplinary_id)
 
+        # H1: Day Scholars never see hostel complaints (either gender)
         if student_stay_type == "Day Scholar":
-            # Exclude hostel complaints by category_id only.
-            # A hostel student's Department/General complaint is still visible to day scholars.
             if mens_hostel_id:
                 conditions.append(Complaint.category_id != mens_hostel_id)
             if womens_hostel_id:
                 conditions.append(Complaint.category_id != womens_hostel_id)
         else:
-            # Hostel students: Filter by gender
-            # Men should not see women's hostel complaints
-            # Women should not see men's hostel complaints
+            # H2: Hostel students see only their gender's hostel complaints
             if student_gender == "Male" and womens_hostel_id:
                 conditions.append(Complaint.category_id != womens_hostel_id)
             elif student_gender == "Female" and mens_hostel_id:
                 conditions.append(Complaint.category_id != mens_hostel_id)
-            # For "Other" gender, show both hostel categories
+            # "Other" gender hostel students: show both hostel categories (no extra exclusion)
 
-        # Visibility rules for department filtering:
-        # 1. Own department: complaint_department_id matches viewer's dept
-        # 2. Cross-dept: submitter's dept matches viewer's dept (both sides see it)
-        # 3. Self-visibility: submitter always sees their own public complaint
-        # 4. General: visible to all
-        # 5. Disciplinary: visible to all
-        # 6. Hostel: visible to same-gender hostel students (handled below)
-        inter_dept_conditions = [
-            Complaint.complaint_department_id == student_department_id,
-        ]
+        # Now build per-category OR conditions to determine which non-excluded complaints
+        # this student is allowed to see.  Each branch handles one category type.
+        visible_conditions = []
 
-        # Cross-department visibility: a complaint about dept B filed by a dept A
-        # student should be visible to BOTH dept A (submitter's dept) AND dept B
-        # (target dept). The target-dept side is handled by the condition above.
-        # This subquery handles the submitter's dept side.
-        cross_dept_submitter_sq = (
-            select(Complaint.id)
-            .join(Student, Complaint.student_roll_no == Student.roll_no)
-            .where(
-                and_(
-                    Complaint.is_cross_department == True,
-                    Student.department_id == student_department_id
-                )
-            )
-            .scalar_subquery()
-        )
-        inter_dept_conditions.append(Complaint.id.in_(cross_dept_submitter_sq))
-
-        # Self-visibility: a student always sees their own public complaints
-        # regardless of which department the complaint targets.
-        if student_roll_no:
-            inter_dept_conditions.append(Complaint.student_roll_no == student_roll_no)
-
+        # G1: General complaints visible to all students (already excluded Private via base conditions)
         if general_id:
-            inter_dept_conditions.append(Complaint.category_id == general_id)
-        if disciplinary_id:
-            inter_dept_conditions.append(Complaint.category_id == disciplinary_id)
+            visible_conditions.append(Complaint.category_id == general_id)
 
-        # ✅ BUG 1 FIX: Hostel complaints are visible to all same-gender hostel students —
-        # no department restriction. Only add hostel pass-through for hostel students
-        # (day scholars are already excluded above via the category_id != hostel_id conditions).
+        # H3: Hostel complaints visible to all same-gender hostel students (no dept filter)
+        # (Day Scholars already excluded above via the NOT conditions on base conditions)
         if student_stay_type != "Day Scholar":
             if student_gender == "Male" and mens_hostel_id:
-                inter_dept_conditions.append(Complaint.category_id == mens_hostel_id)
+                visible_conditions.append(Complaint.category_id == mens_hostel_id)
             elif student_gender == "Female" and womens_hostel_id:
-                inter_dept_conditions.append(Complaint.category_id == womens_hostel_id)
+                visible_conditions.append(Complaint.category_id == womens_hostel_id)
             elif student_gender not in ("Male", "Female"):
-                # "Other" gender hostel students: show both hostel categories
-                for hid in hostel_category_ids:
-                    inter_dept_conditions.append(Complaint.category_id == hid)
+                # "Other" gender hostel students see both hostel categories
+                hostel_ids = [i for i in [mens_hostel_id, womens_hostel_id] if i is not None]
+                if hostel_ids:
+                    visible_conditions.append(Complaint.category_id.in_(hostel_ids))
 
-        conditions.append(or_(*inter_dept_conditions))
+        # D1/D2/D4: Department complaints visible if:
+        #   - complaint targets this student's department (D1), OR
+        #   - complaint was filed BY a student in this department, i.e. complainant_department_id matches (D2)
+        #   Both hostel and day-scholar students in the department see it (D4)
+        if department_id:
+            dept_visible = or_(
+                # D1: complaint targets this student's department
+                Complaint.complaint_department_id == student_department_id,
+                # D2: complaint was submitted by someone from this student's department
+                Complaint.complainant_department_id == student_department_id,
+            )
+            visible_conditions.append(
+                and_(Complaint.category_id == department_id, dept_visible)
+            )
+
+        # Self-visibility: a student always sees their own public complaints regardless of category
+        if student_roll_no:
+            visible_conditions.append(Complaint.student_roll_no == student_roll_no)
+
+        # Combine: complaint must satisfy base conditions AND at least one visible_condition
+        if visible_conditions:
+            conditions.append(or_(*visible_conditions))
+        else:
+            # No visible conditions → no results (safety guard)
+            conditions.append(False)
 
         # Optional category filter
         if category_id is not None:

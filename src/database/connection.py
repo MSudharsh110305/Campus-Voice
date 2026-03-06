@@ -375,6 +375,21 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                 except Exception as me:
                     logger.debug(f"Migration note (notice attachments): {me}")
 
+            # complainant_department_id: track submitter's department for cross-dept visibility (Rule D2)
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS "
+                        "complainant_department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL"
+                    ))
+                    await conn.execute(text(
+                        "CREATE INDEX IF NOT EXISTS idx_complaint_complainant_dept "
+                        "ON complaints(complainant_department_id) WHERE complainant_department_id IS NOT NULL"
+                    ))
+                    logger.info("✅ Migration: complaints.complainant_department_id ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (complainant_department_id): {me}")
+
             # Complaint merge columns (LLM auto-merge for duplicate clustering)
             async with engine.begin() as conn:
                 try:

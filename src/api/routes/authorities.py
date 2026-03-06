@@ -313,24 +313,77 @@ async def get_assigned_complaints(
     authority = await authority_repo.get(authority_id)
     is_admin = authority and authority.authority_type == "Admin"
 
+    # Rule H5: Apply hostel gender filter for warden/deputy-warden level authorities.
+    # Senior Deputy Warden (level 15) sees BOTH hostel types.
+    # Admin Officer (level >= 50) and Admin (level 100) see everything.
+    # Men's/Women's Warden and Deputy Warden (level 5 or 10) see only their hostel category.
+    from sqlalchemy import select, func, and_, or_
+    from src.database.models import Complaint, ComplaintCategory
+
+    hostel_category_filter = None  # None means no hostel category restriction
+    if authority and authority.authority_level < 15:
+        # Warden or Deputy Warden — determine gender from authority_type
+        auth_type = authority.authority_type or ""
+        if "Men's Hostel" in auth_type:
+            # Fetch Men's Hostel category ID
+            mh_result = await db.execute(
+                select(ComplaintCategory.id).where(ComplaintCategory.name == "Men's Hostel")
+            )
+            mh_id = mh_result.scalar()
+            if mh_id:
+                hostel_category_filter = ("mens", mh_id)
+        elif "Women's Hostel" in auth_type:
+            # Fetch Women's Hostel category ID
+            wh_result = await db.execute(
+                select(ComplaintCategory.id).where(ComplaintCategory.name == "Women's Hostel")
+            )
+            wh_id = wh_result.scalar()
+            if wh_id:
+                hostel_category_filter = ("womens", wh_id)
+
     complaints = await complaint_repo.get_assigned_to_authority(
         authority_id,
-        skip=skip,
-        limit=limit,
+        skip=0,   # Fetch all first; we need to apply hostel filter before skip/limit
+        limit=10000,
         status=status_filter
     )
 
-    # ✅ FIXED: Use count query
-    from sqlalchemy import select, func, and_
-    from src.database.models import Complaint
+    # Apply hostel gender filter in Python (post-fetch, since get_assigned_to_authority
+    # already handles priority-queue sorting and doesn't accept a category filter)
+    if hostel_category_filter:
+        allowed_cat_id = hostel_category_filter[1]
+        # Hostel-specific authority: exclude complaints from the OTHER hostel category.
+        # They should still see Department, General, etc. complaints assigned to them.
+        # Only filter OUT the opposite hostel category.
+        from src.database.models import ComplaintCategory as _CC
+        # Fetch the OTHER hostel category ID
+        if hostel_category_filter[0] == "mens":
+            other_result = await db.execute(
+                select(_CC.id).where(_CC.name == "Women's Hostel")
+            )
+        else:
+            other_result = await db.execute(
+                select(_CC.id).where(_CC.name == "Men's Hostel")
+            )
+        other_id = other_result.scalar()
+        if other_id:
+            complaints = [c for c in complaints if c.category_id != other_id]
 
+    # Now apply skip/limit
+    total = len(complaints)
+    complaints = complaints[skip: skip + limit]
+
+    # ✅ FIXED: Use count query (base count, before hostel filter applied above)
     conditions = [Complaint.assigned_authority_id == authority_id]
     if status_filter:
         conditions.append(Complaint.status == status_filter)
 
     count_query = select(func.count()).where(and_(*conditions))
     count_result = await db.execute(count_query)
-    total = count_result.scalar() or 0
+    _raw_total = count_result.scalar() or 0
+    # Use filtered total if hostel filter was applied, otherwise use DB count
+    if hostel_category_filter is None:
+        total = _raw_total
 
     # ✅ NEW: Apply partial anonymity to complaint list
     complaint_responses = []

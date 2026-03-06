@@ -121,6 +121,10 @@ class LLMService:
             if "confidence" not in result:
                 result["confidence"] = 0.8  # Default confidence for successful LLM response
 
+            # Ensure priority is present (prompt no longer asks for it; default to Medium)
+            if "priority" not in result or result["priority"] not in ("Low", "Medium", "High", "Critical"):
+                result["priority"] = "Medium"
+
             # Add metadata
             result["tokens_used"] = response.usage.total_tokens
             result["processing_time_ms"] = int(processing_time)
@@ -137,7 +141,7 @@ class LLMService:
 
             logger.info(
                 f"Categorization successful: {result['category']} "
-                f"(Priority: {result['priority']}, Target Dept: {result['target_department']}, "
+                f"(Priority: {result.get('priority', 'Medium')}, Target Dept: {result['target_department']}, "
                 f"Confidence: {result.get('confidence', 'N/A')}, Tokens: {result['tokens_used']})"
             )
             return result
@@ -154,9 +158,8 @@ class LLMService:
         Build prompt for categorization with department detection.
 
         Student metadata (gender, stay_type, department) is passed as SUPPLEMENTARY
-        context but the LLM is explicitly instructed to treat complaint text as the
-        PRIMARY signal. Metadata is only a tie-breaker for genuinely ambiguous text —
-        never an override when the complaint content is clear.
+        context. The LLM must use complaint TEXT as the primary signal and metadata
+        only as a tie-breaker for genuinely ambiguous text.
         """
         department_names = (
             "Computer Science & Engineering (CSE), "
@@ -184,139 +187,151 @@ class LLMService:
         student_dept = context.get("department", "")
         supplementary_lines = []
         if student_gender:
-            supplementary_lines.append(f"  • Student gender: {student_gender}")
+            supplementary_lines.append(f"  Student gender: {student_gender}")
         if student_stay:
-            supplementary_lines.append(f"  • Student stay type: {student_stay}")
+            supplementary_lines.append(f"  Student stay type: {student_stay}")
         if student_dept:
-            supplementary_lines.append(f"  • Student department: {student_dept}")
+            supplementary_lines.append(f"  Student department: {student_dept}")
         supplementary_block = "\n".join(supplementary_lines) if supplementary_lines else "  (not provided)"
 
         return f"""You are a complaint routing system at SREC engineering college.
+Your job: read the complaint text and assign it to exactly ONE of these four categories.
 
-PRIMARY RULE — Use the complaint TEXT as your main signal:
-Categorise based on what the complaint is ABOUT, not on who submitted it.
-A hostel student complaining about a classroom → Department/General, NOT hostel.
-A day scholar complaining about mess food → Men's Hostel or Women's Hostel (text-driven).
-
-SUPPLEMENTARY CONTEXT (use ONLY as a tie-breaker when complaint text is ambiguous):
+STUDENT CONTEXT (supplementary — use as tie-breaker only when text is ambiguous):
 {supplementary_block}
-
-HOW TO USE SUPPLEMENTARY CONTEXT:
-✅ USE IT when the complaint text alone is genuinely ambiguous — e.g. student says "the mess food
-   is bad" without naming a hostel → use gender to determine Men's vs Women's Hostel.
-✅ USE IT when the complaint mentions "my department lab" without naming the department → use
-   student's department code to fill in the target_department field.
-✅ USE IT when the complaint says "our hostel" without specifying gender → use student gender.
-❌ NEVER use it to override clear textual evidence. If a hostel student says "the projector
-   in the CSE lab is broken", classify as Department regardless of their stay_type.
-❌ NEVER default to hostel just because the student is a hostel resident.
-❌ NEVER default to the student's own department just because they are in that department —
-   only use the department list to detect if the complaint names a specific department.
 
 Complaint text:
 "{text}"
 
-Available departments: {department_names}
+===========================================================================
+CATEGORY DEFINITIONS AND ROUTING RULES
+===========================================================================
 
-ROUTING DECISION — follow steps in order, stop at first match:
+CATEGORY 1: "Disciplinary Committee"
+Assign here when the complaint describes ANY of the following — no exceptions:
+  - Ragging, bullying, physical fighting, assault, brawling, threatening, stalking
+  - Sexual harassment, emotional harassment, targeted harassment of any kind
+  - BRIBERY or CORRUPTION by ANY person (student, warden, faculty, staff, anyone)
+    — keywords: bribery, bribe, corrupt, corruption, extortion, demanding money, taking money
+  - Hate speech, hate activities, discrimination based on caste/religion/gender
+  - Any serious rule violation that involves harm to another person
 
-STEP 1 — Check for STUDENT BEHAVIORAL MISCONDUCT → "Disciplinary Committee":
-Does the complaint describe ANY of:
-• Violence/threats: ragging, bullying, physical fight, assault, brawl, threatening, stalking, harassment, sexual harassment
-• Serious academic dishonesty: cheating in exam, copying, malpractice, plagiarism, impersonation, proxy attendance
-• Classroom/campus disturbance: disturbing class, disrupting lecture, causing nuisance in class, misbehaving in class, shouting in class, making noise in class
-• Unauthorized activities in academic spaces: celebrating in class, birthday party in class, cutting cake in class, eating food in class, playing music in class, watching videos in class
-• General indiscipline: violating college rules, dress code violation, using mobile phone in class without permission, sleeping in class disruptively, disrespecting faculty or staff
-→ YES → Category = "Disciplinary Committee"
+POSITIVE EXAMPLES (must route to Disciplinary Committee):
+  - "hostel warden is involved in bribery" → Disciplinary Committee (NOT admin, NOT hostel)
+  - "deputy warden demanding money from students" → Disciplinary Committee
+  - "senior students are ragging juniors in hostel" → Disciplinary Committee
+  - "professor is harassing female students" → Disciplinary Committee
+  - "warden is taking bribes for room allotment" → Disciplinary Committee
 
-PRE-STEP — PHYSICAL REPAIR/DAMAGE OVERRIDE (check this FIRST before all other steps):
-If the complaint describes PHYSICAL DAMAGE, MALFUNCTION, or REPAIR NEED for a SHARED CAMPUS RESOURCE:
-Repair language: broken, not working, damaged, repair, maintenance, out of order, stopped working, faulty,
-  defective, needs replacement, leaking, burst, no power, no electricity, no water, not functioning
-Shared resources (always General): projector, AC, air conditioner, fan, ceiling fan, light, tube light,
-  bulb, electricity, power outlet, water tap, water pipe, furniture, chair, table, door, window,
-  toilet, bathroom, washroom, drinking water, cooler
-→ If BOTH repair language AND shared resource keyword present → Category = "General"
-→ EXCEPTION: If item is specifically a lab computer, desktop PC, workstation, server, oscilloscope,
-  PCB, circuit board, embedded system, CNC machine, lathe — these are specialized dept equipment → use STEP 2.
+NEGATIVE EXAMPLES (do NOT route to Disciplinary Committee):
+  - "warden is rude or unhelpful" → Men's/Women's Hostel (rudeness is NOT misconduct)
+  - "HOD is not accessible or responsive" → Department (not disciplinary)
+  - "faculty is frequently absent" → Department (not disciplinary)
 
-STEP 2 — Check for ACADEMIC / DEPARTMENT issue → "Department":
-Does the complaint mention a problem with ACADEMIC SERVICES, CURRICULUM, or SPECIALIZED LAB EQUIPMENT:
-• Specialized lab equipment: oscilloscope, PCB lab, fabrication, CNC, embedded systems, circuit boards
-• Lab computers (desktop PCs, workstations, specific academic software/IDE)
-• Software license missing, IDE/software not working, compiler issues
-• Faculty/HOD request, curriculum, timetable, project submission, department office service
-• Academic: exam schedule, course registration, observation book, lab record
-• Placement, internship, career guidance, campus recruitment, T&P cell, TCS NQT, AMCAT, aptitude,
-  soft skills training, mock interviews, campus drives, coding interview prep
-NOTE: General repair of shared infrastructure (projector, AC, fan, furniture) → use PRE-STEP override above.
-NOTE: If the complaint is about STUDENT BEHAVIOR in these spaces, use STEP 1 instead.
-→ YES → Category = "Department"
+---------------------------------------------------------------------------
 
-PLACEMENT/CAREER COMPLAINTS — CRITICAL RULE:
-If complaint mentions placement, internship, T&P, campus recruitment, TCS NQT, AMCAT, aptitude,
-mock interviews, coding interview, career guidance, campus drives, soft skills:
-→ target_department = ALWAYS the student's OWN department from supplementary context
-→ NEVER use AIDS unless the complaint text EXPLICITLY mentions "Artificial Intelligence" or "Data Science"
-→ If no department context provided, use "CSE" as fallback
+CATEGORY 2: "Men's Hostel" or "Women's Hostel"
+Assign here when the complaint is about HOSTEL LIVING CONDITIONS or HOSTEL FACILITIES.
+  - Room conditions, hostel mess food quality, hostel bathroom/toilet cleanliness
+  - Hostel water supply, hostel electricity, hostel WiFi within hostel building
+  - Hostel warden attitude or responsiveness (when NOT involving bribery/corruption)
+  - Hostel security, hostel noise, hostel gates, hostel common areas
 
-STEP 3 — Check for HOSTEL FACILITY → hostel category:
-Is the issue about something physically INSIDE a hostel building?
-Strong hostel indicators: "hostel", "hostel room", "hostel mess", "mess food", "hostel bathroom",
-"hostel water", "hostel electricity", "hostel warden", "hostel corridor", "hostel gate",
-"dorm", "boarding", "my room" (when student is a hostel resident and text clearly implies hostel context).
+Gender determination (pick Men's or Women's):
+  1. Explicit text: "men's hostel" / "boys hostel" → Men's Hostel
+                   "women's hostel" / "girls hostel" / "ladies hostel" → Women's Hostel
+  2. No explicit gender → use student gender from context (Male → Men's Hostel, Female → Women's Hostel)
+  3. No context at all → default Men's Hostel
 
-IMPORTANT RULES FOR HOSTEL CLASSIFICATION:
-• The word "room" alone does NOT indicate a hostel complaint. "Room in block C" means
-  a classroom or common area — classify as Department or General, NOT hostel.
-• "AC", "fan", "lights" alone do NOT indicate hostel — they appear in classrooms too.
-• These are NEVER hostel complaints even if reported by a hostel resident:
-  - Lab equipment, classrooms, projectors, computers, academic facilities
-  - Campus canteen (not mess), campus library, campus wifi, sports grounds
-  - Outdoor trees, campus roads, drainage, campus grounds, open areas
-  - Faculty/HOD issues, timetable, exams, curriculum
+IMPORTANT: When in doubt between Hostel and General for infrastructure INSIDE a hostel
+building → choose Hostel. For infrastructure OUTSIDE hostel → General.
 
-For hostel complaints, determine gender using this priority order:
-1. Explicit mention in text: "men's hostel", "boys' hostel" → "Men's Hostel"; "women's hostel", "girls' hostel", "ladies' hostel" → "Women's Hostel"
-2. No explicit gender in text → use student's gender from supplementary context (Male → "Men's Hostel", Female → "Women's Hostel")
-3. No text mention and no supplementary context → default to "Men's Hostel"
+HOSTEL MESS vs COLLEGE CANTEEN:
+  - Hostel mess food complaint → Hostel category
+  - College canteen food complaint → General category
 
-STEP 4 — Campus-wide facility → "General":
-All campus outdoor/infrastructure issues NOT inside a hostel building and NOT academic and NOT behavioral: fallen trees, campus roads/drainage, parking, sports courts/grounds, campus wifi/internet, auditorium, open drinking water stations, bus/transport, campus gates, campus canteen, campus library building, general campus cleanliness, streetlights, rooms/areas that are not in a hostel building.
+POSITIVE EXAMPLES:
+  - (male student) "hostel warden is not good to students" → Men's Hostel
+  - (female student) "hostel bathroom is dirty" → Women's Hostel
+  - "hostel mess food quality is very bad" → Men's/Women's Hostel (based on gender)
+  - "room has no electricity in hostel block A" → Men's/Women's Hostel
 
-CRITICAL RULE — PHYSICAL FACILITIES IN DEPARTMENT BUILDINGS → "General":
-Complaints about restrooms, toilets, washrooms, bathrooms, cleanliness, hygiene, common corridors, staircases, or other SHARED physical infrastructure — even when they mention a department building or block — must be classified as "General" (Admin Officer), NOT "Department" (HOD).
-A department name in such a complaint indicates the LOCATION, not the RESPONSIBLE PARTY.
-Examples that must be "General": "Restrooms in IT department are unclean", "washroom near CSE block smells bad", "corridor in ECE building is dirty", "toilets in the mechanical department building are not clean".
-The HOD is responsible for ACADEMIC matters only (curriculum, faculty, lab equipment, exams). Physical facility maintenance is the Admin Officer's responsibility.
+NEGATIVE EXAMPLES (do NOT route to Hostel):
+  - "restrooms in CSE department are unclean" → General (department building, not hostel)
+  - "WiFi in classroom is slow" → General (not hostel)
+  - "lights in room XX in CSE block not working" → General (academic building)
 
+---------------------------------------------------------------------------
+
+CATEGORY 3: "Department"
+Assign here when the complaint is about ACADEMIC MATTERS in a specific department.
+  - Faculty behavior or frequent absence (non-criminal, non-bribery)
+  - Teaching quality, subject concerns, curriculum, timetable
+  - Exam scheduling, lab records, project submission, observation books
+  - Specialized department lab equipment (oscilloscopes, PCBs, CNC machines, embedded systems)
+  - Department-specific lab computers and academic software
+  - Placement cell, T&P office, internship/career guidance (route to student's own department HOD)
+
+Cross-department rule: if student from Dept X complains about Dept Y's faculty/lab,
+assign to HOD of Dept Y (not student's own dept HOD).
+
+POSITIVE EXAMPLES:
+  - "CSE professor is frequently absent" → Department → target_department: CSE
+  - "ECE lab oscilloscopes are broken" → Department → target_department: ECE
+  - (CSE male student) "EEE HOD is not accessible" → Department → target_department: EEE
+
+NEGATIVE EXAMPLES (do NOT route to Department):
+  - "restrooms in IT block are dirty" → General (bathroom = infrastructure, not dept)
+  - "lights in room in CSE block not working" → General (electrical infrastructure)
+  - "hostel mess food is bad" → Hostel (not department)
+  - "WiFi in CSE reading room is slow" → General (infrastructure, not academics)
+
+---------------------------------------------------------------------------
+
+CATEGORY 4: "General"
+Assign here for INFRASTRUCTURE, PHYSICAL ENVIRONMENT, or ADMINISTRATIVE matters that are
+NOT hostel-specific and NOT department-academic and NOT disciplinary.
+  - Bathrooms/toilets/restrooms/washrooms in ANY non-hostel building (even if in a dept block)
+  - Electricity, water supply, plumbing in academic or common areas (not inside hostel)
+  - Roads, parking, campus grounds, campus canteen (NOT hostel mess)
+  - College WiFi in academic areas, classrooms, library
+  - Library, sports facilities, auditorium, main block
+  - Drinking water in academic buildings
+
+CRITICAL: A department name in a bathroom/toilet/infrastructure complaint indicates LOCATION,
+not the responsible party. "Restrooms in IT block are dirty" → General (Admin Officer),
+NOT Department (HOD). HOD handles academics only.
+
+POSITIVE EXAMPLES:
+  - "restrooms near food court are unclean" → General
+  - "restrooms in IT department are unclean" → General (NOT Department)
+  - "lights in room XX in CSE block not working" → General (NOT Department)
+  - "college WiFi in library is very slow" → General
+  - "drinking water in main block is not clean" → General
+  - "canteen food quality is bad" → General (college canteen, not hostel mess)
+
+===========================================================================
 DEPARTMENT DETECTION (when category = "Department"):
 Valid codes: CSE, ECE, MECH, CIVIL, EEE, IT, BIO, AERO, RAA, EIE, MBA, AIDS, MTECH_CSE, ENG, PHY, CHEM, MATH
-- If complaint names a specific dept/lab (e.g. "ECE lab", "CSE printer", "English class", "physics lab", "chemistry lab", "maths class") → use that dept code
-- ENG: complaints about English subject, English class, English faculty, English department
-- PHY: complaints about Physics subject, physics lab, physics class, physics faculty
-- CHEM: complaints about Chemistry subject, chemistry lab, chemistry class, chemistry faculty
-- MATH: complaints about Mathematics/Maths subject, math class, mathematics faculty
-- If complaint says "my department" or "our department" without naming it → use student's department from supplementary context
-- Placement/internship/T&P/TCS NQT/coding interview complaints → ALWAYS use the student's own department from supplementary context; NEVER use AIDS unless text explicitly mentions AI or Data Science (or "CSE" if no context)
-- If no department context at all → use "CSE" as the default
-- NEVER assign a department solely because the student belongs to it when the complaint is about a different area
+- If complaint names a specific dept: "ECE lab" → ECE, "CSE professor" → CSE, "English class" → ENG
+- ENG: English subject/class/faculty; PHY: Physics; CHEM: Chemistry; MATH: Mathematics/Maths
+- "my department" / "our department" without name → use student's department from context
+- Placement/T&P/internship → ALWAYS use student's own department from context (never AIDS unless text explicitly mentions AI/Data Science)
+- No context → use CSE as default
 
 PRIORITY:
-- Critical: immediate safety danger, violence, or injury risk
-- High: many students affected, exam disrupted, key facility completely down
-- Medium: moderate disruption to a subset of students or repeated behavioral issue
-- Low: minor inconvenience or first-time minor behavioural issue
+- Critical: immediate safety danger, violence, injury risk
+- High: many students affected, key facility completely down
+- Medium: moderate disruption, repeated issue
+- Low: minor inconvenience, first-time minor issue
 
 Respond ONLY with valid JSON (no markdown, no code blocks):
 {{
   "category": "Men's Hostel|Women's Hostel|General|Department|Disciplinary Committee",
   "target_department": "CSE|ECE|MECH|CIVIL|EEE|IT|BIO|AERO|RAA|EIE|MBA|AIDS|MTECH_CSE|ENG|PHY|CHEM|MATH",
-  "priority": "Low|Medium|High|Critical",
   "reasoning": "Max 40 words",
   "confidence": 0.0-1.0,
-  "is_against_authority": false,
-  "requires_image": false
+  "is_against_authority": false
 }}
 
 JSON:"""
@@ -354,20 +369,22 @@ JSON:"""
     
     def _validate_categorization_result(self, result: Dict[str, Any]) -> bool:
         """Validate categorization result structure"""
-        required_fields = ["category", "priority"]
-        
+        required_fields = ["category"]
+
         if not all(field in result for field in required_fields):
             return False
-        
+
         valid_categories = ["Men's Hostel", "Women's Hostel", "General", "Department", "Disciplinary Committee"]
-        valid_priorities = ["Low", "Medium", "High", "Critical"]
-        
+
         if result["category"] not in valid_categories:
             return False
-        
-        if result["priority"] not in valid_priorities:
-            return False
-        
+
+        # priority is optional in the new prompt — if present must be valid
+        if "priority" in result:
+            valid_priorities = ["Low", "Medium", "High", "Critical"]
+            if result["priority"] not in valid_priorities:
+                result["priority"] = "Medium"  # Repair silently
+
         return True
     
     # Keywords that unambiguously indicate an academic/department issue.
