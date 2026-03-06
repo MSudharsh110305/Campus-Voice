@@ -87,19 +87,6 @@ const AuthorityComplaintCard = ({ complaint, onStatusUpdate, onPostUpdate, onEsc
                 </div>
             )}
 
-            {/* Spam dispute banner */}
-            {complaint.has_disputed && (
-                <div className="mb-3 p-2.5 bg-orange-50 border border-orange-200 rounded-xl flex items-start gap-2" onClick={(e) => e.stopPropagation()}>
-                    <ShieldAlert size={13} className="text-orange-500 flex-shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                        <p className="text-[10px] font-bold text-orange-700 uppercase tracking-wide">Spam Disputed by Student</p>
-                        {complaint.appeal_reason && (
-                            <p className="text-[11px] text-orange-800 mt-0.5 italic">"{complaint.appeal_reason}"</p>
-                        )}
-                    </div>
-                </div>
-            )}
-
             {/* Content */}
             <div className="mb-3" onClick={(e) => e.stopPropagation()}>
                 <p className="text-sm text-gray-700 leading-relaxed font-medium">
@@ -119,6 +106,11 @@ const AuthorityComplaintCard = ({ complaint, onStatusUpdate, onPostUpdate, onEsc
             <div className="flex items-center gap-2 mb-3">
                 <StatusBadge status={complaint.status} />
                 <PriorityBadge priority={complaint.priority} />
+                {complaint.is_marked_as_spam && complaint.has_disputed && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-50 text-orange-600 border border-orange-200">
+                        <ShieldAlert size={9} />Disputed
+                    </span>
+                )}
                 {complaint.has_image && (
                     <span className="ml-auto">
                         <ImageIcon size={14} className="text-gray-400" />

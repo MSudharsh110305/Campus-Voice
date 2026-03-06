@@ -119,6 +119,11 @@ export default function AdminComplaintCard({ complaint, token, authorities = [],
                                 <AlertTriangle size={9} />Spam
                             </span>
                         )}
+                        {complaint.is_marked_as_spam && complaint.has_disputed && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-50 text-orange-600 border border-orange-200">
+                                <ShieldAlert size={9} />Disputed
+                            </span>
+                        )}
                     </div>
                     <span className="text-[10px] text-gray-400 font-mono shrink-0">
                         #{complaint.id?.substring(0, 8)}
@@ -142,22 +147,8 @@ export default function AdminComplaintCard({ complaint, token, authorities = [],
                     </div>
                 </div>
 
-                {/* Dispute banner — shown when spam complaint has been disputed by student */}
-                {complaint.is_marked_as_spam && complaint.has_disputed && (
-                    <div className="p-3 bg-orange-50 border border-orange-200 rounded-xl flex items-start gap-2.5">
-                        <ShieldAlert size={14} className="text-orange-500 mt-0.5 flex-shrink-0" />
-                        <div className="min-w-0">
-                            <p className="text-xs font-bold text-orange-700">Student Disputed Spam Classification</p>
-                            {complaint.appeal_reason ? (
-                                <p className="text-[11px] text-orange-800 mt-0.5 italic line-clamp-2">"{complaint.appeal_reason}"</p>
-                            ) : (
-                                <p className="text-[11px] text-orange-600 mt-0.5">No reason provided.</p>
-                            )}
-                        </div>
-                    </div>
-                )}
 
-                {/* Row 3: Complaint text */}
+{/* Row 3: Complaint text */}
                 <p className="text-sm text-gray-700 leading-relaxed font-semibold line-clamp-1">
                     {complaint.category_name || 'General Complaint'}
                 </p>
