@@ -33,20 +33,10 @@ export default function Profile() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-  const [installPromptEvent, setInstallPromptEvent] = useState(null);
-  const [isInstalled, setIsInstalled] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(
+    () => window.matchMedia('(display-mode: standalone)').matches || !!window.navigator.standalone
+  );
   const [showIosHint, setShowIosHint] = useState(false);
-
-  useEffect(() => {
-    // Track native install prompt
-    const handler = (e) => { e.preventDefault(); setInstallPromptEvent(e); };
-    window.addEventListener('beforeinstallprompt', handler);
-    // Detect if already installed (standalone mode)
-    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
-      setIsInstalled(true);
-    }
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
 
   useEffect(() => {
     fetchProfile();
@@ -107,13 +97,15 @@ export default function Profile() {
   };
 
   const handleInstall = async () => {
-    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    if (installPromptEvent) {
-      installPromptEvent.prompt();
-      const { outcome } = await installPromptEvent.userChoice;
-      if (outcome === 'accepted') setIsInstalled(true);
-      setInstallPromptEvent(null);
-    } else if (isIos) {
+    const prompt = window._deferredInstallPrompt;
+    if (prompt) {
+      prompt.prompt();
+      const { outcome } = await prompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsInstalled(true);
+        window._deferredInstallPrompt = null;
+      }
+    } else if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
       setShowIosHint(v => !v);
     }
   };
@@ -284,7 +276,7 @@ export default function Profile() {
                   <Lock size={18} />
                   Change Password
                 </Button>
-                {!isInstalled && (
+                {!isInstalled && (window._deferredInstallPrompt || /iphone|ipad|ipod/i.test(navigator.userAgent)) && (
                   <div>
                     <Button
                       variant="outline"

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import AuthoritySidebar from '../components/AuthoritySidebar';
@@ -8,27 +8,21 @@ import { LogOut, Mail, Building, Shield, Smartphone } from 'lucide-react';
 export default function AuthorityProfile({ noLayout = false }) {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
-    const [installPromptEvent, setInstallPromptEvent] = useState(null);
-    const [isInstalled, setIsInstalled] = useState(false);
+    const [isInstalled, setIsInstalled] = useState(
+        () => window.matchMedia('(display-mode: standalone)').matches || !!window.navigator.standalone
+    );
     const [showIosHint, setShowIosHint] = useState(false);
 
-    useEffect(() => {
-        const handler = (e) => { e.preventDefault(); setInstallPromptEvent(e); };
-        window.addEventListener('beforeinstallprompt', handler);
-        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
-            setIsInstalled(true);
-        }
-        return () => window.removeEventListener('beforeinstallprompt', handler);
-    }, []);
-
     const handleInstall = async () => {
-        const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-        if (installPromptEvent) {
-            installPromptEvent.prompt();
-            const { outcome } = await installPromptEvent.userChoice;
-            if (outcome === 'accepted') setIsInstalled(true);
-            setInstallPromptEvent(null);
-        } else if (isIos) {
+        const prompt = window._deferredInstallPrompt;
+        if (prompt) {
+            prompt.prompt();
+            const { outcome } = await prompt.userChoice;
+            if (outcome === 'accepted') {
+                setIsInstalled(true);
+                window._deferredInstallPrompt = null;
+            }
+        } else if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
             setShowIosHint(v => !v);
         }
     };
@@ -64,7 +58,7 @@ export default function AuthorityProfile({ noLayout = false }) {
             </div>
 
             {/* Install App */}
-            {!isInstalled ? (
+            {!isInstalled && (window._deferredInstallPrompt || /iphone|ipad|ipod/i.test(navigator.userAgent)) ? (
                 <div className="mt-4">
                     <button
                         onClick={handleInstall}

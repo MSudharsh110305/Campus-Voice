@@ -8,6 +8,17 @@ import './index.css';
 document.documentElement.classList.remove('dark');
 document.documentElement.style.colorScheme = 'light';
 
+// Capture the PWA install prompt as early as possible — fires before any
+// component mounts, so we must store it on window for Profile pages to read.
+window._deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  window._deferredInstallPrompt = e;
+});
+window.addEventListener('appinstalled', () => {
+  window._deferredInstallPrompt = null;
+});
+
 const rootElement = document.getElementById('root');
 const root = createRoot(rootElement);
 

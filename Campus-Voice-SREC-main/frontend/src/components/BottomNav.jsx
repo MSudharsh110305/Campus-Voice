@@ -11,7 +11,7 @@ export default function BottomNav() {
 
   const navItems = [
     { path: '/home',      label: 'Home',      icon: Home,      routes: ['/home'] },
-    { path: '/posts',     label: 'Posts',     icon: FileText,  routes: ['/posts'] },
+    { path: '/posts',     label: 'Posts',     icon: FileText,  routes: ['/posts', '/my-complaints'] },
     { path: '/petitions', label: 'Community', icon: Users,     routes: ['/petitions', '/wins', '/changelog'] },
     { path: '/notices',   label: 'Notices',   icon: Megaphone, routes: ['/notices'] },
     { path: '/profile',   label: 'Profile',   icon: User,      routes: ['/profile'] },

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { TopNav } from '../../../components/Navbars';
 import BottomNav from '../../../components/BottomNav';
 import { Card, Button, EliteButton } from '../../../components/UI';
@@ -13,7 +13,17 @@ import { VISIBILITY, COMPLAINT_CATEGORIES, STATUSES, PRIORITIES } from '../../..
 export default function Posts() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('create');
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Restore tab from URL so pressing back from complaint detail returns to the correct tab
+  const [activeTab, setActiveTab] = useState(() => {
+    const t = searchParams.get('tab');
+    return t === 'mine' || t === 'feed' ? t : 'create';
+  });
+
+  const switchTab = (tab) => {
+    setActiveTab(tab);
+    setSearchParams(tab === 'create' ? {} : { tab });
+  };
 
   // Camera / gallery refs for mobile PWA feature
   const cameraRef = useRef(null);
@@ -106,6 +116,9 @@ export default function Posts() {
     };
 
     fetchMyComplaints();
+    // Auto-refresh every 30s so new complaints/status changes appear without manual reload
+    const interval = setInterval(fetchMyComplaints, 30000);
+    return () => clearInterval(interval);
   }, [activeTab]);
 
   // Called when user clicks "Submit" — first checks for duplicates
@@ -374,7 +387,7 @@ export default function Posts() {
               onClick={() => {
                 setSubmitted(false);
                 setApiResponse(null);
-                setActiveTab('mine');
+                switchTab('mine');
               }}
               className="py-3"
             >
@@ -408,7 +421,7 @@ export default function Posts() {
           {/* Pill tab switcher */}
           <div className="flex bg-srec-backgroundAlt rounded-full p-1 border border-srec-borderLight">
             <button
-              onClick={() => setActiveTab('create')}
+              onClick={() => switchTab('create')}
               className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${activeTab === 'create'
                 ? 'bg-white shadow-card text-srec-primary font-semibold'
                 : 'text-srec-textMuted hover:text-srec-textSecondary'
@@ -417,7 +430,7 @@ export default function Posts() {
               Create
             </button>
             <button
-              onClick={() => setActiveTab('mine')}
+              onClick={() => switchTab('mine')}
               className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200 ${activeTab === 'mine'
                 ? 'bg-white shadow-card text-srec-primary font-semibold'
                 : 'text-srec-textMuted hover:text-srec-textSecondary'
@@ -700,7 +713,7 @@ export default function Posts() {
                   {myPosts.length === 0 && (
                     <button
                       className="mt-4 text-sm text-srec-primary font-semibold hover:underline"
-                      onClick={() => setActiveTab('create')}
+                      onClick={() => switchTab('create')}
                     >
                       Raise your first issue
                     </button>

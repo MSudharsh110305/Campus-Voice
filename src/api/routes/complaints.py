@@ -1039,8 +1039,8 @@ async def get_complaint_timeline(
     # Build timeline
     timeline = []
 
-    # Submission — mask student name for non-authorities
-    student_label = complaint_full.student.name if (is_authority and complaint_full.student) else "a student"
+    # Submission — only Admin sees the real student name; Authority always sees "a student"
+    student_label = complaint_full.student.name if (role == "Admin" and complaint_full.student) else "a student"
     timeline.append({
         "event": "Complaint Submitted",
         "timestamp": complaint_full.submitted_at.isoformat(),

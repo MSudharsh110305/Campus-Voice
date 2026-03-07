@@ -53,6 +53,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         Returns:
             Response
         """
+        # Always pass through CORS preflight requests — browsers send OPTIONS
+        # before every cross-origin request; blocking them prevents login/register.
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         # Check if route is public
         if self._is_public_route(request.url.path):
             return await call_next(request)

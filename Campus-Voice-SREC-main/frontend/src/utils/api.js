@@ -89,17 +89,45 @@ const _attemptRefresh = async () => {
     return _refreshPromise;
 };
 
+// ==================== PROACTIVE TOKEN VALIDATION ====================
+// Check expiry BEFORE firing — stops the burst of 401s on page load when all
+// components mount simultaneously with a stale access token in sessionStorage.
+
+const _isTokenExpired = (token) => {
+    if (!token) return true;
+    try {
+        const payload = decodeToken(token);
+        if (!payload?.exp) return false;
+        // Expire 10s early to account for clock skew / network latency
+        return Date.now() / 1000 > payload.exp - 10;
+    } catch {
+        return true;
+    }
+};
+
+const _getValidToken = async () => {
+    const token = tokenStorage.getAccessToken();
+    if (_isTokenExpired(token)) {
+        return await _attemptRefresh();
+    }
+    return token;
+};
+
 // ==================== CORE FETCH WRAPPER ====================
 
 /**
  * A wrapper around fetch that handles:
- * 1. Attaching the Bearer (access) token.
- * 2. Parsing JSON responses.
- * 3. On 401: automatically attempts one token refresh then retries.
- * 4. On refresh failure: clears storage and redirects to /login.
+ * 1. Proactively refreshing the access token if expired before firing.
+ * 2. Attaching the Bearer (access) token.
+ * 3. Parsing JSON responses.
+ * 4. On 401: automatically attempts one token refresh then retries.
+ * 5. On refresh failure: clears storage and redirects to /login.
  */
 export const api = async (endpoint, options = {}, _isRetry = false) => {
-    const token = tokenStorage.getAccessToken();
+    // On retry, token was just refreshed — read it directly to avoid double refresh.
+    const token = _isRetry
+        ? tokenStorage.getAccessToken()
+        : await _getValidToken();
 
     const headers = {
         ...options.headers,

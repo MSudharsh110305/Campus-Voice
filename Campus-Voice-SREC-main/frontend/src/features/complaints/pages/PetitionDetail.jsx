@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import petitionService from '../../../services/petition.service';
 import { TopNav } from '../../../components/Navbars';
 import BottomNav from '../../../components/BottomNav';
 import { useAuth } from '../../../context/AuthContext';
 import {
-  ArrowLeft, Users, Clock, CheckCircle, AlertTriangle,
-  Globe, Building2, Home, Lock, ShieldCheck, Flame,
+  ArrowLeft, Clock, CheckCircle, AlertTriangle,
+  Globe, Building2, Home, Lock, ShieldCheck,
 } from 'lucide-react';
 
 const STATUS_BADGE = {
@@ -27,6 +27,11 @@ const MILESTONES = [50, 100, 250];
 
 function checkAccess(petition, user) {
   if (!petition || !user) return { allowed: false, reason: 'Please log in to view this petition.' };
+
+  // Creator always has access to their own petition regardless of scope
+  if (petition.created_by_roll_no && petition.created_by_roll_no === user.roll_no) {
+    return { allowed: true };
+  }
 
   const scope = petition.petition_scope;
 
