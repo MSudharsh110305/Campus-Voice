@@ -86,11 +86,12 @@ function AttachmentModal({ filename, mimeType, blobUrl, onClose }) {
 
 // Category config: icon + color palette
 const CATEGORY_CONFIG = {
-    Emergency:      { icon: AlertTriangle, color: 'text-red-600',    bg: 'bg-red-50',    border: 'border-l-red-500',   badge: 'bg-red-100 text-red-700' },
-    Announcement:   { icon: Megaphone,    color: 'text-blue-600',   bg: 'bg-blue-50',   border: 'border-l-blue-500',  badge: 'bg-blue-100 text-blue-700' },
-    'Policy Change':{ icon: Info,         color: 'text-amber-600',  bg: 'bg-amber-50',  border: 'border-l-amber-500', badge: 'bg-amber-100 text-amber-700' },
-    Event:          { icon: Calendar,     color: 'text-green-600',  bg: 'bg-green-50',  border: 'border-l-green-500', badge: 'bg-green-100 text-green-700' },
-    Maintenance:    { icon: Wrench,       color: 'text-gray-600',   bg: 'bg-gray-50',   border: 'border-l-gray-400',  badge: 'bg-gray-100 text-gray-600' },
+    Emergency:      { icon: AlertTriangle, color: 'text-red-600',    bg: 'bg-red-50',    border: 'border-l-red-600',   badge: 'bg-red-100 text-red-700',   urgent: true },
+    Announcement:   { icon: Megaphone,    color: 'text-blue-600',   bg: 'bg-blue-50',   border: 'border-l-blue-500',  badge: 'bg-blue-100 text-blue-700',  urgent: false },
+    'Policy Change':{ icon: Info,         color: 'text-amber-600',  bg: 'bg-amber-50',  border: 'border-l-amber-500', badge: 'bg-amber-100 text-amber-700', urgent: false },
+    Event:          { icon: Calendar,     color: 'text-green-600',  bg: 'bg-green-50',  border: 'border-l-green-500', badge: 'bg-green-100 text-green-700', urgent: false },
+    Maintenance:    { icon: Wrench,       color: 'text-gray-600',   bg: 'bg-gray-50',   border: 'border-l-gray-400',  badge: 'bg-gray-100 text-gray-600',   urgent: false },
+    General:        { icon: Info,         color: 'text-sky-600',    bg: 'bg-sky-50',    border: 'border-l-sky-400',   badge: 'bg-sky-100 text-sky-700',     urgent: false },
 };
 
 const PRIORITY_DOT = {
@@ -182,6 +183,31 @@ export default function NoticeFeed() {
         return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
     };
 
+    const formatExpiry = (expiresAt, category) => {
+        if (!expiresAt) return null;
+        const exp = new Date(expiresAt);
+        const now = new Date();
+        const diffMs = exp - now;
+        if (diffMs <= 0) return null; // already expired — won't show in feed
+        const diffHours = diffMs / (1000 * 60 * 60);
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+        // Emergency / Maintenance: show hours if within 48h
+        if ((category === 'Emergency' || category === 'Maintenance') && diffHours <= 48) {
+            const h = Math.round(diffHours);
+            return `Expires in ${h} hour${h !== 1 ? 's' : ''}`;
+        }
+        // General / Announcement: show "Active until DATE"
+        if (category === 'General' || category === 'Announcement') {
+            return `Active until ${exp.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: diffDays > 365 ? 'numeric' : undefined })}`;
+        }
+        // Other: show days remaining if <= 7 days
+        if (diffDays <= 7) {
+            const d = Math.round(diffDays);
+            return `Expires in ${d} day${d !== 1 ? 's' : ''}`;
+        }
+        return null;
+    };
+
     return (
         <div className="min-h-screen bg-srec-background">
             <TopNav />
@@ -227,12 +253,26 @@ export default function NoticeFeed() {
                             const Icon = cfg.icon;
                             const dotColor = PRIORITY_DOT[notice.priority] || PRIORITY_DOT['Low'];
                             const isUrgent = notice.priority === 'Urgent' || notice.priority === 'High';
+                            const isEmergency = notice.category === 'Emergency';
+                            const expiryLabel = formatExpiry(notice.expires_at, notice.category);
 
                             return (
                                 <div
                                     key={notice.id}
-                                    className={`bg-white rounded-xl border border-gray-100 border-l-4 ${cfg.border} overflow-hidden shadow-sm hover:shadow-md transition-shadow`}
+                                    className={`bg-white rounded-xl border overflow-hidden shadow-sm hover:shadow-md transition-shadow ${
+                                        isEmergency
+                                            ? 'border-red-300 border-l-4 border-l-red-600'
+                                            : `border-gray-100 border-l-4 ${cfg.border}`
+                                    }`}
                                 >
+                                    {/* Emergency URGENT banner */}
+                                    {isEmergency && (
+                                        <div className="px-4 py-1.5 bg-red-600 flex items-center gap-2">
+                                            <AlertTriangle size={11} className="text-white flex-shrink-0" />
+                                            <span className="text-[10px] font-bold text-white tracking-widest uppercase">Urgent</span>
+                                        </div>
+                                    )}
+
                                     <div className="px-4 py-3">
                                         {/* Top row: category badge + priority dot + date */}
                                         <div className="flex items-center justify-between mb-2">
@@ -250,7 +290,7 @@ export default function NoticeFeed() {
                                         </div>
 
                                         {/* Title */}
-                                        <p className={`text-sm font-semibold leading-snug mb-1 ${isUrgent ? 'text-gray-900' : 'text-gray-800'}`}>
+                                        <p className={`text-sm font-semibold leading-snug mb-1 ${isUrgent || isEmergency ? 'text-gray-900' : 'text-gray-800'}`}>
                                             {notice.title}
                                         </p>
 
@@ -286,10 +326,14 @@ export default function NoticeFeed() {
                                         </div>
                                     </div>
 
-                                    {/* Expiry warning strip */}
-                                    {notice.expires_at && new Date(notice.expires_at) < new Date(Date.now() + 24 * 60 * 60 * 1000) && (
-                                        <div className="px-4 py-1.5 bg-amber-50 border-t border-amber-100 text-[10px] text-amber-700 font-medium">
-                                            ⏰ Expires {new Date(notice.expires_at).toLocaleDateString()}
+                                    {/* Expiry info strip */}
+                                    {expiryLabel && (
+                                        <div className={`px-4 py-1.5 border-t text-[10px] font-medium ${
+                                            isEmergency
+                                                ? 'bg-red-50 border-red-100 text-red-700'
+                                                : 'bg-amber-50 border-amber-100 text-amber-700'
+                                        }`}>
+                                            {isEmergency ? '⚠' : '⏰'} {expiryLabel}
                                         </div>
                                     )}
                                 </div>

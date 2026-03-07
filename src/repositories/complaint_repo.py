@@ -161,7 +161,10 @@ class ComplaintRepository(BaseRepository[Complaint]):
         Returns:
             List of complaints
         """
-        conditions = [Complaint.student_roll_no == student_roll_no]
+        conditions = [
+            Complaint.student_roll_no == student_roll_no,
+            Complaint.is_deleted == False,
+        ]
         if status:
             conditions.append(Complaint.status == status)
 
@@ -195,7 +198,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
         """
         query = (
             select(Complaint)
-            .where(Complaint.category_id == category_id)
+            .where(and_(Complaint.category_id == category_id, Complaint.is_deleted == False))
             .order_by(desc(Complaint.priority_score))
             .offset(skip)
             .limit(limit)
@@ -222,7 +225,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
         """
         query = (
             select(Complaint)
-            .where(Complaint.status == status)
+            .where(and_(Complaint.status == status, Complaint.is_deleted == False))
             .order_by(desc(Complaint.submitted_at))
             .offset(skip)
             .limit(limit)
@@ -249,7 +252,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
         """
         query = (
             select(Complaint)
-            .where(Complaint.priority == priority)
+            .where(and_(Complaint.priority == priority, Complaint.is_deleted == False))
             .order_by(desc(Complaint.priority_score))
             .offset(skip)
             .limit(limit)
@@ -276,7 +279,10 @@ class ComplaintRepository(BaseRepository[Complaint]):
         Returns:
             List of complaints
         """
-        conditions = [Complaint.assigned_authority_id == authority_id]
+        conditions = [
+            Complaint.assigned_authority_id == authority_id,
+            Complaint.is_deleted == False,
+        ]
         if status:
             conditions.append(Complaint.status == status)
 
@@ -366,12 +372,14 @@ class ComplaintRepository(BaseRepository[Complaint]):
         # - Must not be Closed or Spam
         # - DC1: Disciplinary Committee complaints NEVER appear in public feed
         # - Hide merged-away duplicates (they have a canonical complaint)
+        # - Hide soft-deleted complaints
         conditions = [
             Complaint.visibility == "Public",
             Complaint.status != "Closed",
             Complaint.status != "Spam",
             Complaint.is_marked_as_spam == False,
             Complaint.merged_into_id == None,  # Hide merged-away duplicates
+            Complaint.is_deleted == False,
         ]
 
         # DC1: Always exclude Disciplinary Committee from public feed
@@ -498,7 +506,8 @@ class ComplaintRepository(BaseRepository[Complaint]):
             .where(
                 and_(
                     Complaint.priority.in_(["High", "Critical"]),
-                    Complaint.status.in_(["Raised", "In Progress"])
+                    Complaint.status.in_(["Raised", "In Progress"]),
+                    Complaint.is_deleted == False,
                 )
             )
             .order_by(desc(Complaint.priority_score))
@@ -524,7 +533,7 @@ class ComplaintRepository(BaseRepository[Complaint]):
         """
         query = (
             select(Complaint)
-            .where(Complaint.is_marked_as_spam == True)
+            .where(and_(Complaint.is_marked_as_spam == True, Complaint.is_deleted == False))
             .order_by(desc(Complaint.spam_flagged_at))
             .offset(skip)
             .limit(limit)
@@ -825,7 +834,10 @@ class ComplaintRepository(BaseRepository[Complaint]):
         """
         Count complaints by student, optionally filtered by status.
         """
-        conditions = [Complaint.student_roll_no == student_roll_no]
+        conditions = [
+            Complaint.student_roll_no == student_roll_no,
+            Complaint.is_deleted == False,
+        ]
         if status:
             conditions.append(Complaint.status == status)
 

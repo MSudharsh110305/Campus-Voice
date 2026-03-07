@@ -532,73 +532,145 @@ export default function ComplaintDetails() {
                         {isAuthorityOrAdmin && (complaint.is_marked_as_spam || complaint.status === 'Spam') && complaint.has_disputed && (
                             <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl flex items-start gap-3">
                                 <ShieldAlert size={18} className="text-orange-500 mt-0.5 flex-shrink-0" />
-                                <div>
-                                    <p className="text-sm font-bold text-orange-700">Student Disputed Spam Classification</p>
+                                <div className="flex-1">
+                                    <div className="flex items-center justify-between flex-wrap gap-2">
+                                        <p className="text-sm font-bold text-orange-700">Student Disputed Spam Classification</p>
+                                        {complaint.dispute_status && (
+                                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                                                complaint.dispute_status === 'Pending'
+                                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                                    : complaint.dispute_status === 'Admin_Accepted'
+                                                    ? 'bg-green-50 text-green-700 border-green-200'
+                                                    : 'bg-red-50 text-red-700 border-red-200'
+                                            }`}>
+                                                {complaint.dispute_status === 'Admin_Accepted' ? 'Accepted' : complaint.dispute_status === 'Admin_Rejected' ? 'Rejected' : 'Pending Review'}
+                                            </span>
+                                        )}
+                                    </div>
                                     {complaint.appeal_reason ? (
                                         <p className="text-xs text-orange-800 mt-1 italic">"{complaint.appeal_reason}"</p>
                                     ) : (
                                         <p className="text-xs text-orange-600 mt-1">No reason provided. Review and update status if dispute is valid.</p>
+                                    )}
+                                    {complaint.dispute_deadline && (
+                                        <p className="text-[10px] text-orange-500 mt-1">
+                                            Dispute window: {new Date(complaint.dispute_deadline).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                                        </p>
                                     )}
                                 </div>
                             </div>
                         )}
 
                         {/* ── Spam Dispute (owner only) ───────────────────────── */}
-                        {isOwner && (complaint.is_marked_as_spam || complaint.status === 'Spam') && (
-                            <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-xl">
-                                <div className="flex items-start gap-3 mb-3">
-                                    <MessageSquareWarning size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
-                                    <div>
-                                        <p className="text-sm font-semibold text-red-700">Your complaint was marked as spam</p>
-                                        <p className="text-xs text-red-500 mt-0.5">
-                                            {complaint.spam_reason || 'Our system detected this as spam.'}
-                                        </p>
+                        {isOwner && (complaint.is_marked_as_spam || complaint.status === 'Spam') && (() => {
+                            const now = new Date();
+                            const deadline = complaint.dispute_deadline ? new Date(complaint.dispute_deadline) : null;
+                            const appealDeadline = complaint.appeal_deadline ? new Date(complaint.appeal_deadline) : null;
+                            const withinWindow = deadline ? now < deadline : true;
+                            const appealDaysLeft = appealDeadline ? Math.max(0, Math.ceil((appealDeadline - now) / 86400000)) : 0;
+
+                            return (
+                                <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-xl">
+                                    <div className="flex items-start gap-3 mb-3">
+                                        <MessageSquareWarning size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
+                                        <div>
+                                            <p className="text-sm font-semibold text-red-700">Your complaint was marked as spam</p>
+                                            <p className="text-xs text-red-500 mt-0.5">
+                                                {complaint.spam_reason || 'Our system detected this as spam.'}
+                                            </p>
+                                        </div>
                                     </div>
+
+                                    {/* Outcome: accepted */}
+                                    {complaint.dispute_status === 'Admin_Accepted' && (
+                                        <div className="flex items-center gap-2 mt-3 px-3 py-2.5 bg-green-50 border border-green-200 rounded-lg text-xs text-green-800 font-medium">
+                                            <CheckCircle2 size={14} className="text-green-600 flex-shrink-0" />
+                                            Dispute accepted — your complaint has been restored to Raised status.
+                                        </div>
+                                    )}
+
+                                    {/* Outcome: rejected, appeal window open */}
+                                    {complaint.dispute_status === 'Admin_Rejected' && appealDeadline && now < appealDeadline && (
+                                        <div className="mt-3 px-3 py-2.5 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-800">
+                                            <p className="font-semibold">Dispute rejected by admin.</p>
+                                            <p className="mt-0.5">Appeal window open — {appealDaysLeft} day{appealDaysLeft !== 1 ? 's' : ''} remaining. Contact the admin directly if you believe this is an error.</p>
+                                        </div>
+                                    )}
+
+                                    {/* Outcome: rejected, appeal window expired */}
+                                    {complaint.dispute_status === 'Admin_Rejected' && (!appealDeadline || now >= appealDeadline) && (
+                                        <div className="flex items-center gap-2 mt-3 px-3 py-2.5 bg-gray-100 border border-gray-200 rounded-lg text-xs text-gray-600 font-medium">
+                                            <AlertCircle size={14} className="text-gray-400 flex-shrink-0" />
+                                            Your dispute was reviewed and the spam classification was upheld. The appeal window has closed.
+                                        </div>
+                                    )}
+
+                                    {/* Pending: dispute already submitted */}
+                                    {(complaint.has_disputed && !complaint.dispute_status) || (complaint.has_disputed && complaint.dispute_status === 'Pending') || disputeMsg?.ok ? (
+                                        <div className="flex items-center gap-2 mt-3 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 font-medium">
+                                            <CheckCircle2 size={14} className="text-amber-600 flex-shrink-0" />
+                                            Under admin review — your dispute has been submitted and is being reviewed.
+                                        </div>
+                                    ) : !complaint.has_disputed && !complaint.dispute_status && (
+                                        <>
+                                            {/* Deadline info */}
+                                            {deadline && (
+                                                <p className="text-[10px] text-red-400 mb-2">
+                                                    {withinWindow
+                                                        ? `Dispute window closes: ${deadline.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
+                                                        : 'The 7-day dispute window has expired.'}
+                                                </p>
+                                            )}
+
+                                            {withinWindow ? (
+                                                <div className="space-y-2">
+                                                    {disputeMsg && !disputeMsg.ok && (
+                                                        <div className="text-xs px-3 py-2 rounded-lg font-medium bg-red-100 text-red-700">
+                                                            {disputeMsg.text}
+                                                        </div>
+                                                    )}
+                                                    <p className="text-xs text-red-600 font-medium">Think this is a mistake? Dispute it:</p>
+                                                    <textarea
+                                                        value={disputeReason}
+                                                        onChange={e => setDisputeReason(e.target.value.slice(0, 500))}
+                                                        rows={2}
+                                                        maxLength={500}
+                                                        placeholder="Briefly explain why this is a genuine complaint (optional)"
+                                                        className="w-full text-xs border border-red-200 rounded-lg px-3 py-2 bg-white text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
+                                                    />
+                                                    <p className="text-right text-[10px] text-gray-400">{disputeReason.length}/500</p>
+                                                    <button
+                                                        disabled={isDisputing}
+                                                        onClick={async () => {
+                                                            setIsDisputing(true);
+                                                            try {
+                                                                await complaintService.disputeSpam(id, disputeReason);
+                                                                setDisputeMsg({ ok: true, text: 'Dispute submitted. An admin will review your complaint shortly.' });
+                                                                setComplaint(prev => ({ ...prev, has_disputed: true, dispute_status: 'Pending' }));
+                                                            } catch (e) {
+                                                                const msg = e?.data?.detail || e?.message || 'Failed to submit dispute';
+                                                                setDisputeMsg({ ok: false, text: typeof msg === 'object' ? JSON.stringify(msg) : msg });
+                                                            } finally {
+                                                                setIsDisputing(false);
+                                                            }
+                                                        }}
+                                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                                                    >
+                                                        <Send size={11} />
+                                                        {isDisputing ? 'Submitting…' : 'Dispute this decision'}
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-xs text-gray-500">
+                                                    <AlertCircle size={13} className="flex-shrink-0" />
+                                                    The dispute window has passed. No further action can be taken.
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
                                 </div>
-                                {complaint.has_disputed || disputeMsg?.ok ? (
-                                    <div className="flex items-center gap-2 mt-3 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 font-medium">
-                                        <CheckCircle2 size={14} className="text-amber-600 flex-shrink-0" />
-                                        Your dispute has been submitted. An admin will review your complaint shortly.
-                                    </div>
-                                ) : disputeMsg ? (
-                                    <div className={`text-xs px-3 py-2 rounded-lg font-medium ${disputeMsg.ok ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                        {disputeMsg.text}
-                                    </div>
-                                ) : (
-                                    <div className="space-y-2">
-                                        <p className="text-xs text-red-600 font-medium">Think this is a mistake? Dispute it:</p>
-                                        <textarea
-                                            value={disputeReason}
-                                            onChange={e => setDisputeReason(e.target.value.slice(0, 200))}
-                                            rows={2}
-                                            maxLength={200}
-                                            placeholder="Briefly explain why this is a genuine complaint (optional)"
-                                            className="w-full text-xs border border-red-200 rounded-lg px-3 py-2 bg-white text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
-                                        />
-                                        <p className="text-right text-[10px] text-gray-400">{disputeReason.length}/200</p>
-                                        <button
-                                            disabled={isDisputing}
-                                            onClick={async () => {
-                                                setIsDisputing(true);
-                                                try {
-                                                    await complaintService.appealSpam(id, disputeReason);
-                                                    setDisputeMsg({ ok: true, text: 'Dispute submitted. An admin will review your complaint shortly.' });
-                                                } catch (e) {
-                                                    const msg = e?.response?.data?.detail || e?.message || 'Failed to submit dispute';
-                                                    setDisputeMsg({ ok: false, text: msg });
-                                                } finally {
-                                                    setIsDisputing(false);
-                                                }
-                                            }}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
-                                        >
-                                            <Send size={11} />
-                                            {isDisputing ? 'Submitting…' : 'Submit Dispute to Admin'}
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                            );
+                        })()}
 
                         {/* LLM Failure Warning */}
                         {complaint.llm_failed && (

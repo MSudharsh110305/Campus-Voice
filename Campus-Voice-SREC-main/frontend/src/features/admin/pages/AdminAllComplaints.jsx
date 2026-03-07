@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import adminService from '../../../services/admin.service';
 import AdminComplaintCard from '../components/AdminComplaintCard';
 import { Skeleton } from '../../../components/UI';
-import { Filter, X, Search, FileSearch } from 'lucide-react';
+import { Filter, X, Search, FileSearch, ShieldAlert, CheckCircle, XCircle } from 'lucide-react';
 import { STATUSES, PRIORITIES, CATEGORY_LIST } from '../../../utils/constants';
 
 const getToken = () => localStorage.getItem('token');
@@ -18,6 +18,12 @@ export default function AdminAllComplaints() {
 
     const [complaints, setComplaints] = useState([]);
     const [loading, setLoading] = useState(true);
+
+    // Pending disputes panel
+    const [disputes, setDisputes] = useState([]);
+    const [disputesLoading, setDisputesLoading] = useState(true);
+    const [disputeActions, setDisputeActions] = useState({}); // { [id]: { reason, submitting, msg } }
+
     const [filters, setFilters] = useState({
         status: statusFromUrl,
         priority: priorityFromUrl,
@@ -48,6 +54,40 @@ export default function AdminAllComplaints() {
             .then(data => setAuthorities(data.authorities || []))
             .catch(() => {});
     }, []);
+
+    useEffect(() => {
+        setDisputesLoading(true);
+        adminService.getPendingDisputes(0, 50)
+            .then(data => setDisputes(data.complaints || []))
+            .catch(() => setDisputes([]))
+            .finally(() => setDisputesLoading(false));
+    }, []);
+
+    const handleDisputeAction = async (complaintId, action) => {
+        const reason = (disputeActions[complaintId]?.reason || '').trim();
+        if (!reason) {
+            setDisputeActions(prev => ({
+                ...prev,
+                [complaintId]: { ...prev[complaintId], msg: { type: 'error', text: 'Please provide a reason.' } }
+            }));
+            return;
+        }
+        setDisputeActions(prev => ({ ...prev, [complaintId]: { ...prev[complaintId], submitting: true, msg: null } }));
+        try {
+            await adminService.resolveDispute(complaintId, action, reason);
+            setDisputeActions(prev => ({
+                ...prev,
+                [complaintId]: { reason: '', submitting: false, msg: { type: 'success', text: `Dispute ${action}ed successfully.` } }
+            }));
+            setDisputes(prev => prev.filter(d => d.id !== complaintId));
+        } catch (err) {
+            const msg = err?.data?.detail || err?.message || 'Failed';
+            setDisputeActions(prev => ({
+                ...prev,
+                [complaintId]: { ...prev[complaintId], submitting: false, msg: { type: 'error', text: typeof msg === 'object' ? JSON.stringify(msg) : msg } }
+            }));
+        }
+    };
 
     const loadComplaints = async (reset = false) => {
         try {
@@ -109,6 +149,65 @@ export default function AdminAllComplaints() {
                     {hasFilters ? 'Filtered results' : 'All complaints in the system'}
                 </p>
             </div>
+
+            {/* ── Pending Disputes Panel ──────────────────────────────────── */}
+            {(disputesLoading || disputes.length > 0) && (
+                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                        <ShieldAlert size={16} className="text-orange-600" />
+                        <h2 className="text-sm font-bold text-orange-800">
+                            Pending Spam Disputes {disputes.length > 0 && <span className="ml-1 px-2 py-0.5 text-[10px] bg-orange-100 text-orange-700 border border-orange-200 rounded-full">{disputes.length}</span>}
+                        </h2>
+                    </div>
+                    {disputesLoading ? (
+                        <Skeleton className="h-16 rounded-xl" />
+                    ) : disputes.map(d => {
+                        const da = disputeActions[d.id] || {};
+                        return (
+                            <div key={d.id} className="bg-white border border-orange-100 rounded-xl p-3 space-y-2">
+                                <div className="flex items-start justify-between gap-2 flex-wrap">
+                                    <div>
+                                        <p className="text-xs font-semibold text-gray-800 line-clamp-2">{d.rephrased_text || d.original_text}</p>
+                                        <p className="text-[10px] text-gray-400 mt-0.5">Student: {d.student_roll_no} {d.student_name ? `(${d.student_name})` : ''}</p>
+                                        {d.appeal_reason && (
+                                            <p className="text-[10px] text-orange-700 mt-1 italic">Reason: "{d.appeal_reason}"</p>
+                                        )}
+                                    </div>
+                                </div>
+                                <textarea
+                                    rows={2}
+                                    placeholder="Admin resolution note (required)..."
+                                    className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-gray-50 text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-200 resize-none"
+                                    value={da.reason || ''}
+                                    onChange={e => setDisputeActions(prev => ({ ...prev, [d.id]: { ...prev[d.id], reason: e.target.value } }))}
+                                />
+                                {da.msg && (
+                                    <p className={`text-[10px] font-medium ${da.msg.type === 'success' ? 'text-green-700' : 'text-red-600'}`}>{da.msg.text}</p>
+                                )}
+                                <div className="flex gap-2">
+                                    <button
+                                        disabled={da.submitting}
+                                        onClick={() => handleDisputeAction(d.id, 'accept')}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                                    >
+                                        <CheckCircle size={11} /> {da.submitting ? 'Saving…' : 'Accept'}
+                                    </button>
+                                    <button
+                                        disabled={da.submitting}
+                                        onClick={() => handleDisputeAction(d.id, 'reject')}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                                    >
+                                        <XCircle size={11} /> {da.submitting ? 'Saving…' : 'Reject'}
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {!disputesLoading && disputes.length === 0 && (
+                        <p className="text-xs text-orange-600">No pending disputes.</p>
+                    )}
+                </div>
+            )}
 
             {/* Filter Panel */}
             <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm space-y-3">

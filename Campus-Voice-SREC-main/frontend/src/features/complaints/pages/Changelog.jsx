@@ -83,6 +83,9 @@ export default function Changelog() {
             <p className="text-sm text-emerald-200/80">
               Popular resolved complaints — issues that students upvoted and got fixed
             </p>
+            <p className="text-xs text-emerald-300/70 mt-1">
+              Rolling 7-day window — refreshes daily
+            </p>
           </div>
         </div>
 
@@ -142,8 +145,20 @@ export default function Changelog() {
                         </div>
                       )}
 
-                      {/* Footer: votes + satisfaction */}
-                      <div className="flex items-center gap-3 mt-2.5">
+                      {/* Footer: score badge + resolution speed + votes + satisfaction */}
+                      <div className="flex items-center gap-3 mt-2.5 flex-wrap">
+                        {entry.win_score != null && (
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                            Score: {entry.win_score}
+                          </span>
+                        )}
+                        {entry.resolution_hours != null && (
+                          <span className="text-[11px] text-srec-textMuted">
+                            {entry.resolution_hours < 24
+                              ? `Resolved in ${Math.round(entry.resolution_hours)} hour${Math.round(entry.resolution_hours) !== 1 ? 's' : ''}`
+                              : `Resolved in ${Math.round(entry.resolution_hours / 24)} day${Math.round(entry.resolution_hours / 24) !== 1 ? 's' : ''}`}
+                          </span>
+                        )}
                         <span className="text-xs text-srec-textMuted">
                           {entry.upvotes} upvote{entry.upvotes !== 1 ? 's' : ''}
                         </span>

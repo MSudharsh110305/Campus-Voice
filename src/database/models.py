@@ -43,7 +43,7 @@ class Department(Base):
     # Relationships
     students = relationship("Student", back_populates="department")
     authorities = relationship("Authority", back_populates="department")
-    complaints = relationship("Complaint", back_populates="complaint_department")
+    complaints = relationship("Complaint", foreign_keys="[Complaint.complaint_department_id]", back_populates="complaint_department")
     
     def __repr__(self):
         return f"<Department(code={self.code}, name={self.name})>"
@@ -242,6 +242,18 @@ class Complaint(Base):
     # Students can dispute a spam/closed complaint exactly once.
     has_disputed = Column(Boolean, default=False, server_default='false', nullable=False)
     appeal_reason = Column(Text, nullable=True)  # Reason provided by student when disputing spam
+    # dispute_deadline: 7 days after spam_flagged_at — set once when spam is classified
+    dispute_deadline = Column(DateTime(timezone=True), nullable=True)
+    # dispute_status: "Pending" | "Admin_Rejected" | "Admin_Accepted"
+    dispute_status = Column(String(20), nullable=True)
+    # appeal_deadline: 3 days after admin rejects — student's last window
+    appeal_deadline = Column(DateTime(timezone=True), nullable=True)
+
+    # ── Soft delete / retention ────────────────────────────────────────────────
+    # is_deleted: soft-deleted complaints are hidden from all list views but
+    #             retrievable by ID for audit purposes (admin only).
+    is_deleted = Column(Boolean, default=False, server_default='false', nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # ── LLM Auto-merge (duplicate clustering) ─────────────────────────────────
     # When 10+ similar complaints are detected, LLM merges them into a single
@@ -267,7 +279,7 @@ class Complaint(Base):
     category = relationship("ComplaintCategory", back_populates="complaints")
     assigned_authority = relationship("Authority", foreign_keys=[assigned_authority_id], back_populates="assigned_complaints")
     spam_flagged_by_authority = relationship("Authority", foreign_keys=[spam_flagged_by], back_populates="spam_flags")
-    complaint_department = relationship("Department", back_populates="complaints")
+    complaint_department = relationship("Department", foreign_keys=[complaint_department_id], back_populates="complaints")
     votes = relationship("Vote", back_populates="complaint", cascade="all, delete-orphan")
     status_updates = relationship("StatusUpdate", back_populates="complaint", cascade="all, delete-orphan")
     image_verification_logs = relationship("ImageVerificationLog", back_populates="complaint", cascade="all, delete-orphan")

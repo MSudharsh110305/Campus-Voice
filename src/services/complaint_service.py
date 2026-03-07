@@ -49,6 +49,8 @@ _STUDENT_DISCIPLINARY_KEYWORDS = [
     "discrimination",
     "fight", "fighting",
     "eve teasing",
+    # Student-on-student harassment always goes to DC regardless of context
+    "harass", "harassment", "harassing",
 ]
 
 # These are serious but context-dependent: they trigger Disciplinary ONLY when
@@ -58,7 +60,6 @@ _STUDENT_DISCIPLINARY_KEYWORDS = [
 _AUTHORITY_MISCONDUCT_KEYWORDS = [
     "bribery", "bribe", "corrupt", "corruption", "extortion",
     "demanding money", "demand money", "taking money",
-    "harass", "harassment",
     "abuse", "abusing",
     "threat", "threaten",
 ]
@@ -122,6 +123,30 @@ def _override_category(text: str, llm_category: str, student_gender: str) -> str
         Final category string (may be the same as llm_category or an override)
     """
     text_lower = text.lower()
+
+    # ------------------------------------------------------------------ #
+    # OVERRIDE 0: Un-DC complaints that LLM wrongly sent to DC            #
+    # If LLM returned "Disciplinary Committee" but the complaint is       #
+    # ABOUT a named authority (warden/HOD/faculty), DC is wrong.          #
+    # DC is only for student-on-student misconduct. Authority misconduct  #
+    # stays in its category (hostel/dept) and uses bypass routing.        #
+    # ------------------------------------------------------------------ #
+    if llm_category == "Disciplinary Committee":
+        _about_hostel = any(kw in text_lower for kw in _HOSTEL_AUTHORITY_SUBJECT_KEYWORDS)
+        _about_dept = any(kw in text_lower for kw in _DEPT_AUTHORITY_SUBJECT_KEYWORDS)
+        if _about_hostel:
+            corrected = "Women's Hostel" if student_gender == "Female" else "Men's Hostel"
+            logger.warning(
+                f"Category override: Disciplinary Committee -> {corrected} "
+                f"| reason: LLM wrongly assigned DC for hostel authority complaint | text: {text[:80]}"
+            )
+            return corrected
+        elif _about_dept:
+            logger.warning(
+                f"Category override: Disciplinary Committee -> Department "
+                f"| reason: LLM wrongly assigned DC for dept authority complaint | text: {text[:80]}"
+            )
+            return "Department"
 
     # ------------------------------------------------------------------ #
     # OVERRIDE 1: Disciplinary Committee                                   #
@@ -309,6 +334,7 @@ class ComplaintService:
         # Flag: set to True if spam is detected; complaint will be saved as spam
         is_spam_complaint = False
         spam_complaint_reason = None
+        llm_failed = False
 
         try:
             # 1. Check for spam FIRST (before processing)
@@ -324,7 +350,6 @@ class ComplaintService:
                     f"Spam complaint detected for {student_roll_no}: {spam_complaint_reason} — saving as spam"
                 )
 
-            llm_failed = False
             if not is_spam_complaint:
                 # 2. Categorize and get priority (✅ NOW INCLUDES department detection)
                 categorization = await llm_service.categorize_complaint(original_text, context)
@@ -414,7 +439,9 @@ class ComplaintService:
             raise
         except Exception as e:
             logger.error(f"LLM processing error: {e}")
-            # Fallback values
+            # Fallback values — use "General" as base, then let the deterministic
+            # override layer correct it (e.g. "ragging" → Disciplinary Committee
+            # even when the LLM is unreachable).
             categorization = {
                 "category": "General",
                 "target_department": context.get("department", "CSE"),
@@ -425,6 +452,14 @@ class ComplaintService:
             rephrased_text = original_text
             image_requirement = {"image_required": False}
             llm_failed = True
+
+        # When LLM failed, the override layer inside the try block was never reached.
+        # Apply it now so keyword-based rules still fire (e.g. "ragging" → DC).
+        if llm_failed:
+            _corrected_cat = _override_category(original_text, categorization.get("category", "General"), student.gender or "")
+            if _corrected_cat != categorization.get("category"):
+                logger.info(f"LLM-fallback override: General -> {_corrected_cat} for '{original_text[:60]}'")
+                categorization["category"] = _corrected_cat
 
         # ✅ UPDATED: Map category name to ID
         category_id = None

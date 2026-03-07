@@ -31,8 +31,14 @@ class Settings(BaseSettings):
     # ==================== JWT & SECURITY ====================
     JWT_SECRET_KEY: str = Field(..., min_length=32, description="JWT secret key")
     JWT_ALGORITHM: str = Field(default="HS256", description="JWT algorithm")
-    JWT_EXPIRATION_DAYS: int = Field(default=7, ge=1, description="Token expiration (days)")
+    JWT_EXPIRATION_DAYS: int = Field(default=7, ge=1, description="Token expiration (days) — kept for backward compat")
     PASSWORD_MIN_LENGTH: int = Field(default=8, ge=6, description="Min password length")
+
+    # Role-specific token expiry
+    ACCESS_TOKEN_EXPIRE_MINUTES_STUDENT: int = Field(default=30, ge=1, description="Student access token expiry (minutes)")
+    REFRESH_TOKEN_EXPIRE_DAYS_STUDENT: int = Field(default=7, ge=1, description="Student refresh token expiry (days)")
+    ACCESS_TOKEN_EXPIRE_MINUTES_AUTHORITY: int = Field(default=15, ge=1, description="Authority/Admin access token expiry (minutes)")
+    REFRESH_TOKEN_EXPIRE_DAYS_AUTHORITY: int = Field(default=1, ge=1, description="Authority/Admin refresh token expiry (days)")
     
     # ==================== GROQ LLM ====================
     GROQ_API_KEY: str = Field(default="", description="Groq API key (optional; LLM features use fallback logic when empty)")

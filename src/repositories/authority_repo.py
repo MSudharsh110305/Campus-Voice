@@ -188,7 +188,7 @@ class AuthorityRepository(BaseRepository[Authority]):
         if not authority_type:
             return None
 
-        conditions = [Authority.authority_type == authority_type]
+        conditions = [Authority.authority_type == authority_type, Authority.is_active == True]
 
         # For department complaints, match department
         if authority_type == "HOD" and department_id:

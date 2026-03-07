@@ -62,6 +62,22 @@ class AuthService:
             return False
     
     @staticmethod
+    def _access_token_expiry(role: str) -> timedelta:
+        """Return role-specific access token expiry."""
+        if role == "Student":
+            return timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES_STUDENT)
+        else:  # Authority / Admin
+            return timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES_AUTHORITY)
+
+    @staticmethod
+    def _refresh_token_expiry(role: str) -> timedelta:
+        """Return role-specific refresh token expiry."""
+        if role == "Student":
+            return timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS_STUDENT)
+        else:  # Authority / Admin
+            return timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS_AUTHORITY)
+
+    @staticmethod
     def create_access_token(
         subject: str,
         role: str,
@@ -70,18 +86,18 @@ class AuthService:
     ) -> str:
         """
         Create JWT access token.
-        
+
         Args:
             subject: Token subject (roll_no or authority_id)
             role: User role (Student, Authority, Admin)
             additional_claims: Additional JWT claims
-            expires_delta: Token expiration duration
-        
+            expires_delta: Token expiration duration (defaults to role-specific short expiry)
+
         Returns:
             Encoded JWT token
         """
         if expires_delta is None:
-            expires_delta = timedelta(days=settings.JWT_EXPIRATION_DAYS)
+            expires_delta = AuthService._access_token_expiry(role)
         
         # ✅ FIXED: Use timezone-aware datetime
         now = datetime.now(timezone.utc)
@@ -119,17 +135,17 @@ class AuthService:
     ) -> str:
         """
         Create JWT refresh token (longer expiration).
-        
+
         Args:
             subject: Token subject (roll_no or authority_id)
             role: User role (Student, Authority, Admin)
-            expires_delta: Token expiration duration (default: 30 days)
-        
+            expires_delta: Token expiration duration (defaults to role-specific long expiry)
+
         Returns:
             Encoded JWT refresh token
         """
         if expires_delta is None:
-            expires_delta = timedelta(days=30)  # Refresh tokens last 30 days
+            expires_delta = AuthService._refresh_token_expiry(role)
         
         # ✅ Use timezone-aware datetime
         now = datetime.now(timezone.utc)
@@ -432,19 +448,20 @@ class AuthService:
             role=role,
             additional_claims=additional_claims
         )
-        
+
         refresh_token = AuthService.create_refresh_token(
             subject=subject,
             role=role
         )
-        
+
         logger.info(f"Token pair created for {subject} ({role})")
-        
+
+        expiry = AuthService._access_token_expiry(role)
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
-            "expires_in": AuthService.get_token_expiration_seconds()
+            "expires_in": int(expiry.total_seconds())
         }
 
 

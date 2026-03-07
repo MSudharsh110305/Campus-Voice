@@ -390,7 +390,7 @@ async def admin_list_complaints(
     from sqlalchemy.orm import selectinload
     from src.database.models import Complaint, ComplaintCategory, Department
 
-    conditions = []
+    conditions = [Complaint.is_deleted == False]
     if status_filter:
         conditions.append(Complaint.status == status_filter)
     if priority:
@@ -459,8 +459,12 @@ async def admin_list_complaints(
             "status": c.status,
             "assigned_authority_name": c.assigned_authority.name if c.assigned_authority else None,
             "is_marked_as_spam": c.is_marked_as_spam,
+            "spam_flagged_at": c.spam_flagged_at,
             "has_disputed": c.has_disputed,
             "appeal_reason": c.appeal_reason,
+            "dispute_deadline": c.dispute_deadline,
+            "dispute_status": c.dispute_status,
+            "appeal_deadline": c.appeal_deadline,
             "has_image": c.has_image,
             "image_verified": c.image_verified,
             "image_verification_status": c.image_verification_status,
@@ -472,6 +476,191 @@ async def admin_list_complaints(
         }
         complaint_responses.append(ComplaintResponse.model_validate(data))
 
+    return ComplaintListResponse(
+        complaints=complaint_responses,
+        total=total,
+        page=skip // limit + 1,
+        page_size=limit,
+        total_pages=(total + limit - 1) // limit
+    )
+
+
+# ==================== DISPUTE RESOLUTION ====================
+
+
+class DisputeResolutionRequest(BaseModel):
+    action: str = Field(..., description="'accept' or 'reject'")
+    reason: str = Field(..., min_length=1, max_length=1000)
+
+
+@router.post(
+    "/complaints/{complaint_id}/resolve-dispute",
+    response_model=SuccessResponse,
+    summary="Resolve a spam dispute",
+    description="Admin accepts or rejects a student's spam dispute"
+)
+async def resolve_dispute(
+    complaint_id: str,
+    body: DisputeResolutionRequest,
+    current_authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Resolve a pending spam dispute submitted by a student.
+
+    - action='accept': restores complaint to Raised, clears spam flags
+    - action='reject': sets dispute_status=Admin_Rejected, opens 3-day appeal window
+    """
+    from uuid import UUID as _UUID
+    from src.database.models import Complaint
+    from src.services.notification_service import notification_service
+
+    try:
+        c_uuid = _UUID(str(complaint_id))
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid complaint ID")
+
+    result = await db.execute(select(Complaint).where(Complaint.id == c_uuid))
+    complaint = result.scalar_one_or_none()
+
+    if not complaint:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Complaint not found")
+
+    if not complaint.has_disputed or complaint.dispute_status != "Pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No pending dispute on this complaint"
+        )
+
+    now = datetime.now(timezone.utc)
+    action = body.action.lower()
+
+    if action == "accept":
+        complaint.status = "Raised"
+        complaint.is_marked_as_spam = False
+        complaint.spam_reason = None
+        complaint.spam_flagged_by = None
+        complaint.spam_flagged_at = None
+        complaint.dispute_status = "Admin_Accepted"
+        complaint.updated_at = now
+
+        student_msg = (
+            f"Your spam dispute was accepted. Your complaint has been restored to 'Raised' status. "
+            f"Admin note: {body.reason}"
+        )
+
+    elif action == "reject":
+        from datetime import timedelta
+        complaint.dispute_status = "Admin_Rejected"
+        complaint.appeal_deadline = now + timedelta(days=3)
+        complaint.updated_at = now
+
+        student_msg = (
+            f"Your spam dispute was reviewed and rejected. "
+            f"You have 3 days to escalate if needed. "
+            f"Admin note: {body.reason}"
+        )
+
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="action must be 'accept' or 'reject'"
+        )
+
+    await db.commit()
+
+    # Notify the student
+    try:
+        await notification_service.create_notification(
+            db=db,
+            recipient_type="Student",
+            recipient_id=complaint.student_roll_no,
+            complaint_id=c_uuid,
+            notification_type="dispute_resolved",
+            message=student_msg
+        )
+    except Exception as e:
+        logger.warning(f"Failed to notify student of dispute resolution: {e}")
+
+    logger.info(
+        f"Dispute on complaint {complaint_id} {action}ed by admin {current_authority_id}"
+    )
+
+    return SuccessResponse(
+        success=True,
+        message=f"Dispute {action}ed successfully"
+    )
+
+
+@router.get(
+    "/complaints/disputes",
+    summary="List complaints with pending disputes",
+    description="Get all complaints that have an active (Pending) spam dispute"
+)
+async def list_pending_disputes(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    current_authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Return complaints where dispute_status == 'Pending', ordered newest first."""
+    from sqlalchemy.orm import selectinload
+    from src.database.models import Complaint
+
+    query = (
+        select(Complaint)
+        .options(
+            selectinload(Complaint.category),
+            selectinload(Complaint.student),
+            selectinload(Complaint.assigned_authority),
+        )
+        .where(Complaint.dispute_status == "Pending")
+        .order_by(Complaint.spam_flagged_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    complaints = result.scalars().all()
+
+    count_result = await db.execute(
+        select(func.count()).select_from(Complaint).where(Complaint.dispute_status == "Pending")
+    )
+    total = count_result.scalar() or 0
+
+    complaint_responses = []
+    for c in complaints:
+        data = {
+            "id": c.id,
+            "category_id": c.category_id,
+            "category_name": c.category.name if c.category else None,
+            "original_text": c.original_text,
+            "rephrased_text": c.rephrased_text,
+            "visibility": c.visibility,
+            "upvotes": c.upvotes,
+            "downvotes": c.downvotes,
+            "priority": c.priority,
+            "priority_score": c.priority_score,
+            "status": c.status,
+            "assigned_authority_name": c.assigned_authority.name if c.assigned_authority else None,
+            "is_marked_as_spam": c.is_marked_as_spam,
+            "spam_flagged_at": c.spam_flagged_at,
+            "has_disputed": c.has_disputed,
+            "appeal_reason": c.appeal_reason,
+            "dispute_deadline": c.dispute_deadline,
+            "dispute_status": c.dispute_status,
+            "appeal_deadline": c.appeal_deadline,
+            "has_image": c.has_image,
+            "image_verified": c.image_verified,
+            "image_verification_status": c.image_verification_status,
+            "submitted_at": c.submitted_at,
+            "updated_at": c.updated_at,
+            "resolved_at": c.resolved_at,
+            "student_roll_no": c.student_roll_no,
+            "student_name": c.student.name if c.student else None,
+        }
+        complaint_responses.append(ComplaintResponse.model_validate(data))
+
+    from src.schemas.complaint import ComplaintListResponse
     return ComplaintListResponse(
         complaints=complaint_responses,
         total=total,

@@ -113,7 +113,7 @@ class AuthorityProfile(BaseModel):
 
 class AuthorityResponse(BaseModel):
     """Schema for authority login response"""
-    
+
     id: int
     name: str
     email: str
@@ -121,6 +121,7 @@ class AuthorityResponse(BaseModel):
     department_id: Optional[int] = None
     designation: Optional[str] = None
     token: str
+    refresh_token: Optional[str] = None
     token_type: str = "Bearer"
     expires_in: int
     

@@ -23,14 +23,83 @@ export const decodeToken = (token) => {
     }
 };
 
+// ==================== TOKEN STORAGE ====================
+// Access token: sessionStorage (cleared when tab/browser closes)
+// Refresh token: localStorage  (persists across sessions)
+
+export const tokenStorage = {
+    getAccessToken: () => sessionStorage.getItem('access_token') || localStorage.getItem('token'),
+    setAccessToken: (t) => { sessionStorage.setItem('access_token', t); },
+    getRefreshToken: () => localStorage.getItem('refresh_token'),
+    setRefreshToken: (t) => { localStorage.setItem('refresh_token', t); },
+    clearAll: () => {
+        sessionStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        // Legacy key cleanup
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+    },
+};
+
+// ==================== TOKEN REFRESH LOGIC ====================
+// Single in-flight refresh promise — concurrent 401s queue behind it.
+let _refreshPromise = null;
+
+const _clearSessionAndRedirect = () => {
+    tokenStorage.clearAll();
+    window.location.href = '/login';
+};
+
+const _attemptRefresh = async () => {
+    if (_refreshPromise) return _refreshPromise;
+
+    _refreshPromise = (async () => {
+        const refreshToken = tokenStorage.getRefreshToken();
+        if (!refreshToken) {
+            _clearSessionAndRedirect();
+            return null;
+        }
+
+        try {
+            const resp = await fetch(`${API_BASE_URL}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken }),
+            });
+
+            if (!resp.ok) {
+                console.warn('Refresh token rejected by server. Logging out.');
+                _clearSessionAndRedirect();
+                return null;
+            }
+
+            const data = await resp.json();
+            const newAccessToken = data.access_token;
+            tokenStorage.setAccessToken(newAccessToken);
+            return newAccessToken;
+        } catch (err) {
+            console.error('Token refresh network error:', err);
+            _clearSessionAndRedirect();
+            return null;
+        } finally {
+            _refreshPromise = null;
+        }
+    })();
+
+    return _refreshPromise;
+};
+
+// ==================== CORE FETCH WRAPPER ====================
+
 /**
  * A wrapper around fetch that handles:
- * 1. Attaching the Bearer token.
+ * 1. Attaching the Bearer (access) token.
  * 2. Parsing JSON responses.
- * 3. Handling global errors (401 → redirect to login).
+ * 3. On 401: automatically attempts one token refresh then retries.
+ * 4. On refresh failure: clears storage and redirects to /login.
  */
-export const api = async (endpoint, options = {}) => {
-    const token = localStorage.getItem('token');
+export const api = async (endpoint, options = {}, _isRetry = false) => {
+    const token = tokenStorage.getAccessToken();
 
     const headers = {
         ...options.headers,
@@ -74,12 +143,21 @@ export const api = async (endpoint, options = {}) => {
         if (!response.ok) {
             console.error('API Error Response:', { status: response.status, data });
 
-            // Global Error Handling — on 401 clear token and redirect to login
-            if (response.status === 401) {
-                console.warn('Session expired or unauthorized. Redirecting to login.');
-                localStorage.removeItem('token');
-                localStorage.removeItem('user');
-                window.location.href = '/login';
+            if (response.status === 401 && !_isRetry) {
+                // Access token expired — try to refresh once
+                const newToken = await _attemptRefresh();
+                if (newToken) {
+                    // Retry the original request with the new token
+                    return api(endpoint, options, true);
+                }
+                // _attemptRefresh already redirected to login
+                return;
+            }
+
+            if (response.status === 401 && _isRetry) {
+                // Even after refresh, still 401 — give up
+                console.warn('Still 401 after token refresh. Logging out.');
+                _clearSessionAndRedirect();
                 return;
             }
 
@@ -105,7 +183,7 @@ export const api = async (endpoint, options = {}) => {
  * Authorization header is attached automatically.
  */
 export const fetchBlobUrl = async (endpoint, options = {}) => {
-    const token = localStorage.getItem('token');
+    const token = tokenStorage.getAccessToken();
     const headers = { ...options.headers };
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;

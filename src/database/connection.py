@@ -409,6 +409,30 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                 except Exception as me:
                     logger.debug(f"Migration note (complaint merge): {me}")
 
+            # Ensure critical authorities exist (DC + SDW) using raw SQL + ON CONFLICT
+            # This runs every startup and is idempotent — safe to call repeatedly.
+            async with engine.begin() as conn:
+                try:
+                    from src.services.auth_service import auth_service as _as
+                    _dc_hash  = _as.hash_password("Discip@12345")
+                    _sdw_hash = _as.hash_password("SeniorDW@123")
+                    await conn.execute(text("""
+                        INSERT INTO authorities
+                            (name, email, password_hash, authority_type, authority_level,
+                             designation, is_active, created_at, updated_at)
+                        VALUES
+                            ('Dr. Anand Verma',  'dc@srec.ac.in',  :dc_hash,
+                             'Disciplinary Committee', 20, 'Disciplinary Committee Head',
+                             TRUE, NOW(), NOW()),
+                            ('Mr. Venkat Rao',   'sdw@srec.ac.in', :sdw_hash,
+                             'Senior Deputy Warden',  15, 'Senior Deputy Warden',
+                             TRUE, NOW(), NOW())
+                        ON CONFLICT (email) DO NOTHING
+                    """), {"dc_hash": _dc_hash, "sdw_hash": _sdw_hash})
+                    logger.info("✅ Migration: DC and SDW authorities ensured")
+                except Exception as me:
+                    logger.warning(f"Migration note (DC/SDW authority): {me}")
+
             # System settings table (configurable key-value store for admin)
             async with engine.begin() as conn:
                 try:
@@ -436,12 +460,47 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                 except Exception as me:
                     logger.debug(f"Migration note (system_settings): {me}")
 
+            # Dispute window + soft-delete columns (data lifecycle system)
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS "
+                        "dispute_deadline TIMESTAMPTZ"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS "
+                        "dispute_status VARCHAR(20)"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS "
+                        "appeal_deadline TIMESTAMPTZ"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS "
+                        "is_deleted BOOLEAN NOT NULL DEFAULT FALSE"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS "
+                        "deleted_at TIMESTAMPTZ"
+                    ))
+                    # Backfill dispute_deadline for existing spam complaints that are missing it
+                    await conn.execute(text(
+                        "UPDATE complaints "
+                        "SET dispute_deadline = spam_flagged_at + INTERVAL '7 days' "
+                        "WHERE is_marked_as_spam = TRUE "
+                        "  AND spam_flagged_at IS NOT NULL "
+                        "  AND dispute_deadline IS NULL"
+                    ))
+                    logger.info("✅ Migration: complaint dispute_deadline + soft-delete columns ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (dispute/soft-delete cols): {me}")
+
             async with AsyncSessionLocal() as session:
                 from src.database.models import Department
-                
+
                 result = await session.execute(text("SELECT COUNT(*) FROM departments"))
                 count = result.scalar()
-                
+
                 if count == 0:
                     logger.info("📦 Database is empty, seeding initial data...")
                     await seed_initial_data(session)
@@ -449,10 +508,23 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                     logger.info(f"✅ Database already contains {count} departments")
                     # Still seed authorities if missing
                     await seed_authorities(session)
+                    # Ensure any newly-added authorities (e.g. SDW) are inserted
+                    await seed_missing_authorities(session)
 
             logger.info("✅ Database initialization complete")
+
+            # Start retention sweep on startup and schedule daily loop
+            try:
+                from src.services.retention_service import run_retention_sweep, schedule_daily_sweep
+                async with AsyncSessionLocal() as sweep_session:
+                    await run_retention_sweep(sweep_session)
+                asyncio.create_task(schedule_daily_sweep())
+                logger.info("✅ Retention service started")
+            except Exception as re:
+                logger.warning(f"Retention service startup warning: {re}")
+
             return
-        
+
         except OperationalError as e:
             if attempt < retry_attempts:
                 logger.warning(
@@ -553,7 +625,7 @@ async def seed_authorities(session: AsyncSession):
             },
             # Disciplinary Committee
             {
-                "name": "Prof. S. Rajagopal",
+                "name": "Dr. Anand Verma",
                 "email": "dc@srec.ac.in",
                 "password": "Discip@12345",
                 "authority_type": "Disciplinary Committee",
@@ -563,7 +635,7 @@ async def seed_authorities(session: AsyncSession):
             },
             # Senior Deputy Warden
             {
-                "name": "Dr. M. Subramanian",
+                "name": "Mr. Venkat Rao",
                 "email": "sdw@srec.ac.in",
                 "password": "SeniorDW@123",
                 "authority_type": "Senior Deputy Warden",
@@ -673,6 +745,73 @@ async def seed_authorities(session: AsyncSession):
     except Exception as e:
         await session.rollback()
         logger.error(f"❌ Failed to seed authorities: {e}", exc_info=True)
+
+
+async def seed_missing_authorities(session: AsyncSession):
+    """Insert any authority accounts that are in the canonical list but missing from the DB.
+
+    This is safe to call every startup — it only inserts rows whose email
+    doesn't already exist (INSERT ... ON CONFLICT DO NOTHING equivalent via
+    checking before insert).
+    """
+    from src.database.models import Authority
+    from src.services.auth_service import auth_service
+    from sqlalchemy import select as sa_select
+
+    # Minimal list of authorities that must always exist.
+    # Add new authorities here when the org chart changes.
+    required = [
+        {
+            "name": "Dr. Anand Verma",
+            "email": "dc@srec.ac.in",
+            "password": "Discip@12345",
+            "authority_type": "Disciplinary Committee",
+            "authority_level": 20,
+            "designation": "Disciplinary Committee Head",
+            "department_id": None,
+        },
+        {
+            "name": "Mr. Venkat Rao",
+            "email": "sdw@srec.ac.in",
+            "password": "SeniorDW@123",
+            "authority_type": "Senior Deputy Warden",
+            "authority_level": 15,
+            "designation": "Senior Deputy Warden",
+            "department_id": None,
+        },
+    ]
+
+    try:
+        inserted = 0
+        for auth_data in required:
+            existing = await session.execute(
+                sa_select(Authority).where(Authority.email == auth_data["email"])
+            )
+            if existing.scalar_one_or_none() is not None:
+                continue
+            hashed = auth_service.hash_password(auth_data["password"])
+            authority = Authority(
+                name=auth_data["name"],
+                email=auth_data["email"],
+                password_hash=hashed,
+                authority_type=auth_data["authority_type"],
+                authority_level=auth_data["authority_level"],
+                designation=auth_data.get("designation"),
+                department_id=auth_data.get("department_id"),
+                is_active=True,
+            )
+            session.add(authority)
+            inserted += 1
+
+        if inserted:
+            await session.commit()
+            logger.info(f"✅ seed_missing_authorities: inserted {inserted} missing authority/ies")
+        else:
+            logger.debug("✅ seed_missing_authorities: all required authorities present")
+
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"❌ seed_missing_authorities failed: {e}", exc_info=True)
 
 
 # ==================== SREC MIGRATION ====================
@@ -1051,6 +1190,7 @@ __all__ = [
     "init_db",
     "seed_initial_data",
     "seed_authorities",
+    "seed_missing_authorities",
     "health_check",
     "get_db_info",
     "get_pool_status",

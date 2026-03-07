@@ -1,4 +1,4 @@
-import { api, decodeToken } from '../utils/api';
+import { api, decodeToken, tokenStorage } from '../utils/api';
 
 const loginStudent = async (email_or_roll_no, password) => {
     const data = await api('/students/login', {
@@ -17,32 +17,33 @@ const loginAuthority = async (email, password) => {
 };
 
 const handleLoginResponse = (data) => {
-    if (data.token) {
-        localStorage.setItem('token', data.token);
+    // Backend returns `token` (access token) and optionally `refresh_token`
+    const accessToken = data.token || data.access_token;
+    if (!accessToken) return data;
 
-        // Decode token to get the authoritative role
-        const decoded = decodeToken(data.token);
-
-        // Merge returned user data with the token role
-        // Backend returns user details (name, email, etc) separate from token
-        // But token is the source of truth for 'role'
-        const userWithRole = {
-            ...data, // This likely contains name, email, roll_no etc directly at top level or in a 'user' object depending on backend
-            // Per backend spec: Response fields include roll_no, name, etc, AND token.
-            // We'll flatten it carefully.
-            role: decoded?.role, // Default to Student if missing, but should be there
-        };
-
-        // If the backend returns 'user' object nested:
-        if (data.user) {
-            Object.assign(userWithRole, data.user);
-        }
-
-        // Clean up redundant fields if necessary, but key implies we store 'user' string
-        localStorage.setItem('user', JSON.stringify(userWithRole));
-        return userWithRole;
+    // Store access token in sessionStorage, refresh token in localStorage
+    tokenStorage.setAccessToken(accessToken);
+    if (data.refresh_token) {
+        tokenStorage.setRefreshToken(data.refresh_token);
     }
-    return data;
+
+    // Decode token to get the authoritative role
+    const decoded = decodeToken(accessToken);
+
+    const userWithRole = {
+        ...data,
+        role: decoded?.role,
+    };
+
+    // If the backend returns a nested 'user' object, flatten it
+    if (data.user) {
+        Object.assign(userWithRole, data.user);
+    }
+
+    // Persist user profile (non-token fields) for getCurrentUser()
+    localStorage.setItem('user', JSON.stringify(userWithRole));
+
+    return userWithRole;
 };
 
 const signup = async (userData) => {
@@ -50,33 +51,50 @@ const signup = async (userData) => {
         method: 'POST',
         body: JSON.stringify(userData),
     });
-    return data;
+    // Registration also returns tokens — store them
+    return handleLoginResponse(data);
 };
 
 const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    tokenStorage.clearAll();
     window.location.href = '/login';
 };
 
 const getCurrentUser = () => {
     const userStr = localStorage.getItem('user');
-    const token = localStorage.getItem('token');
+    // Prefer sessionStorage access token; fall back to legacy localStorage key
+    const accessToken = tokenStorage.getAccessToken();
+    const refreshToken = tokenStorage.getRefreshToken();
 
-    if (!userStr || !token) return null;
+    // A session is considered valid if we have either an unexpired access token
+    // OR a refresh token (the interceptor will silently refresh on next API call)
+    if (!userStr) return null;
 
     try {
         const user = JSON.parse(userStr);
         if (!user || typeof user !== 'object') return null;
 
-        const decoded = decodeToken(token);
-        if (!decoded?.role) return null;
-        if (decoded && decoded.exp * 1000 < Date.now()) {
-            // Token expired - invalid session
-            return null;
+        if (accessToken) {
+            const decoded = decodeToken(accessToken);
+            // If access token exists and is not expired, use it
+            if (decoded?.role && decoded.exp * 1000 > Date.now()) {
+                return user;
+            }
         }
 
-        return user;
+        // Access token missing or expired — check if we have a valid refresh token.
+        // If yes, return the user object anyway; the api() interceptor will
+        // transparently refresh the access token on the next API call.
+        if (refreshToken) {
+            const decodedRefresh = decodeToken(refreshToken);
+            if (decodedRefresh && decodedRefresh.exp * 1000 > Date.now()) {
+                return user;
+            }
+        }
+
+        // Both tokens expired or missing — clear and treat as logged-out
+        tokenStorage.clearAll();
+        return null;
     } catch (e) {
         return null;
     }

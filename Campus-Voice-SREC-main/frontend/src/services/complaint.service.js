@@ -128,6 +128,11 @@ const appealSpam = async (complaintId, reason) => {
     return await api(`/complaints/${complaintId}/appeal-spam${params}`, { method: 'POST' });
 };
 
+const disputeSpam = async (complaintId, reason) => {
+    const params = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+    return await api(`/complaints/${complaintId}/dispute${params}`, { method: 'POST' });
+};
+
 const checkDuplicate = async (text, categoryHint = null) => {
     return await api('/complaints/check-duplicate', {
         method: 'POST',
@@ -184,6 +189,7 @@ const complaintService = {
     flagSpam,
     unflagSpam,
     appealSpam,
+    disputeSpam,
     checkDuplicate,
     rateComplaint,
     getChangelog,

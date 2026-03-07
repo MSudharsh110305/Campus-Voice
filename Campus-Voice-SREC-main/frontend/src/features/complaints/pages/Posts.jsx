@@ -129,7 +129,7 @@ export default function Posts() {
   const handleDupUpvote = async (complaintId) => {
     if (dupVotes[complaintId]) return; // already voted
     try {
-      await complaintService.voteOnComplaint(complaintId, 'upvote');
+      await complaintService.voteOnComplaint(complaintId, 'Upvote');
       setDupVotes(prev => ({ ...prev, [complaintId]: 'upvoted' }));
       setDupCandidates(prev =>
         prev.map(c => c.id === complaintId ? { ...c, upvotes: (c.upvotes || 0) + 1 } : c)

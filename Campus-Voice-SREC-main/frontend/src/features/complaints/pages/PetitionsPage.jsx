@@ -69,6 +69,7 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing }) {
     status,
     days_remaining,
     deadline,
+    is_extended,
   } = petition;
 
   const goal = custom_goal || milestone_goal || 50;
@@ -101,7 +102,18 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing }) {
                   {petition.department_name}
                 </span>
               )}
-              <DeadlineChip daysRemaining={days_remaining} deadline={deadline} />
+              {isExpired && !isClosed ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-50 text-red-600 border border-red-200">
+                  Closed
+                </span>
+              ) : (
+                <DeadlineChip daysRemaining={days_remaining} deadline={deadline} />
+              )}
+              {is_extended && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-green-50 text-green-700 border border-green-200">
+                  +4 days
+                </span>
+              )}
               {goalReached && (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                   <CheckCircle size={9} /> Goal Reached!

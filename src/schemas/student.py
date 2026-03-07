@@ -237,6 +237,7 @@ class StudentResponse(BaseModel):
     department_id: Optional[int] = None
     department_name: Optional[str] = None
     token: str
+    refresh_token: Optional[str] = None
     token_type: str = "Bearer"
     expires_in: int
     

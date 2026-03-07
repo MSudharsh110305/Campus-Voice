@@ -122,8 +122,16 @@ class ComplaintResponse(BaseModel):
     assigned_authority_name: Optional[str] = None
     is_marked_as_spam: bool
     spam_reason: Optional[str] = None
+    spam_flagged_at: Optional[datetime] = None
     has_disputed: bool = False
     appeal_reason: Optional[str] = None
+    # Dispute lifecycle fields
+    dispute_deadline: Optional[datetime] = None
+    dispute_status: Optional[str] = None
+    appeal_deadline: Optional[datetime] = None
+    # Soft-delete (excluded from normal responses but present for completeness)
+    is_deleted: bool = False
+    deleted_at: Optional[datetime] = None
 
     # ✅ NEW: Binary image storage fields (replaces image_url)
     has_image: bool = Field(
@@ -675,6 +683,8 @@ class ChangelogEntry(BaseModel):
     resolved_at: Optional[datetime] = None
     upvotes: int
     satisfaction_avg: Optional[float] = None
+    win_score: int = 0
+    resolution_hours: Optional[float] = None
 
     model_config = {"from_attributes": True}
 

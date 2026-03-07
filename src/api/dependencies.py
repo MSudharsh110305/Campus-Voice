@@ -80,16 +80,27 @@ async def get_current_user(
     try:
         token = credentials.credentials
         payload = auth_service.decode_token(token)
-        
+
         if not payload:
             raise InvalidTokenError()
-        
+
+        # Reject refresh tokens used as access tokens
+        token_type = payload.get("type", "access")
+        if token_type != "access":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh tokens cannot be used for API access. Use your access token.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         return {
             "user_id": payload.get("sub"),
             "role": payload.get("role"),
             "payload": payload
         }
-        
+
+    except HTTPException:
+        raise
     except (InvalidTokenError, TokenExpiredError) as e:
         raise to_http_exception(e)
     except Exception as e:
@@ -541,19 +552,26 @@ async def get_complaint_with_ownership(
     
     complaint_repo = ComplaintRepository(db)
     complaint = await complaint_repo.get(complaint_id)
-    
+
     if not complaint:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Complaint not found"
         )
-    
+
+    # Soft-deleted complaints are invisible to students
+    if getattr(complaint, 'is_deleted', False):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Complaint not found"
+        )
+
     if complaint.student_roll_no != roll_no:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to access this complaint"
         )
-    
+
     return complaint
 
 
@@ -590,25 +608,32 @@ async def get_complaint_with_visibility(
     student_repo = StudentRepository(db)
     
     complaint = await complaint_repo.get_with_relations(complaint_id)
-    
+
     if not complaint:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Complaint not found"
         )
-    
+
+    # Soft-deleted complaints are invisible to students (even owners)
+    if getattr(complaint, 'is_deleted', False):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Complaint not found"
+        )
+
     # Get student info for visibility check
     student = await student_repo.get_with_department(roll_no)
-    
+
     # Check visibility permissions
     can_view = await check_complaint_visibility(complaint, student)
-    
+
     if not can_view:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to view this complaint"
         )
-    
+
     return complaint
 
 

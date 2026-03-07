@@ -468,9 +468,11 @@ async def sign_petition(
     if petition.status in ("Resolved", "Closed"):
         raise HTTPException(status_code=400, detail="Cannot sign a closed petition")
 
-    # Check deadline
-    if petition.deadline and datetime.now(timezone.utc) > petition.deadline:
-        raise HTTPException(status_code=400, detail="This petition has expired and can no longer be signed")
+    # Check deadline — block signing after expiry
+    if petition.deadline:
+        dl = petition.deadline if petition.deadline.tzinfo else petition.deadline.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > dl:
+            raise HTTPException(status_code=400, detail="Petition has closed")
 
     # Creator cannot unsign their own petition
     if roll_no == petition.created_by_roll_no:
@@ -509,6 +511,34 @@ async def sign_petition(
         petition.milestones_reached = reached
         petition.milestone_goal = _next_milestone_goal(new_count, reached)
         await _notify_milestone(db, petition, milestone, roll_no)
+
+    # Check 70% deadline extension — only once, only if petition has a deadline
+    goal_for_extension = petition.milestone_goal or 50
+    if (
+        petition.deadline is not None
+        and 70 not in reached
+        and new_count >= 0.70 * goal_for_extension
+    ):
+        # Extend deadline by 4 days
+        existing_deadline = petition.deadline
+        if existing_deadline.tzinfo is None:
+            existing_deadline = existing_deadline.replace(tzinfo=timezone.utc)
+        petition.deadline = existing_deadline + timedelta(days=4)
+        reached.append(70)
+        petition.milestones_reached = reached
+        # Notify creator
+        if petition.created_by_roll_no:
+            from src.database.models import Notification
+            db.add(Notification(
+                recipient_type="Student",
+                recipient_id=petition.created_by_roll_no,
+                complaint_id=None,
+                notification_type="petition_deadline_extended",
+                message=(
+                    f'Your petition "{petition.title[:80]}" reached 70% of its goal '
+                    f'({new_count}/{goal_for_extension} signatures) — the deadline has been extended by 4 days!'
+                ),
+            ))
 
     # Check custom goal reached
     custom_goal = petition.custom_goal or petition.milestone_goal or 50
@@ -692,6 +722,8 @@ def _petition_to_dict(petition, *, signed: bool = False) -> dict:
         delta = (deadline - now).days
         days_remaining = max(delta, 0)
 
+    is_extended = 70 in reached
+
     return {
         "id": str(petition.id),
         "title": petition.title,
@@ -708,6 +740,7 @@ def _petition_to_dict(petition, *, signed: bool = False) -> dict:
         "progress_pct": progress_pct,
         "deadline": deadline.isoformat() if deadline else None,
         "days_remaining": days_remaining,
+        "is_extended": is_extended,
         "goal_reached_notified": getattr(petition, "goal_reached_notified", False),
         "status": petition.status,
         "authority_response": petition.authority_response,

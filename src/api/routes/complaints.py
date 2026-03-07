@@ -13,6 +13,7 @@ CRUD operations, voting, filtering, image upload, verification, tracking.
 """
 
 import logging
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, Request
@@ -24,6 +25,7 @@ from src.api.dependencies import (
     get_current_student,
     get_current_authority,
     get_current_user,
+    get_optional_user,
     get_complaint_with_ownership,
     get_complaint_with_visibility,
     ComplaintFilters,
@@ -309,59 +311,165 @@ async def get_complaints(
 @router.get(
     "/changelog",
     response_model=ChangelogResponse,
-    summary="What's Fixed — public resolved complaints",
-    description="Paginated list of publicly resolved complaints with resolution notes"
+    summary="What's Fixed — scored rolling 7-day wins feed",
+    description="Top resolved complaints from the last 7 days, scored and filtered by win_score"
 )
 async def get_changelog(
-    _: dict = Depends(get_current_user),
+    current_user: Optional[dict] = Depends(get_optional_user),
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Public 'What's Fixed' / 'Wins' feed — popular resolved complaints only.
+    Rolling 7-day wins feed — recently resolved public complaints scored by impact.
 
-    Popularity score = upvotes*4 + satisfaction_rating*8 + min(view_count//5, 30).
-    Only complaints with score >= 5 OR upvotes >= 2 are shown.
-    Ordered by popularity score descending, then resolved_at.
+    win_score = (upvotes * 3) + (downvotes * -1) + priority_bonus + speed_bonus
+    priority_bonus: Critical=20, High=10, Medium=5, Low=0
+    speed_bonus: <=24h=15, <=72h=10, <=168h=5, else 0
+
+    Only complaints with win_score >= 5 OR upvotes >= 2 are shown.
+    Sorted by win_score DESC, top 20 returned.
+    Visibility rules (hostel/department/public) are applied based on the authenticated student.
+    Unauthenticated: only non-hostel Public complaints are shown.
     """
-    from src.database.models import Complaint, ComplaintCategory
-    from sqlalchemy import select, func, and_, or_, case
+    from src.database.models import Complaint, ComplaintCategory, Student
+    from sqlalchemy import select, func, and_, or_
     from sqlalchemy.orm import selectinload
 
-    # Popularity score expression
-    score_expr = (
-        func.coalesce(Complaint.upvotes, 0) * 4
-        + func.coalesce(Complaint.satisfaction_rating, 0) * 8
-        + func.least(func.coalesce(Complaint.view_count, 0) / 5, 30)
-    )
+    now_utc = datetime.now(timezone.utc)
+    seven_days_ago = now_utc - timedelta(days=7)
 
-    base_conditions = [
+    # Resolve category IDs for visibility rules
+    cat_id_query = select(ComplaintCategory.id, ComplaintCategory.name)
+    cat_id_result = await db.execute(cat_id_query)
+    cat_name_to_id: dict = {row[1]: row[0] for row in cat_id_result.all()}
+
+    mens_hostel_id = cat_name_to_id.get("Men's Hostel")
+    womens_hostel_id = cat_name_to_id.get("Women's Hostel")
+    general_id = cat_name_to_id.get("General")
+    disciplinary_id = cat_name_to_id.get("Disciplinary Committee")
+    department_cat_id = cat_name_to_id.get("Department")
+
+    # Base conditions
+    conditions = [
         Complaint.visibility == "Public",
-        Complaint.status.in_(["Resolved", "Closed"]),
+        Complaint.status == "Resolved",
         Complaint.is_marked_as_spam == False,
-        # Only popular complaints: score >= 5 OR at least 2 upvotes
-        or_(
-            score_expr >= 5,
-            func.coalesce(Complaint.upvotes, 0) >= 2,
-        ),
+        Complaint.is_deleted == False,
+        Complaint.merged_into_id == None,
+        Complaint.resolved_at >= seven_days_ago,
     ]
 
-    # Total count
-    count_query = select(func.count()).select_from(Complaint).where(and_(*base_conditions))
-    count_result = await db.execute(count_query)
-    total = count_result.scalar() or 0
+    # Always exclude Disciplinary Committee
+    if disciplinary_id:
+        conditions.append(Complaint.category_id != disciplinary_id)
+
+    # Determine visibility context from authenticated user
+    student = None
+    if current_user and current_user.get("role") == "Student":
+        try:
+            roll_no = current_user.get("user_id")
+            if roll_no:
+                student_q = select(Student).where(Student.roll_no == roll_no)
+                student_result = await db.execute(student_q)
+                student = student_result.scalar_one_or_none()
+        except Exception:
+            student = None
+
+    if student:
+        stay_type = student.stay_type
+        gender = student.gender
+        dept_id = student.department_id
+        roll_no = student.roll_no
+
+        # H1: Day Scholars never see hostel complaints
+        if stay_type == "Day Scholar":
+            if mens_hostel_id:
+                conditions.append(Complaint.category_id != mens_hostel_id)
+            if womens_hostel_id:
+                conditions.append(Complaint.category_id != womens_hostel_id)
+        else:
+            # H2: Hostel students see only their gender's hostel
+            if gender == "Male" and womens_hostel_id:
+                conditions.append(Complaint.category_id != womens_hostel_id)
+            elif gender == "Female" and mens_hostel_id:
+                conditions.append(Complaint.category_id != mens_hostel_id)
+
+        visible_conditions = []
+        if general_id:
+            visible_conditions.append(Complaint.category_id == general_id)
+        # Hostel visibility
+        if stay_type != "Day Scholar":
+            if gender == "Male" and mens_hostel_id:
+                visible_conditions.append(Complaint.category_id == mens_hostel_id)
+            elif gender == "Female" and womens_hostel_id:
+                visible_conditions.append(Complaint.category_id == womens_hostel_id)
+            elif gender not in ("Male", "Female"):
+                hostel_ids = [i for i in [mens_hostel_id, womens_hostel_id] if i is not None]
+                if hostel_ids:
+                    visible_conditions.append(Complaint.category_id.in_(hostel_ids))
+        # Department visibility
+        if department_cat_id and dept_id:
+            dept_visible = or_(
+                Complaint.complaint_department_id == dept_id,
+                Complaint.complainant_department_id == dept_id,
+            )
+            visible_conditions.append(and_(Complaint.category_id == department_cat_id, dept_visible))
+        # Own complaints always visible
+        visible_conditions.append(Complaint.student_roll_no == roll_no)
+
+        if visible_conditions:
+            conditions.append(or_(*visible_conditions))
+        else:
+            conditions.append(False)
+    else:
+        # Unauthenticated: only non-hostel General/Public complaints
+        hostel_ids = [i for i in [mens_hostel_id, womens_hostel_id] if i is not None]
+        if hostel_ids:
+            conditions.append(Complaint.category_id.notin_(hostel_ids))
+        # Show only General category for unauthenticated
+        if general_id:
+            conditions.append(Complaint.category_id == general_id)
 
     query = (
         select(Complaint)
         .options(selectinload(Complaint.category))
-        .where(and_(*base_conditions))
-        .order_by(score_expr.desc(), Complaint.resolved_at.desc().nullslast())
-        .offset(skip)
-        .limit(limit)
+        .where(and_(*conditions))
+        .limit(1000)
     )
     result = await db.execute(query)
-    complaints = result.scalars().all()
+    complaints = list(result.scalars().all())
+
+    # Compute win_score in Python
+    def _compute_win_score(c: Complaint) -> int:
+        priority_bonus = {"Critical": 20, "High": 10, "Medium": 5, "Low": 0}.get(c.priority or "Low", 0)
+        speed_bonus = 0
+        if c.resolved_at and c.submitted_at:
+            r = c.resolved_at if c.resolved_at.tzinfo else c.resolved_at.replace(tzinfo=timezone.utc)
+            s = c.submitted_at if c.submitted_at.tzinfo else c.submitted_at.replace(tzinfo=timezone.utc)
+            hours = (r - s).total_seconds() / 3600
+            if hours <= 24:
+                speed_bonus = 15
+            elif hours <= 72:
+                speed_bonus = 10
+            elif hours <= 168:
+                speed_bonus = 5
+        return (c.upvotes or 0) * 3 + (c.downvotes or 0) * -1 + priority_bonus + speed_bonus
+
+    def _resolution_hours(c: Complaint) -> Optional[float]:
+        if c.resolved_at and c.submitted_at:
+            r = c.resolved_at if c.resolved_at.tzinfo else c.resolved_at.replace(tzinfo=timezone.utc)
+            s = c.submitted_at if c.submitted_at.tzinfo else c.submitted_at.replace(tzinfo=timezone.utc)
+            return round((r - s).total_seconds() / 3600, 1)
+        return None
+
+    # Score, filter, sort
+    scored = [(c, _compute_win_score(c)) for c in complaints]
+    scored = [(c, score) for c, score in scored if score >= 5 or (c.upvotes or 0) >= 2]
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    total = len(scored)
+    page_items = scored[skip: skip + limit]
 
     entries = [
         ChangelogEntry(
@@ -372,8 +480,10 @@ async def get_changelog(
             resolved_at=c.resolved_at,
             upvotes=c.upvotes or 0,
             satisfaction_avg=float(c.satisfaction_rating) if c.satisfaction_rating else None,
+            win_score=score,
+            resolution_hours=_resolution_hours(c),
         )
-        for c in complaints
+        for c, score in page_items
     ]
 
     return ChangelogResponse(
@@ -1008,12 +1118,17 @@ async def flag_as_spam(
         )
     
     # Update complaint
+    _now = datetime.now(timezone.utc)
     complaint.is_marked_as_spam = True
     complaint.spam_reason = reason
     complaint.spam_flagged_by = authority_id
-    complaint.spam_flagged_at = datetime.now(timezone.utc)
+    complaint.spam_flagged_at = _now
     complaint.status = "Spam"
-    complaint.updated_at = datetime.now(timezone.utc)
+    complaint.updated_at = _now
+    # Set dispute_deadline only once (never overwrite if already set)
+    if complaint.dispute_deadline is None:
+        from datetime import timedelta
+        complaint.dispute_deadline = _now + timedelta(days=7)
 
     await db.commit()
 
@@ -1070,11 +1185,15 @@ async def unflag_spam(
     complaint.spam_reason = None
     complaint.spam_flagged_by = None
     complaint.spam_flagged_at = None
+    complaint.dispute_deadline = None
+    complaint.dispute_status = None
+    complaint.appeal_deadline = None
+    complaint.has_disputed = False
     complaint.status = "Raised"
     complaint.updated_at = datetime.now(timezone.utc)
-    
+
     await db.commit()
-    
+
     logger.info(f"Spam flag removed from complaint {complaint_id} by authority {authority_id}")
     
     return SuccessResponse(
@@ -1088,7 +1207,7 @@ async def unflag_spam(
 @router.post(
     "/{complaint_id}/appeal-spam",
     response_model=SuccessResponse,
-    summary="Dispute spam classification",
+    summary="Dispute spam classification (legacy alias)",
     description="Student disputes their complaint being marked as spam"
 )
 async def appeal_spam(
@@ -1097,13 +1216,42 @@ async def appeal_spam(
     roll_no: str = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
+    """Legacy alias — delegates to the dispute endpoint logic."""
+    return await _do_dispute(complaint_id, roll_no, reason, db)
+
+
+@router.post(
+    "/{complaint_id}/dispute",
+    response_model=SuccessResponse,
+    summary="Dispute spam classification",
+    description="Student disputes their complaint being marked as spam within the 7-day window"
+)
+async def dispute_spam(
+    complaint_id: UUID,
+    reason: Optional[str] = Query(None, max_length=500),
+    roll_no: str = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Student disputes spam classification. Notifies Admin and category authority for review.
-    Only the complaint owner can appeal, and only if complaint is spam.
+    Dispute spam classification within the 7-day window.
+
+    Conditions:
+      - Complaint owner only
+      - status == "Spam"
+      - now() < dispute_deadline
+      - has_disputed == False
+
+    Sets has_disputed=True, dispute_status="Pending", notifies all admins.
     """
+    return await _do_dispute(complaint_id, roll_no, reason, db)
+
+
+async def _do_dispute(complaint_id: UUID, roll_no: str, reason: Optional[str], db: AsyncSession) -> SuccessResponse:
+    """Shared logic for both dispute endpoints."""
     from src.repositories.complaint_repo import ComplaintRepository
     from src.repositories.authority_repo import AuthorityRepository
     from src.services.notification_service import notification_service
+    from datetime import datetime, timezone, timedelta
 
     complaint_repo = ComplaintRepository(db)
     complaint = await complaint_repo.get(complaint_id)
@@ -1120,8 +1268,22 @@ async def appeal_spam(
     if complaint.has_disputed:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You have already disputed this complaint")
 
-    # Mark as disputed so the student can't dispute again, store appeal reason
+    now = datetime.now(timezone.utc)
+
+    # Enforce 7-day dispute window
+    if complaint.dispute_deadline is not None:
+        dl = complaint.dispute_deadline
+        if dl.tzinfo is None:
+            dl = dl.replace(tzinfo=timezone.utc)
+        if now > dl:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The 7-day dispute window for this complaint has expired"
+            )
+
+    # Mark as disputed
     complaint.has_disputed = True
+    complaint.dispute_status = "Pending"
     complaint.appeal_reason = (reason or "").strip() or None
     await db.commit()
 
@@ -1143,11 +1305,11 @@ async def appeal_spam(
                 recipient_type="Authority",
                 recipient_id=str(admin.id),
                 complaint_id=complaint_id,
-                notification_type="spam_appeal",
+                notification_type="spam_dispute",
                 message=msg
             )
     except Exception as e:
-        logger.warning(f"Failed to notify admin of spam appeal: {e}")
+        logger.warning(f"Failed to notify admin of spam dispute: {e}")
 
     # Notify assigned authority if exists
     if complaint.assigned_authority_id:
@@ -1157,13 +1319,13 @@ async def appeal_spam(
                 recipient_type="Authority",
                 recipient_id=str(complaint.assigned_authority_id),
                 complaint_id=complaint_id,
-                notification_type="spam_appeal",
+                notification_type="spam_dispute",
                 message=msg
             )
         except Exception as e:
-            logger.warning(f"Failed to notify authority of spam appeal: {e}")
+            logger.warning(f"Failed to notify authority of spam dispute: {e}")
 
-    logger.info(f"Spam appeal submitted for complaint {complaint_id} by {roll_no}")
+    logger.info(f"Spam dispute submitted for complaint {complaint_id} by {roll_no}")
 
     return SuccessResponse(
         success=True,

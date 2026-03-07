@@ -15,7 +15,7 @@ Login, dashboard, complaint management, status updates, escalation.
 import logging
 from typing import Optional
 from uuid import UUID
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -102,16 +102,22 @@ async def login_authority(
                 detail="Account is inactive"
             )
         
-        # Generate JWT token (use "Admin" role if authority_type is Admin)
+        # Generate JWT access + refresh tokens (use "Admin" role if authority_type is Admin)
         role = "Admin" if authority.authority_type == "Admin" else "Authority"
-        
+
         token = auth_service.create_access_token(
             subject=str(authority.id),
             role=role
         )
-        
+        refresh_token = auth_service.create_refresh_token(
+            subject=str(authority.id),
+            role=role
+        )
+
         logger.info(f"Authority logged in: {authority.email}")
-        
+
+        expires_in = int(auth_service._access_token_expiry(role).total_seconds())
+
         return AuthorityResponse(
             id=authority.id,
             name=authority.name,
@@ -119,8 +125,9 @@ async def login_authority(
             authority_type=authority.authority_type,
             department_id=authority.department_id,
             token=token,
+            refresh_token=refresh_token,
             token_type="Bearer",
-            expires_in=auth_service.get_token_expiration_seconds()
+            expires_in=expires_in
         )
         
     except HTTPException:
@@ -908,11 +915,35 @@ async def create_notice(
 
     scope = _apply_notice_scope(authority, data)
 
+    # Auto-set expires_at based on category if not explicitly provided by authority
+    now_utc = datetime.now(timezone.utc)
+    category_value = data.category.value
+    if not data.expires_at:
+        if category_value == "Emergency":
+            computed_expires_at = now_utc + timedelta(hours=48)
+        elif category_value == "General":
+            computed_expires_at = now_utc + timedelta(days=30)
+        elif category_value == "Policy Change":
+            computed_expires_at = now_utc + timedelta(days=730)  # 2 years
+        elif category_value == "Announcement":
+            computed_expires_at = now_utc + timedelta(days=21)
+        else:
+            # Maintenance and Event: no auto-set; authority must provide expires_at
+            computed_expires_at = None
+    else:
+        # Authority provided expires_at — respect it, but add buffer for Maintenance/Event
+        if category_value == "Maintenance":
+            computed_expires_at = data.expires_at + timedelta(hours=2)
+        elif category_value == "Event":
+            computed_expires_at = data.expires_at + timedelta(days=1)
+        else:
+            computed_expires_at = data.expires_at
+
     notice = AuthorityUpdate(
         authority_id=authority_id,
         title=data.title,
         content=data.content,
-        category=data.category.value,
+        category=category_value,
         priority=data.priority.value,
         visibility=scope["visibility"],
         target_departments=scope["target_departments"],
@@ -920,7 +951,7 @@ async def create_notice(
         target_stay_types=scope["target_stay_types"],
         target_gender=scope["target_gender"],
         is_active=True,
-        expires_at=data.expires_at,
+        expires_at=computed_expires_at,
     )
 
     db.add(notice)

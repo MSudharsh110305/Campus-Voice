@@ -116,13 +116,19 @@ async def register_student(
             department_id=data.department_id,
         )
         
-        # Generate JWT token
+        # Generate JWT access + refresh tokens
         token = auth_service.create_access_token(
             subject=student.roll_no,
             role="Student"
         )
-        
+        refresh_token = auth_service.create_refresh_token(
+            subject=student.roll_no,
+            role="Student"
+        )
+
         logger.info(f"Student registered: {student.roll_no}")
+
+        expires_in = int(auth_service._access_token_expiry("Student").total_seconds())
 
         return StudentResponse(
             roll_no=student.roll_no,
@@ -133,8 +139,9 @@ async def register_student(
             year=student.year,
             department_id=student.department_id,
             token=token,
+            refresh_token=refresh_token,
             token_type="Bearer",
-            expires_in=auth_service.get_token_expiration_seconds()
+            expires_in=expires_in
         )
 
     except HTTPException:
@@ -195,13 +202,19 @@ async def login_student(
                 detail="Account is inactive"
             )
         
-        # Generate JWT token
+        # Generate JWT access + refresh tokens
         token = auth_service.create_access_token(
             subject=student.roll_no,
             role="Student"
         )
-        
+        refresh_token = auth_service.create_refresh_token(
+            subject=student.roll_no,
+            role="Student"
+        )
+
         logger.info(f"Student logged in: {student.roll_no}")
+
+        expires_in = int(auth_service._access_token_expiry("Student").total_seconds())
 
         return StudentResponse(
             roll_no=student.roll_no,
@@ -212,8 +225,9 @@ async def login_student(
             year=student.year,
             department_id=student.department_id,
             token=token,
+            refresh_token=refresh_token,
             token_type="Bearer",
-            expires_in=auth_service.get_token_expiration_seconds()
+            expires_in=expires_in
         )
 
     except HTTPException:

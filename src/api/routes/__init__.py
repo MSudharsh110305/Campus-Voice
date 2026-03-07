@@ -15,12 +15,13 @@ from .authorities import router as authorities_router
 from .admin import router as admin_router
 from .health import router as health_router
 from .petitions import router as petitions_router
+from .auth import router as auth_router
 
 
 def create_api_router() -> tuple[APIRouter, APIRouter]:
     """
     Create main API router with all sub-routers.
-    
+
     Returns:
         Tuple of (api_router, root_router):
         - api_router: Routes under /api prefix
@@ -28,8 +29,9 @@ def create_api_router() -> tuple[APIRouter, APIRouter]:
     """
     # API routes (with /api prefix)
     api_router = APIRouter(prefix="/api")
-    
+
     # Register all API routers
+    api_router.include_router(auth_router)       # POST /api/auth/refresh (public)
     api_router.include_router(students_router)
     api_router.include_router(complaints_router)
     api_router.include_router(authorities_router)
@@ -46,6 +48,7 @@ def create_api_router() -> tuple[APIRouter, APIRouter]:
 
 __all__ = [
     "create_api_router",
+    "auth_router",
     "students_router",
     "complaints_router",
     "authorities_router",

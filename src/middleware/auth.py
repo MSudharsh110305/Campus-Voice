@@ -30,6 +30,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/api/students/register",
         "/api/students/login",
         "/api/authorities/login",
+        "/api/auth/refresh",
     ]
     
     # Route prefixes that don't require authentication
@@ -90,14 +91,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Validate token
         try:
             user_info = get_current_user_from_token(token)
-            
+
+            # Reject refresh tokens being used as access tokens
+            payload = user_info.get("payload", {})
+            if payload.get("type", "access") != "access":
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={
+                        "success": False,
+                        "error": "Refresh tokens cannot be used for API access. Use your access token.",
+                        "error_code": "WRONG_TOKEN_TYPE"
+                    }
+                )
+
             # Attach user info to request state
             request.state.user = user_info
             request.state.user_id = user_info.get("user_id")
             request.state.role = user_info.get("role")
-            
+
             logger.debug(f"Authenticated user: {user_info.get('user_id')} ({user_info.get('role')})")
-            
+
         except TokenExpiredError:
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,

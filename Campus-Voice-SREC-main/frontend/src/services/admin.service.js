@@ -171,6 +171,19 @@ const updateSystemSetting = async (key, value) => {
     });
 };
 
+// Dispute resolution
+const getPendingDisputes = async (skip = 0, limit = 20) => {
+    const params = new URLSearchParams({ skip, limit });
+    return await api(`/admin/complaints/disputes?${params}`);
+};
+
+const resolveDispute = async (complaintId, action, reason) => {
+    return await api(`/admin/complaints/${complaintId}/resolve-dispute`, {
+        method: 'POST',
+        body: JSON.stringify({ action, reason }),
+    });
+};
+
 const adminService = {
     createAuthority,
     getAllAuthorities,
@@ -197,6 +210,8 @@ const adminService = {
     getAnomalies,
     getSystemSettings,
     updateSystemSetting,
+    getPendingDisputes,
+    resolveDispute,
 };
 
 export default adminService;
