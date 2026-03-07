@@ -35,6 +35,7 @@ import Changelog from './features/complaints/pages/Changelog';
 import AdminPetitions from './features/admin/pages/AdminPetitions';
 import AdminRepresentatives from './features/admin/pages/AdminRepresentatives';
 import PetitionsPage from './features/complaints/pages/PetitionsPage';
+import PetitionDetail from './features/complaints/pages/PetitionDetail';
 import AuthorityPetitions from './features/admin/pages/AuthorityPetitions';
 import AuthorityRepresentatives from './features/admin/pages/AuthorityRepresentatives';
 
@@ -150,6 +151,14 @@ export default function App() {
           element={
             <ProtectedRoute allow={['Student', 'Admin']}>
               <PetitionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/petitions/:id"
+          element={
+            <ProtectedRoute allow={['Student', 'Admin']}>
+              <PetitionDetail />
             </ProtectedRoute>
           }
         />

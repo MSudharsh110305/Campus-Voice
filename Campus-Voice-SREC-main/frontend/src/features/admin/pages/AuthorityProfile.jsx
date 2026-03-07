@@ -1,13 +1,37 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import AuthoritySidebar from '../components/AuthoritySidebar';
 import AuthorityHeader from '../components/AuthorityHeader';
-import { LogOut, Mail, Building, Shield } from 'lucide-react';
+import { LogOut, Mail, Building, Shield, Smartphone } from 'lucide-react';
 
 export default function AuthorityProfile({ noLayout = false }) {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    const [installPromptEvent, setInstallPromptEvent] = useState(null);
+    const [isInstalled, setIsInstalled] = useState(false);
+    const [showIosHint, setShowIosHint] = useState(false);
+
+    useEffect(() => {
+        const handler = (e) => { e.preventDefault(); setInstallPromptEvent(e); };
+        window.addEventListener('beforeinstallprompt', handler);
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+            setIsInstalled(true);
+        }
+        return () => window.removeEventListener('beforeinstallprompt', handler);
+    }, []);
+
+    const handleInstall = async () => {
+        const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+        if (installPromptEvent) {
+            installPromptEvent.prompt();
+            const { outcome } = await installPromptEvent.userChoice;
+            if (outcome === 'accepted') setIsInstalled(true);
+            setInstallPromptEvent(null);
+        } else if (isIos) {
+            setShowIosHint(v => !v);
+        }
+    };
 
     const initials = user?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'AU';
 
@@ -39,10 +63,29 @@ export default function AuthorityProfile({ noLayout = false }) {
                 ))}
             </div>
 
-            {/* Sign Out */}
+            {/* Install App */}
+            {!isInstalled ? (
+                <div className="mt-4">
+                    <button
+                        onClick={handleInstall}
+                        className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-gray-200 text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors font-medium">
+                        <Smartphone size={18} /> Install App
+                    </button>
+                    {showIosHint && (
+                        <p className="text-xs text-gray-500 text-center mt-2 px-2">
+                            Tap the <strong>Share</strong> button in Safari, then choose <strong>"Add to Home Screen"</strong>.
+                        </p>
+                    )}
+                </div>
+            ) : (
+                <div className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-emerald-200 text-emerald-600 bg-emerald-50 text-sm font-medium mt-4">
+                    <Smartphone size={18} /> App Installed
+                </div>
+            )}
+
             <button
                 onClick={() => { logout(); navigate('/login'); }}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-red-200 text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors font-medium mt-6">
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-red-200 text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors font-medium mt-3">
                 <LogOut size={18} /> Sign Out
             </button>
         </div>

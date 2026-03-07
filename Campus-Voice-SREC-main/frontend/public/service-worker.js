@@ -44,8 +44,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // API GETs: stale-while-revalidate
+  // API GETs: stale-while-revalidate (skip authenticated requests to avoid 401 replays)
   if (url.pathname.startsWith('/api/') && request.method === 'GET') {
+    // Never cache requests with Authorization headers — the api() interceptor handles
+    // token refresh transparently; caching would replay stale tokens in the background.
+    if (request.headers.get('Authorization')) return;
+
     event.respondWith(
       caches.open(CACHE_API).then(async (cache) => {
         const cached = await cache.match(request);

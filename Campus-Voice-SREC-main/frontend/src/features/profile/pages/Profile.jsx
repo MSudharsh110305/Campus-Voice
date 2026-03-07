@@ -5,7 +5,7 @@ import { Card, Button } from '../../../components/UI';
 import { useAuth } from '../../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import studentService from '../../../services/student.service';
-import { LogOut, User, Mail, Hash, Building, BookOpen, Edit2, Lock, X, CheckCircle } from 'lucide-react';
+import { LogOut, User, Mail, Hash, Building, BookOpen, Edit2, Lock, X, CheckCircle, Smartphone } from 'lucide-react';
 import { DEPARTMENT_BY_ID } from '../../../utils/constants';
 
 export default function Profile() {
@@ -33,6 +33,20 @@ export default function Profile() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [showIosHint, setShowIosHint] = useState(false);
+
+  useEffect(() => {
+    // Track native install prompt
+    const handler = (e) => { e.preventDefault(); setInstallPromptEvent(e); };
+    window.addEventListener('beforeinstallprompt', handler);
+    // Detect if already installed (standalone mode)
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+      setIsInstalled(true);
+    }
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
 
   useEffect(() => {
     fetchProfile();
@@ -89,6 +103,18 @@ export default function Profile() {
       setError(err.message || 'Failed to update profile');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleInstall = async () => {
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (installPromptEvent) {
+      installPromptEvent.prompt();
+      const { outcome } = await installPromptEvent.userChoice;
+      if (outcome === 'accepted') setIsInstalled(true);
+      setInstallPromptEvent(null);
+    } else if (isIos) {
+      setShowIosHint(v => !v);
     }
   };
 
@@ -258,6 +284,28 @@ export default function Profile() {
                   <Lock size={18} />
                   Change Password
                 </Button>
+                {!isInstalled && (
+                  <div>
+                    <Button
+                      variant="outline"
+                      className="w-full flex items-center justify-center gap-2 py-3"
+                      onClick={handleInstall}
+                    >
+                      <Smartphone size={18} />
+                      Install App
+                    </Button>
+                    {showIosHint && (
+                      <p className="text-xs text-gray-500 text-center mt-2 px-2">
+                        Tap the <strong>Share</strong> button in Safari, then choose <strong>"Add to Home Screen"</strong>.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {isInstalled && (
+                  <div className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-emerald-200 text-emerald-600 bg-emerald-50 text-sm font-medium">
+                    <Smartphone size={18} /> App Installed
+                  </div>
+                )}
                 <button
                   onClick={() => { logout(); navigate('/login'); }}
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-red-200 text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors font-medium mt-6"
