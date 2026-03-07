@@ -31,6 +31,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         "/api/students/login",
         "/api/authorities/login",
         "/api/auth/refresh",
+        # Without /api prefix (when a proxy strips the prefix)
+        "/students/register",
+        "/students/login",
+        "/authorities/login",
+        "/auth/refresh",
     ]
     
     # Route prefixes that don't require authentication
