@@ -130,6 +130,12 @@ class Settings(BaseSettings):
     DATA_RETENTION_MONTHS: int = Field(default=6, ge=1, description="Data retention (months)")
     AUTO_DELETE_OLD_COMPLAINTS: bool = Field(default=False, description="Auto-delete old complaints")
     
+    # ==================== PUSH NOTIFICATIONS (VAPID) ====================
+    VAPID_PUBLIC_KEY: str = Field(default="", description="VAPID public key for Web Push")
+    VAPID_PRIVATE_KEY: str = Field(default="", description="VAPID private key for Web Push")
+    VAPID_CLAIMS_EMAIL: str = Field(default="admin@srec.ac.in", description="VAPID claims email")
+    ENABLE_PUSH_NOTIFICATIONS: bool = Field(default=True, description="Enable Web Push notifications")
+
     # ==================== FEATURE FLAGS ====================
     ENABLE_EMAIL_VERIFICATION: bool = Field(default=False, description="Enable email verification")
     ENABLE_IMAGE_VERIFICATION: bool = Field(default=True, description="Enable image verification")

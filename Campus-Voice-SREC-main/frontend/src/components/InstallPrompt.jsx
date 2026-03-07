@@ -5,16 +5,44 @@ export default function InstallPrompt() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    // Capture the native beforeinstallprompt event
     const handler = (e) => {
       e.preventDefault();
       setDeferredEvent(e);
-      setVisible(true);
     };
     window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+
+    // Feature 6: listen for custom trigger from Posts.jsx after first submission
+    const customHandler = () => {
+      if (deferredEvent) {
+        setVisible(true);
+      }
+    };
+    window.addEventListener('cv:show-install-prompt', customHandler);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('cv:show-install-prompt', customHandler);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deferredEvent]);
+
+  // Also show automatically when the browser fires beforeinstallprompt
+  // (only if we haven't already stored the install-prompted flag)
+  useEffect(() => {
+    const autoHandler = (e) => {
+      e.preventDefault();
+      setDeferredEvent(e);
+      // Auto-show only if not already prompted via the custom trigger flow
+      if (!localStorage.getItem('cv_install_prompted')) {
+        setVisible(true);
+      }
+    };
+    window.addEventListener('beforeinstallprompt', autoHandler);
+    return () => window.removeEventListener('beforeinstallprompt', autoHandler);
   }, []);
 
-  if (!visible) return null;
+  if (!visible || !deferredEvent) return null;
 
   const onInstall = async () => {
     if (!deferredEvent) return;
@@ -25,7 +53,7 @@ export default function InstallPrompt() {
   };
 
   return (
-    <div className="fixed bottom-4 inset-x-0 px-4">
+    <div className="fixed bottom-4 inset-x-0 px-4 z-50">
       <div className="mx-auto max-w-md bg-white border border-gray-200 shadow-lg rounded-xl p-3 flex items-center justify-between">
         <div>
           <div className="text-sm font-medium text-gray-900">Install Campus Voice</div>

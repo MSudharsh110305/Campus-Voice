@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Users, MessageSquarePlus, X, ChevronDown, Clock,
   CheckCircle, AlertTriangle, Flame, Globe, Building2, Home,
-  ShieldCheck, Info, Lock,
+  ShieldCheck, Info, Lock, Share2, Link2,
 } from 'lucide-react';
 
 const MILESTONES = [50, 100, 250];
@@ -80,6 +80,38 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing }) {
   const goalReached = signature_count >= goal;
   const accentClass = STATUS_ACCENT[status] || STATUS_ACCENT.Open;
   const ScopeIcon = SCOPE_ICONS[petition.petition_scope] || Globe;
+
+  const [shareToast, setShareToast] = React.useState(false);
+
+  const canShare = petition.is_published && status !== 'Closed';
+
+  const sharePetition = async (e) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}/petitions/${petition.id}`;
+    const text = `Sign this petition: "${petition.title}" — ${signature_count}/${goal} signatures`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: petition.title, text, url });
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          try { await navigator.clipboard.writeText(url); } catch {}
+          setShareToast(true);
+          setTimeout(() => setShareToast(false), 2000);
+        }
+      }
+    } else {
+      try { await navigator.clipboard.writeText(url); } catch {
+        const el = document.createElement('textarea');
+        el.value = url;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+      }
+      setShareToast(true);
+      setTimeout(() => setShareToast(false), 2000);
+    }
+  };
 
   return (
     <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-[0_4px_24px_-4px_rgba(0,0,0,0.08)] overflow-hidden hover:shadow-[0_8px_32px_-4px_rgba(0,0,0,0.12)] hover:-translate-y-0.5 transition-all duration-300">
@@ -197,12 +229,30 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing }) {
           <p className="text-center text-[10px] text-gray-400 mt-1 py-1">This petition is {status.toLowerCase()}</p>
         )}
 
-        <p className="text-[10px] text-gray-400 mt-2 text-right">
-          {petition.creator_name || petition.created_by_roll_no} ·{' '}
-          {petition.submitted_at
-            ? new Date(petition.submitted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-            : ''}
-        </p>
+        {/* Share button + timestamp row */}
+        <div className="flex items-center justify-between mt-2">
+          {canShare ? (
+            <button
+              onClick={sharePetition}
+              className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-srec-primary transition-colors"
+              title="Share this petition"
+            >
+              {shareToast ? (
+                <><Link2 size={10} className="text-green-500" /><span className="text-green-500">Link copied!</span></>
+              ) : (
+                <><Share2 size={10} /><span>Share</span></>
+              )}
+            </button>
+          ) : (
+            <span />
+          )}
+          <p className="text-[10px] text-gray-400">
+            {petition.creator_name || petition.created_by_roll_no} ·{' '}
+            {petition.submitted_at
+              ? new Date(petition.submitted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+              : ''}
+          </p>
+        </div>
       </div>
     </div>
   );

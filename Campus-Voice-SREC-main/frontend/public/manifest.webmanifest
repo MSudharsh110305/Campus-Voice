@@ -1,11 +1,13 @@
 {
-  "name": "Campus Voice – SREC",
-  "short_name": "Campus Voice",
+  "name": "CampusVoice SREC",
+  "short_name": "CampusVoice",
+  "description": "Campus grievance management for SREC students",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#10b981",
-  "description": "College grievance redressalplatform for SREC.",
+  "theme_color": "#415d43",
+  "orientation": "portrait-primary",
+  "categories": ["education", "productivity"],
   "icons": [
     {
       "src": "/icons/icon-192.svg",
@@ -19,10 +21,28 @@
       "type": "image/svg+xml",
       "purpose": "any maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Raise Complaint",
+      "short_name": "Raise",
+      "description": "Submit a new complaint",
+      "url": "/posts",
+      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Complaints",
+      "short_name": "My Posts",
+      "description": "View your complaints",
+      "url": "/my-complaints",
+      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Notices",
+      "short_name": "Notices",
+      "description": "View authority notices",
+      "url": "/notices",
+      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
+    }
   ]
 }
-
-
-
-
-

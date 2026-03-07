@@ -141,6 +141,19 @@ export default function NoticeFeed() {
         markNoticesSeen();
     }, []);
 
+    // Feature 4: Vibration API — vibrate once per session for recent Emergency notices
+    useEffect(() => {
+        if (!notices || notices.length === 0) return;
+        const hasRecentEmergency = notices.some(n =>
+            n.category === 'Emergency' &&
+            new Date(n.created_at) > new Date(Date.now() - 48 * 60 * 60 * 1000)
+        );
+        if (hasRecentEmergency && !sessionStorage.getItem('cv_emergency_vibrated')) {
+            navigator.vibrate && navigator.vibrate([200, 100, 200]);
+            sessionStorage.setItem('cv_emergency_vibrated', '1');
+        }
+    }, [notices]);
+
     const fetchNotices = async (reset = false) => {
         try {
             setLoading(true);

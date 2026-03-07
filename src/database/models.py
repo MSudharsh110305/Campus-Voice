@@ -784,6 +784,30 @@ class SystemSetting(Base):
         return f"<SystemSetting(key={self.key}, value={self.value})>"
 
 
+# ==================== PUSH NOTIFICATIONS ====================
+
+
+class PushSubscription(Base):
+    """Web Push API subscription — stores browser push endpoints per user."""
+    __tablename__ = "push_subscriptions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_type = Column(String(20), nullable=False)   # "student" or "authority"
+    user_id = Column(String(100), nullable=False, index=True)  # roll_no or authority_id as str
+    endpoint = Column(Text, nullable=False, unique=True)
+    p256dh = Column(Text, nullable=False)
+    auth = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_push_sub_user", "user_id", "user_type"),
+    )
+
+    def __repr__(self):
+        return f"<PushSubscription(user_type={self.user_type}, user_id={self.user_id})>"
+
+
 # ==================== EXPORT ====================
 
 __all__ = [
@@ -807,4 +831,5 @@ __all__ = [
     "PetitionSignature",
     "StudentRepresentative",
     "SystemSetting",
+    "PushSubscription",
 ]

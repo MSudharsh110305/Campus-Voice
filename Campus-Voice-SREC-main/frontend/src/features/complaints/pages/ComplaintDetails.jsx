@@ -5,7 +5,7 @@ import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import authorityService from '../../../services/authority.service';
 import { VOTE_TYPES, COMPLAINT_CATEGORIES } from '../../../utils/constants';
-import { ThumbsUp, ThumbsDown, FileX, Clock, History, CheckCircle2, AlertCircle, ShieldAlert, FileText, ChevronRight, ShieldCheck, Send, MessageSquareWarning, Paperclip } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, FileX, Clock, History, CheckCircle2, AlertCircle, ShieldAlert, FileText, ChevronRight, ShieldCheck, Send, MessageSquareWarning, Paperclip, Copy, Check } from 'lucide-react';
 import { Skeleton, Card, Badge, Button } from '../../../components/UI';
 import { format } from 'date-fns';
 
@@ -46,6 +46,24 @@ export default function ComplaintDetails() {
     const [disputeReason, setDisputeReason] = useState('');
     const [isDisputing, setIsDisputing] = useState(false);
     const [disputeMsg, setDisputeMsg] = useState(null);
+
+    // Copy ID state
+    const [idCopied, setIdCopied] = useState(false);
+
+    const copyComplaintId = async (complaintId) => {
+        try {
+            await navigator.clipboard.writeText(complaintId);
+        } catch {
+            const el = document.createElement('textarea');
+            el.value = complaintId;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+        }
+        setIdCopied(true);
+        setTimeout(() => setIdCopied(false), 1500);
+    };
 
     // Satisfaction rating state
     const [ratingModalOpen, setRatingModalOpen] = useState(false);
@@ -796,7 +814,17 @@ export default function ComplaintDetails() {
                                     </div>
                                     <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
                                         <div className="text-[10px] text-gray-400 uppercase font-bold mb-1">Complaint ID</div>
-                                        <div className="text-sm font-mono font-bold text-gray-700">#{complaint.id?.toString().slice(-6).toUpperCase()}</div>
+                                        <button
+                                            onClick={() => copyComplaintId(complaint.id)}
+                                            className="flex items-center gap-1.5 text-sm font-mono font-bold text-gray-700 hover:text-srec-primary transition-colors group"
+                                            title="Click to copy full ID"
+                                        >
+                                            {idCopied ? (
+                                                <><Check size={12} className="text-green-500 flex-shrink-0" /><span className="text-green-500 text-xs font-sans font-semibold">Copied!</span></>
+                                            ) : (
+                                                <>#{complaint.id?.toString().slice(-6).toUpperCase()}<Copy size={11} className="text-gray-300 group-hover:text-srec-primary flex-shrink-0 transition-colors" /></>
+                                            )}
+                                        </button>
                                     </div>
                                 </div>
 

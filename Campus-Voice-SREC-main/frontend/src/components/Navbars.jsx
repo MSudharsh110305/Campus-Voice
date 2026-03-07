@@ -16,14 +16,14 @@ export function TopNav() {
 
   return (
     <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-srec-borderLight shadow-soft">
-      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-        <Link to={isAdmin ? '/admin' : '/'} className="flex items-center gap-2.5 group">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-srec-primaryLight to-srec-primary flex items-center justify-center text-white font-bold text-sm shadow-md shadow-srec-primary/15 group-hover:scale-105 transition-transform duration-200">
+      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between min-w-0">
+        <Link to={isAdmin ? '/admin' : '/'} className="flex items-center gap-2 sm:gap-2.5 group min-w-0 flex-shrink-0">
+          <div className="w-8 h-8 flex-shrink-0 rounded-lg bg-gradient-to-br from-srec-primaryLight to-srec-primary flex items-center justify-center text-white font-bold text-sm shadow-md shadow-srec-primary/15 group-hover:scale-105 transition-transform duration-200">
             CV
           </div>
-          <span className="font-bold text-srec-textPrimary tracking-tight text-lg group-hover:text-srec-primary transition-colors duration-200">CampusVoice</span>
+          <span className="font-bold text-srec-textPrimary tracking-tight text-base sm:text-lg group-hover:text-srec-primary transition-colors duration-200 truncate max-w-[120px] sm:max-w-none">CampusVoice</span>
         </Link>
-        <nav className="flex items-center gap-2 text-sm font-medium">
+        <nav className="flex items-center gap-1 sm:gap-2 text-sm font-medium flex-shrink-0">
           {isAdmin ? (
             <Link to="/admin" className={`text-base font-semibold transition-colors ${location.pathname === '/admin' ? 'text-srec-primary' : 'text-srec-textSecondary hover:text-srec-textPrimary'}`}>Dashboard</Link>
           ) : isStudent ? (

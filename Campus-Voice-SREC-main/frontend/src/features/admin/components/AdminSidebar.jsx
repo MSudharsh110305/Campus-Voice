@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useAuth } from '../../../context/AuthContext';
 
-export default function AdminSidebar({ className = "" }) {
+export default function AdminSidebar({ className = "", onClose }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -43,7 +43,7 @@ export default function AdminSidebar({ className = "" }) {
   const NavItem = ({ path, icon: Icon, label, exact = false }) => {
     const active = isActive(path, exact);
     return (
-      <NavLink to={path}>
+      <NavLink to={path} onClick={onClose}>
         <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 ${
           active
             ? 'bg-srec-primarySoft text-srec-primary border-l-[3px] border-srec-primary pl-2.5 shadow-inner-soft'

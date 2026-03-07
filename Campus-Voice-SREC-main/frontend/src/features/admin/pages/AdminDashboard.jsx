@@ -143,9 +143,9 @@ export default function AdminDashboard() {
           {[1,2,3,4,5,6].map(i => <Skeleton key={i} className="h-28 rounded-2xl" />)}
         </div>
         <Skeleton className="h-80 rounded-2xl" />
-        <div className="grid grid-cols-5 gap-6">
-          <Skeleton className="col-span-3 h-64 rounded-2xl" />
-          <Skeleton className="col-span-2 h-64 rounded-2xl" />
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          <Skeleton className="lg:col-span-3 h-64 rounded-2xl" />
+          <Skeleton className="lg:col-span-2 h-64 rounded-2xl" />
         </div>
       </div>
     );
@@ -225,9 +225,9 @@ export default function AdminDashboard() {
 
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-heading font-bold text-gray-900 tracking-tight">Executive Dashboard</h1>
+            <h1 className="text-xl sm:text-2xl font-heading font-bold text-gray-900 tracking-tight">Executive Dashboard</h1>
             <p className="text-gray-500 text-sm mt-0.5">Real-time overview of campus grievance resolution</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">

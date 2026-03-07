@@ -4,7 +4,7 @@ import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import {
   ThumbsUp, ThumbsDown, FileX, ShieldCheck,
-  Clock, Building2, AlertCircle
+  Clock, Building2, AlertCircle, Copy, Check
 } from 'lucide-react';
 import { Skeleton } from '../../../components/UI';
 import { VOTE_TYPES } from '../../../utils/constants';
@@ -72,6 +72,24 @@ export default function ComplaintCard({
   const [voteError, setVoteError] = useState(null);
   const [imageUrl, setImageUrl] = useState(null);
   const [imageLoading, setImageLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyId = async (e, complaintId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(complaintId);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = complaintId;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   const showVoteError = (msg) => {
     setVoteError(msg);
@@ -244,8 +262,21 @@ export default function ComplaintCard({
             )}
           </div>
 
-          {/* Row 3: vote buttons (always full-width below content) */}
+          {/* Row 3: copy ID + vote buttons */}
           <div className="flex items-center mt-3 pt-2.5 border-t border-srec-borderLight">
+            {/* Copy ID button — always visible, stops link navigation */}
+            <button
+              onClick={(e) => copyId(e, id)}
+              className="flex items-center gap-1 text-[10px] text-srec-textMuted hover:text-srec-primary transition-colors"
+              title="Copy complaint ID"
+            >
+              {copied ? (
+                <><Check size={11} className="text-green-500" /><span className="text-green-500">Copied!</span></>
+              ) : (
+                <><Copy size={11} /><span className="font-mono">#{id?.toString().slice(-6).toUpperCase()}</span></>
+              )}
+            </button>
+
             {!isOwner ? (
               <div className="flex items-center gap-1.5 ml-auto" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
                 <button

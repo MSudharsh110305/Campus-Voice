@@ -141,9 +141,9 @@ const AuthorityHeader = ({ className = '' }) => {
   };
 
   return (
-    <header className={`h-16 border-b border-gray-100 bg-white flex items-center justify-between px-8 shadow-sm relative z-30 ${className}`}>
-      <div className="flex items-center gap-4">
-        <h1 className="text-lg font-semibold text-gray-900">{pageTitle}</h1>
+    <header className={`h-14 sm:h-16 border-b border-gray-100 bg-white flex items-center justify-between px-4 sm:px-6 md:px-8 shadow-sm relative z-30 ${className}`}>
+      <div className="flex items-center gap-4 min-w-0">
+        <h1 className="text-base sm:text-lg font-semibold text-gray-900 truncate">{pageTitle}</h1>
       </div>
 
       <div className="flex items-center gap-3">

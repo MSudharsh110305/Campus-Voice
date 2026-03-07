@@ -27,8 +27,8 @@ export default function BottomNav() {
   return (
     <>
       {/* Mobile: Bottom navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white/90 backdrop-blur-xl border-t border-srec-borderLight md:hidden safe-area-pb shadow-[0_-1px_8px_rgba(0,0,0,0.06)]">
-        <div className="h-16 flex items-center justify-around px-1">
+      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white/90 backdrop-blur-xl border-t border-srec-borderLight md:hidden shadow-[0_-1px_8px_rgba(0,0,0,0.06)]" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        <div className="h-16 flex items-center justify-around px-1 min-w-0">
           {navItems.map((item) => {
             const active = isActive(item);
             const IconComponent = item.icon;
@@ -41,7 +41,7 @@ export default function BottomNav() {
                 aria-current={active ? 'page' : undefined}
                 onClick={() => localStorage.setItem('cv_last_tab', item.path)}
                 className={`
-                  relative flex flex-col items-center justify-center flex-1 py-1
+                  relative flex flex-col items-center justify-center flex-1 py-1 min-h-[44px]
                   transition-all duration-200
                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-srec-primary
                   ${active ? 'text-srec-primary' : 'text-gray-400 hover:text-gray-600'}
@@ -63,7 +63,7 @@ export default function BottomNav() {
             );
           })}
         </div>
-        <div className="h-[env(safe-area-inset-bottom,0px)] bg-white/90" />
+        {/* Safe area spacer already handled by paddingBottom on nav */}
       </nav>
 
       {/* Desktop: Left sidebar */}

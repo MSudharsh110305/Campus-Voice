@@ -13,7 +13,16 @@ export function NotificationProvider({ children }) {
   const fetchCount = useCallback(async () => {
     try {
       const data = await studentService.getUnreadCount();
-      setUnreadCount(data.unread_count || 0);
+      const count = data.unread_count || 0;
+      setUnreadCount(count);
+      // Feature 5: Badging API — update app badge with unread count
+      if ('setAppBadge' in navigator) {
+        if (count > 0) {
+          navigator.setAppBadge(count).catch(() => {});
+        } else {
+          navigator.clearAppBadge().catch(() => {});
+        }
+      }
     } catch {
       // Silently ignore — don't spam console with polling errors
     }
@@ -62,6 +71,10 @@ export function NotificationProvider({ children }) {
       setUnreadCount(0);
       setUnreadNoticeCount(0);
       stopPolling();
+      // Clear badge when not logged in as student
+      if ('clearAppBadge' in navigator) {
+        navigator.clearAppBadge().catch(() => {});
+      }
       return;
     }
 

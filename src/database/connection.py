@@ -495,6 +495,29 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                 except Exception as me:
                     logger.debug(f"Migration note (dispute/soft-delete cols): {me}")
 
+            # Push subscriptions table (Web Push API)
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS push_subscriptions (
+                            id SERIAL PRIMARY KEY,
+                            user_type VARCHAR(20) NOT NULL,
+                            user_id VARCHAR(100) NOT NULL,
+                            endpoint TEXT NOT NULL UNIQUE,
+                            p256dh TEXT NOT NULL,
+                            auth TEXT NOT NULL,
+                            created_at TIMESTAMPTZ DEFAULT NOW(),
+                            updated_at TIMESTAMPTZ DEFAULT NOW()
+                        )
+                    """))
+                    await conn.execute(text(
+                        "CREATE INDEX IF NOT EXISTS idx_push_sub_user "
+                        "ON push_subscriptions(user_id, user_type)"
+                    ))
+                    logger.info("✅ Migration: push_subscriptions table ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (push_subscriptions): {me}")
+
             async with AsyncSessionLocal() as session:
                 from src.database.models import Department
 

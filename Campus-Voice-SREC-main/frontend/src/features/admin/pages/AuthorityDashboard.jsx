@@ -15,7 +15,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { LayoutDashboard, CheckCircle, Clock, AlertCircle, X, Download, TrendingUp, Paperclip } from 'lucide-react';
+import { LayoutDashboard, CheckCircle, Clock, AlertCircle, X, Download, TrendingUp, Paperclip, Menu } from 'lucide-react';
 
 const ROLE_TITLES = {
   'Warden': 'Warden Dashboard',
@@ -49,6 +49,7 @@ export default function AuthorityDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dashboard, setDashboard] = useState(null);
   const [detailedStats, setDetailedStats] = useState(null);
   const [complaints, setComplaints] = useState([]);
@@ -308,12 +309,30 @@ export default function AuthorityDashboard() {
 
   return (
     <div className="flex min-h-screen bg-srec-background">
-      <AuthoritySidebar className="hidden md:flex fixed inset-y-0 left-0 z-10" />
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 md:hidden backdrop-blur-sm"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      <div className={`fixed inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out md:translate-x-0 md:static ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <AuthoritySidebar className="h-full" onClose={() => setSidebarOpen(false)} />
+      </div>
 
-      <div className="flex-1 md:ml-64 flex flex-col min-w-0 transition-all duration-300">
+      <div className="flex-1 md:ml-0 flex flex-col min-w-0 transition-all duration-300 overflow-hidden">
+        <div className="flex items-center md:hidden h-14 px-4 bg-white border-b border-gray-100 sticky top-0 z-20">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+          >
+            <Menu size={22} />
+          </button>
+          <span className="ml-3 font-bold text-srec-primary text-sm">CampusVoice</span>
+        </div>
         <AuthorityHeader />
 
-        <main className="flex-1 p-6 sm:p-8 overflow-y-auto animate-fadeIn">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto animate-fadeIn">
 
           {/* Feedback banner */}
           {feedback.message && (

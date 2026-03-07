@@ -23,6 +23,7 @@ import AuthorityNotifications from './features/admin/pages/AuthorityNotification
 import AuthorityProfile from './features/admin/pages/AuthorityProfile';
 import AuthorityNotices from './features/admin/pages/AuthorityNotices';
 import InstallPrompt from './components/InstallPrompt';
+import OfflineIndicator from './components/OfflineIndicator';
 import SignupPage from './features/auth/pages/SignupPage';
 import Onboarding from './features/auth/pages/Onboarding';
 import Profile from './features/profile/pages/Profile';
@@ -69,6 +70,7 @@ export default function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
+      <OfflineIndicator />
       <InstallPrompt />
       <Routes>
         <Route path="/login" element={<LoginPage />} />

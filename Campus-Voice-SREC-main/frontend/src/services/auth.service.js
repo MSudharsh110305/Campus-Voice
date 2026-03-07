@@ -57,6 +57,7 @@ const signup = async (userData) => {
 
 const logout = () => {
     tokenStorage.clearAll();
+    navigator.clearAppBadge?.();
     window.location.href = '/login';
 };
 

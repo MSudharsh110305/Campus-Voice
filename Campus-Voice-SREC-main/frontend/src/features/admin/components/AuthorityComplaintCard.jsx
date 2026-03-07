@@ -119,7 +119,7 @@ const AuthorityComplaintCard = ({ complaint, onStatusUpdate, onPostUpdate, onEsc
             </div>
 
             {/* Action buttons */}
-            <div className="flex items-center gap-2 pt-3 border-t border-gray-50 flex-wrap">
+            <div className="flex items-center gap-2 pt-3 border-t border-gray-50 flex-wrap min-w-0">
                 {canTransition && (
                     <EliteButton
                         size="sm"

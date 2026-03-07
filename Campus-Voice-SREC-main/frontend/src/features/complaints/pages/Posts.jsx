@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TopNav } from '../../../components/Navbars';
 import BottomNav from '../../../components/BottomNav';
@@ -7,13 +7,19 @@ import ComplaintCard from '../components/ComplaintCard';
 import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import studentService from '../../../services/student.service';
-import { Upload, X, FileX, Inbox, AlertTriangle, ThumbsUp, Search, SlidersHorizontal } from 'lucide-react';
+import { Upload, X, FileX, Inbox, AlertTriangle, ThumbsUp, Search, SlidersHorizontal, Camera, Image, WifiOff, Copy, Check } from 'lucide-react';
 import { VISIBILITY, COMPLAINT_CATEGORIES, STATUSES, PRIORITIES } from '../../../utils/constants';
 
 export default function Posts() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('create');
+
+  // Camera / gallery refs for mobile PWA feature
+  const cameraRef = useRef(null);
+  const galleryRef = useRef(null);
+  const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+
   const [formData, setFormData] = useState({
     original_text: '',
     image: null,
@@ -25,6 +31,7 @@ export default function Posts() {
   const [apiResponse, setApiResponse] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [idCopied, setIdCopied] = useState(false);
 
   // My Posts filters
   const [mineFilters, setMineFilters] = useState({ status: 'All', priority: 'All', search: '' });
@@ -35,6 +42,21 @@ export default function Posts() {
   const [isDupChecking, setIsDupChecking] = useState(false);
   // Track votes cast in the dup modal: { [complaintId]: 'upvoted' | 'error' }
   const [dupVotes, setDupVotes] = useState({});
+
+  const copyComplaintId = async (id) => {
+    try {
+      await navigator.clipboard.writeText(id);
+    } catch {
+      const el = document.createElement('input');
+      el.value = id;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    setIdCopied(true);
+    setTimeout(() => setIdCopied(false), 2000);
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -145,6 +167,30 @@ export default function Posts() {
     setDupModalOpen(false);
     setFormError('');
 
+    // Feature 2: Offline draft — save to IndexedDB and register background sync
+    if (!navigator.onLine) {
+      try {
+        const { queueComplaint } = await import('../../../utils/idb.js');
+        const { tokenStorage } = await import('../../../utils/api.js');
+        await queueComplaint({
+          original_text: formData.original_text,
+          visibility: formData.visibility,
+          is_anonymous: true,
+          access_token: tokenStorage.getAccessToken(),
+        });
+        if ('serviceWorker' in navigator && 'SyncManager' in window) {
+          const reg = await navigator.serviceWorker.ready;
+          await reg.sync.register('submit-complaint').catch(() => {});
+        }
+      } catch (_) {
+        // Silently ignore IDB/SW errors — still show offline success
+      }
+      setApiResponse({ offline: true });
+      setSubmitted(true);
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
       const fd = new FormData();
       fd.append('original_text', formData.original_text);
@@ -158,6 +204,14 @@ export default function Posts() {
 
       setApiResponse(response);
       setSubmitted(true);
+
+      // Feature 6: trigger install prompt once after first successful submission
+      const alreadyInstalled = window.matchMedia('(display-mode: standalone)').matches;
+      const alreadyPrompted = localStorage.getItem('cv_install_prompted');
+      if (!alreadyInstalled && !alreadyPrompted) {
+        localStorage.setItem('cv_install_prompted', '1');
+        window.dispatchEvent(new CustomEvent('cv:show-install-prompt'));
+      }
 
       const newPost = {
         id: response.id || Date.now(),
@@ -190,6 +244,31 @@ export default function Posts() {
 
   // Success screen
   if (submitted && apiResponse) {
+    // Offline draft saved state
+    if (apiResponse.offline) {
+      return (
+        <div className="fixed inset-0 z-50 min-h-screen bg-srec-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-lg w-full mx-auto p-8 bg-white rounded-2xl shadow-xl border border-white/60 text-center">
+            <div className="mb-5 flex justify-center">
+              <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center shadow-inner">
+                <WifiOff size={36} className="text-gray-400" />
+              </div>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Saved for later</h3>
+            <p className="text-sm text-gray-500 mt-1 max-w-xs mx-auto">
+              Your complaint is saved and will auto-submit when you're back online.
+            </p>
+            <button
+              onClick={() => { setSubmitted(false); setApiResponse(null); }}
+              className="mt-7 w-full py-3 bg-srec-primary text-white font-semibold rounded-xl hover:bg-srec-primaryHover transition-all duration-200 shadow-sm"
+            >
+              Back to form
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="fixed inset-0 z-50 min-h-screen bg-srec-background/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div className="max-w-lg w-full mx-auto p-8 bg-white rounded-2xl shadow-xl overflow-y-auto max-h-[90vh] border border-white/60">
@@ -240,6 +319,21 @@ export default function Posts() {
                 </div>
               )}
             </div>
+
+            {apiResponse.id && (
+              <div className="pt-4 border-t border-gray-200 flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-gray-400 uppercase tracking-wide font-bold">Complaint ID</span>
+                  <p className="font-mono text-xs text-gray-600 mt-0.5">#{apiResponse.id.toString().slice(-8).toUpperCase()}</p>
+                </div>
+                <button
+                  onClick={() => copyComplaintId(apiResponse.id)}
+                  className="inline-flex items-center gap-1 text-xs text-srec-primary hover:underline"
+                >
+                  {idCopied ? <><Check size={11} /> Copied!</> : <><Copy size={11} /> Copy ID</>}
+                </button>
+              </div>
+            )}
 
             <div className="pt-4 border-t border-gray-200">
               <span className="text-xs text-gray-400 uppercase tracking-wide font-bold">AI Rephrased Complaint</span>
@@ -388,12 +482,55 @@ export default function Posts() {
               </div>
 
               <div>
+                {/* Hidden file inputs — camera (mobile) and gallery */}
+                <input
+                  ref={cameraRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleImageChange}
+                />
+                <input
+                  ref={galleryRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageChange}
+                />
+
                 {!imagePreview ? (
-                  <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-srec-borderHover rounded-xl cursor-pointer bg-srec-backgroundAlt hover:bg-srec-primarySoft hover:border-srec-primaryMuted transition-colors duration-200">
-                    <Upload className="w-7 h-7 mb-1.5 text-srec-textMuted" />
-                    <p className="text-xs text-srec-textMuted font-medium">Click to upload photo (optional, max 5MB)</p>
-                    <input type="file" className="hidden" accept="image/*" onChange={handleImageChange} />
-                  </label>
+                  isMobile ? (
+                    /* Mobile: two distinct tap targets */
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => cameraRef.current?.click()}
+                        className="flex-1 flex flex-col items-center justify-center gap-1.5 h-24 border-2 border-dashed border-srec-borderHover rounded-xl bg-srec-backgroundAlt hover:bg-srec-primarySoft hover:border-srec-primaryMuted transition-colors duration-200 cursor-pointer"
+                      >
+                        <Camera className="w-6 h-6 text-srec-textMuted" />
+                        <span className="text-xs text-srec-textMuted font-medium">Camera</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => galleryRef.current?.click()}
+                        className="flex-1 flex flex-col items-center justify-center gap-1.5 h-24 border-2 border-dashed border-srec-borderHover rounded-xl bg-srec-backgroundAlt hover:bg-srec-primarySoft hover:border-srec-primaryMuted transition-colors duration-200 cursor-pointer"
+                      >
+                        <Image className="w-6 h-6 text-srec-textMuted" />
+                        <span className="text-xs text-srec-textMuted font-medium">Gallery</span>
+                      </button>
+                    </div>
+                  ) : (
+                    /* Desktop: single unified button */
+                    <button
+                      type="button"
+                      onClick={() => galleryRef.current?.click()}
+                      className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-srec-borderHover rounded-xl cursor-pointer bg-srec-backgroundAlt hover:bg-srec-primarySoft hover:border-srec-primaryMuted transition-colors duration-200"
+                    >
+                      <Upload className="w-7 h-7 mb-1.5 text-srec-textMuted" />
+                      <p className="text-xs text-srec-textMuted font-medium">Click to upload photo (optional, max 5MB)</p>
+                    </button>
+                  )
                 ) : (
                   <div className="relative rounded-xl overflow-hidden border border-gray-200">
                     <img src={imagePreview} alt="Preview" className="w-full h-44 object-cover" />
