@@ -529,12 +529,10 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                     await seed_initial_data(session)
                 else:
                     logger.info(f"✅ Database already contains {count} departments")
-                    # Still seed authorities if missing
-                    await seed_authorities(session)
-                    # Ensure any newly-added authorities (e.g. SDW) are inserted
-                    await seed_missing_authorities(session)
-                    # Always sync canonical passwords (handles re-deploys with updated creds)
-                    await sync_authority_passwords(session)
+
+                # Always upsert all canonical authorities with correct passwords.
+                # Runs every startup — handles fresh DB, re-deploys, password changes.
+                await upsert_canonical_authorities(session)
 
             logger.info("✅ Database initialization complete")
 
@@ -888,6 +886,78 @@ async def sync_authority_passwords(session: AsyncSession):
     except Exception as e:
         await session.rollback()
         logger.error(f"❌ sync_authority_passwords failed: {e}", exc_info=True)
+
+
+async def upsert_canonical_authorities(session: AsyncSession):
+    """INSERT or UPDATE all 23 canonical authority accounts with correct passwords.
+
+    Uses ON CONFLICT (email) DO UPDATE so it is fully idempotent.
+    Runs every startup — guarantees correct credentials regardless of DB state.
+    """
+    from src.services.auth_service import auth_service
+
+    # Get department IDs needed for HOD assignments
+    dept_result = await session.execute(text("SELECT id, code FROM departments"))
+    dept_map = {row[1]: row[0] for row in dept_result.fetchall()}
+
+    # (email, plain_password, name, authority_type, authority_level, designation, dept_code)
+    canonical = [
+        ("admin@srec.ac.in",          "Admin@123456",      "Super Admin",               "Admin",                       100, "System Administrator",              None),
+        ("officer@srec.ac.in",        "Officer@1234",      "Dr. R. Krishnamurthy",      "Admin Officer",               50,  "Administrative Officer",            None),
+        ("dc@srec.ac.in",             "Discip@12345",      "Dr. Anand Verma",           "Disciplinary Committee",      20,  "Disciplinary Committee Head",       None),
+        ("sdw@srec.ac.in",            "SeniorDW@123",      "Mr. Venkat Rao",            "Senior Deputy Warden",        15,  "Senior Deputy Warden",              None),
+        ("dw.mens@srec.ac.in",        "MensDW@1234",       "Mr. K. Venkatesh",          "Men's Hostel Deputy Warden",  10,  "Men's Hostel Deputy Warden",        None),
+        ("warden1.mens@srec.ac.in",   "MensW1@1234",       "Mr. N. Selvakumar",         "Men's Hostel Warden",         5,   "Men's Hostel Warden – Block A",     None),
+        ("warden2.mens@srec.ac.in",   "MensW2@1234",       "Mr. D. Murugesan",          "Men's Hostel Warden",         5,   "Men's Hostel Warden – Block B",     None),
+        ("dw.womens@srec.ac.in",      "WomensDW@123",      "Mrs. P. Saraswathi",        "Women's Hostel Deputy Warden",10,  "Women's Hostel Deputy Warden",      None),
+        ("warden1.womens@srec.ac.in", "WomensW1@123",      "Mrs. L. Divya",             "Women's Hostel Warden",       5,   "Women's Hostel Warden – Block E",   None),
+        ("warden2.womens@srec.ac.in", "WomensW2@123",      "Mrs. B. Kavitha",           "Women's Hostel Warden",       5,   "Women's Hostel Warden – Block F",   None),
+        ("hod.cse@srec.ac.in",        "HodCSE@123",        "Dr. A. Balasubramanian",    "HOD",                         8,   "Head of Department – CSE",          "CSE"),
+        ("hod.ece@srec.ac.in",        "HodECE@123",        "Dr. V. Sundaram",           "HOD",                         8,   "Head of Department – ECE",          "ECE"),
+        ("hod.mech@srec.ac.in",       "HodMECH@123",       "Dr. P. Ganesan",            "HOD",                         8,   "Head of Department – MECH",         "MECH"),
+        ("hod.civil@srec.ac.in",      "HodCIVIL@123",      "Dr. S. Murugan",            "HOD",                         8,   "Head of Department – CIVIL",        "CIVIL"),
+        ("hod.eee@srec.ac.in",        "HodEEE@123",        "Dr. R. Jayakumar",          "HOD",                         8,   "Head of Department – EEE",          "EEE"),
+        ("hod.it@srec.ac.in",         "HodIT@123",         "Dr. K. Muthukumar",         "HOD",                         8,   "Head of Department – IT",           "IT"),
+        ("hod.bio@srec.ac.in",        "HodBIO@123",        "Dr. N. Anbazhagan",         "HOD",                         8,   "Head of Department – BIO",          "BIO"),
+        ("hod.aero@srec.ac.in",       "HodAERO@123",       "Dr. C. Senthilkumar",       "HOD",                         8,   "Head of Department – AERO",         "AERO"),
+        ("hod.raa@srec.ac.in",        "HodRAA@123",        "Dr. M. Rajendran",          "HOD",                         8,   "Head of Department – RAA",          "RAA"),
+        ("hod.eie@srec.ac.in",        "HodEIE@123",        "Dr. T. Sivasubramanian",    "HOD",                         8,   "Head of Department – EIE",          "EIE"),
+        ("hod.mba@srec.ac.in",        "HodMBA@123",        "Dr. R. Arumugam",           "HOD",                         8,   "Head of Department – MBA",          "MBA"),
+        ("hod.aids@srec.ac.in",       "HodAIDS@123",       "Dr. S. Karthikeyan",        "HOD",                         8,   "Head of Department – AIDS",         "AIDS"),
+        ("hod.mtechcse@srec.ac.in",   "HodMTECH_CSE@123",  "Dr. V. Ramasamy",           "HOD",                         8,   "Head of Department – MTECH_CSE",    "MTECH_CSE"),
+    ]
+
+    try:
+        upserted = 0
+        for email, password, name, auth_type, level, designation, dept_code in canonical:
+            dept_id = dept_map.get(dept_code) if dept_code else None
+            hashed = auth_service.hash_password(password)
+            await session.execute(text("""
+                INSERT INTO authorities
+                    (name, email, password_hash, authority_type, authority_level,
+                     designation, department_id, is_active, created_at, updated_at)
+                VALUES
+                    (:name, :email, :pw, :atype, :level,
+                     :desig, :dept_id, TRUE, NOW(), NOW())
+                ON CONFLICT (email) DO UPDATE SET
+                    password_hash  = EXCLUDED.password_hash,
+                    name           = EXCLUDED.name,
+                    authority_type = EXCLUDED.authority_type,
+                    authority_level= EXCLUDED.authority_level,
+                    designation    = EXCLUDED.designation,
+                    is_active      = TRUE,
+                    updated_at     = NOW()
+            """), {
+                "name": name, "email": email, "pw": hashed,
+                "atype": auth_type, "level": level,
+                "desig": designation, "dept_id": dept_id,
+            })
+            upserted += 1
+        await session.commit()
+        logger.info(f"✅ upsert_canonical_authorities: {upserted} authorities upserted")
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"❌ upsert_canonical_authorities failed: {e}", exc_info=True)
 
 
 # ==================== SREC MIGRATION ====================
@@ -1268,6 +1338,7 @@ __all__ = [
     "seed_authorities",
     "seed_missing_authorities",
     "sync_authority_passwords",
+    "upsert_canonical_authorities",
     "health_check",
     "get_db_info",
     "get_pool_status",
