@@ -2,10 +2,12 @@ import React, { useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { Home, FileText, User, Users, Megaphone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationContext';
 
 export default function BottomNav() {
   const location = useLocation();
   const { user } = useAuth();
+  const { unreadNoticeCount } = useNotifications();
 
   if (!user || user.role === 'Admin') return null;
 
@@ -52,10 +54,20 @@ export default function BottomNav() {
                     <div className="relative flex items-center gap-1 bg-srec-primarySoft text-srec-primary rounded-full px-2.5 py-1 shadow-inner-soft transition-all duration-300">
                       <IconComponent size={16} strokeWidth={2.5} />
                       <span className="text-[11px] font-semibold leading-none">{item.label}</span>
+                      {item.path === '/notices' && unreadNoticeCount > 0 && (
+                        <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none">
+                          {unreadNoticeCount > 9 ? '9+' : unreadNoticeCount}
+                        </span>
+                      )}
                     </div>
                   ) : (
                     <div className="relative p-2 rounded-full transition-all duration-200">
                       <IconComponent size={20} strokeWidth={2} />
+                      {item.path === '/notices' && unreadNoticeCount > 0 && (
+                        <span className="absolute top-1 right-1 min-w-[16px] h-[16px] bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none">
+                          {unreadNoticeCount > 9 ? '9+' : unreadNoticeCount}
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -88,7 +100,14 @@ export default function BottomNav() {
                 }
               `}
             >
-              <IconComponent size={20} strokeWidth={active ? 2.5 : 2} />
+              <div className="relative">
+                <IconComponent size={20} strokeWidth={active ? 2.5 : 2} />
+                {item.path === '/notices' && unreadNoticeCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-0.5 leading-none">
+                    {unreadNoticeCount > 9 ? '9+' : unreadNoticeCount}
+                  </span>
+                )}
+              </div>
               <span className="text-[9px] font-medium leading-none">{item.label}</span>
             </NavLink>
           );
