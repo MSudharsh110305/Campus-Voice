@@ -1,6 +1,9 @@
 // Use the Vite proxy for local dev so all /api requests go through localhost:8000
-// In production set VITE_API_URL to the production API URL
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+// In production set VITE_API_URL to the production API URL (with or without /api suffix)
+const _rawBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const API_BASE_URL = _rawBase
+  ? (_rawBase.endsWith('/api') ? _rawBase : `${_rawBase}/api`)
+  : '/api';
 
 /**
  * Decodes a JWT token manually to extract the payload.
