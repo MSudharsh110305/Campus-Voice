@@ -11,12 +11,18 @@ FastAPI application setup and route registration.
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+# Path to built frontend (relative to this file: src/api/__init__.py → project root)
+_FRONTEND_DIST = Path(__file__).parent.parent.parent / "Campus-Voice-SREC-main" / "frontend" / "dist"
 
 from src.config.settings import settings
 from src.middleware import setup_middleware
@@ -90,24 +96,36 @@ def create_app() -> FastAPI:
     # Setup exception handlers
     setup_exception_handlers(app)
     
-    # Root endpoint
+    # Serve frontend static assets
+    if _FRONTEND_DIST.exists():
+        assets_dir = _FRONTEND_DIST / "assets"
+        if assets_dir.exists():
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    # Root + SPA catch-all: serve index.html for all non-API paths
     @app.get("/", tags=["Root"])
     async def root():
-        """
-        Root endpoint with API information.
-        
-        Returns basic service information and links to documentation.
-        """
+        if _FRONTEND_DIST.exists():
+            return FileResponse(str(_FRONTEND_DIST / "index.html"))
         return {
             "service": "CampusVoice API",
             "version": "1.0.0",
             "status": "running",
             "environment": settings.ENVIRONMENT,
-            "docs": "/docs" if settings.ENVIRONMENT != "production" else "disabled",
-            "health": "/health",
-            "api_prefix": "/api"
         }
-    
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        """Serve frontend SPA for all non-API routes."""
+        if _FRONTEND_DIST.exists():
+            # Serve root-level files (favicon.ico, manifest.json, sw.js, etc.)
+            candidate = _FRONTEND_DIST / full_path
+            if candidate.exists() and candidate.is_file():
+                return FileResponse(str(candidate))
+            # SPA fallback
+            return FileResponse(str(_FRONTEND_DIST / "index.html"))
+        return JSONResponse({"error": "Frontend not built"}, status_code=404)
+
     return app
 
 

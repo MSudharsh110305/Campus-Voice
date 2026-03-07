@@ -163,15 +163,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
         Returns:
             True if public route
         """
+        # Non-API paths are SPA routes or static files — always public
+        if not path.startswith("/api/"):
+            return True
+
         # Check exact matches
         if path in self.PUBLIC_ROUTES:
             return True
-        
+
         # Check prefixes
         for prefix in self.PUBLIC_PREFIXES:
             if path.startswith(prefix):
                 return True
-        
+
         return False
 
 
