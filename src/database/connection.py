@@ -533,6 +533,8 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                     await seed_authorities(session)
                     # Ensure any newly-added authorities (e.g. SDW) are inserted
                     await seed_missing_authorities(session)
+                    # Always sync canonical passwords (handles re-deploys with updated creds)
+                    await sync_authority_passwords(session)
 
             logger.info("✅ Database initialization complete")
 
@@ -835,6 +837,57 @@ async def seed_missing_authorities(session: AsyncSession):
     except Exception as e:
         await session.rollback()
         logger.error(f"❌ seed_missing_authorities failed: {e}", exc_info=True)
+
+
+async def sync_authority_passwords(session: AsyncSession):
+    """Always-on: update password_hash for all canonical authority accounts.
+
+    Runs every startup so re-deploys never leave stale passwords in the DB.
+    Uses ON CONFLICT (email) DO UPDATE so it is fully idempotent.
+    """
+    from src.services.auth_service import auth_service
+
+    canonical = [
+        ("admin@srec.ac.in",           "Admin@123456"),
+        ("officer@srec.ac.in",         "Officer@1234"),
+        ("dc@srec.ac.in",              "Discip@12345"),
+        ("sdw@srec.ac.in",             "SeniorDW@123"),
+        ("dw.mens@srec.ac.in",         "MensDW@1234"),
+        ("warden1.mens@srec.ac.in",    "MensW1@1234"),
+        ("warden2.mens@srec.ac.in",    "MensW2@1234"),
+        ("dw.womens@srec.ac.in",       "WomensDW@123"),
+        ("warden1.womens@srec.ac.in",  "WomensW1@123"),
+        ("warden2.womens@srec.ac.in",  "WomensW2@123"),
+        ("hod.cse@srec.ac.in",         "HodCSE@123"),
+        ("hod.ece@srec.ac.in",         "HodECE@123"),
+        ("hod.mech@srec.ac.in",        "HodMECH@123"),
+        ("hod.civil@srec.ac.in",       "HodCIVIL@123"),
+        ("hod.eee@srec.ac.in",         "HodEEE@123"),
+        ("hod.it@srec.ac.in",          "HodIT@123"),
+        ("hod.bio@srec.ac.in",         "HodBIO@123"),
+        ("hod.aero@srec.ac.in",        "HodAERO@123"),
+        ("hod.raa@srec.ac.in",         "HodRAA@123"),
+        ("hod.eie@srec.ac.in",         "HodEIE@123"),
+        ("hod.mba@srec.ac.in",         "HodMBA@123"),
+        ("hod.aids@srec.ac.in",        "HodAIDS@123"),
+        ("hod.mtechcse@srec.ac.in",    "HodMTECH_CSE@123"),
+    ]
+
+    try:
+        updated = 0
+        for email, password in canonical:
+            hashed = auth_service.hash_password(password)
+            result = await session.execute(
+                text("UPDATE authorities SET password_hash = :h WHERE email = :e"),
+                {"h": hashed, "e": email},
+            )
+            if result.rowcount:
+                updated += 1
+        await session.commit()
+        logger.info(f"✅ sync_authority_passwords: synced {updated} authority passwords")
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"❌ sync_authority_passwords failed: {e}", exc_info=True)
 
 
 # ==================== SREC MIGRATION ====================
@@ -1214,6 +1267,7 @@ __all__ = [
     "seed_initial_data",
     "seed_authorities",
     "seed_missing_authorities",
+    "sync_authority_passwords",
     "health_check",
     "get_db_info",
     "get_pool_status",
