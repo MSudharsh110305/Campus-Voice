@@ -5,6 +5,7 @@ import AdminComplaintCard from '../components/AdminComplaintCard';
 import { DEPARTMENTS } from '../../../utils/constants';
 import { Users, FileText, Building2, GraduationCap } from 'lucide-react';
 import { Skeleton } from '../../../components/UI';
+import { tokenStorage } from '../../../utils/api';
 
 const TAB_STUDENTS = 'students';
 const TAB_COMPLAINTS = 'complaints';
@@ -53,7 +54,7 @@ export default function AdminDepartmentDetail() {
         }
     };
 
-    const token = localStorage.getItem('token');
+    const token = tokenStorage.getAccessToken();
 
     return (
         <div className="space-y-6">

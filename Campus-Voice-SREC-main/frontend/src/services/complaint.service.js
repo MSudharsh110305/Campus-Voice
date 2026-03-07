@@ -1,8 +1,8 @@
-import { api, fetchBlobUrl } from '../utils/api';
+import { api, fetchBlobUrl, tokenStorage } from '../utils/api';
 
 const submitComplaint = async (formData) => {
     // FormData submission - do NOT set Content-Type header (browser sets it with boundary)
-    const token = localStorage.getItem('token');
+    const token = tokenStorage.getAccessToken();
 
     // Use /api prefix so the Vite proxy routes it to localhost:8000
     const url = '/api/complaints/submit';
@@ -17,8 +17,7 @@ const submitComplaint = async (formData) => {
     });
 
     if (response.status === 401) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        tokenStorage.clearAll();
         window.location.href = '/login';
         return;
     }
@@ -71,7 +70,7 @@ const getMyVote = async (complaintId) => {
 };
 
 const uploadImage = async (complaintId, imageFile) => {
-    const token = localStorage.getItem('token');
+    const token = tokenStorage.getAccessToken();
     const fd = new FormData();
     fd.append('file', imageFile); // field name is "file" for existing complaint uploads
 
@@ -157,7 +156,7 @@ const getPublicAnalytics = async () => {
 };
 
 const uploadAuthorityAttachment = async (complaintId, file) => {
-    const token = localStorage.getItem('token');
+    const token = tokenStorage.getAccessToken();
     const fd = new FormData();
     fd.append('file', file);
     const response = await fetch(`/api/complaints/${complaintId}/authority-attachment`, {

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { Bell, User, LogOut } from 'lucide-react';
+import { tokenStorage } from '../../../utils/api';
 
 export default function AdminHeader({ onMenuClick }) {
     const { user, logout } = useAuth();
@@ -20,7 +21,7 @@ export default function AdminHeader({ onMenuClick }) {
 
     useEffect(() => {
         const fetchUnread = () => {
-            const token = localStorage.getItem('token');
+            const token = tokenStorage.getAccessToken();
             if (!token) return;
             fetch('/api/admin/notifications/unread-count', { headers: { Authorization: `Bearer ${token}` } })
                 .then(r => r.ok ? r.json() : null)

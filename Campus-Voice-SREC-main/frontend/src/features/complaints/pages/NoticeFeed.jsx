@@ -5,6 +5,7 @@ import { EliteButton, Skeleton } from '../../../components/UI';
 import { useAuth } from '../../../context/AuthContext';
 import { useNotifications } from '../../../context/NotificationContext';
 import studentService from '../../../services/student.service';
+import { tokenStorage } from '../../../utils/api';
 import { Megaphone, Calendar, AlertTriangle, Info, Wrench, RefreshCw, Users, Paperclip, X, Download, FileText } from 'lucide-react';
 
 // ─── Attachment Viewer Modal ─────────────────────────────────────────────────
@@ -117,7 +118,7 @@ export default function NoticeFeed() {
         if (attachLoading) return;
         setAttachLoading(noticeId);
         try {
-            const token = localStorage.getItem('token') || '';
+            const token = tokenStorage.getAccessToken() || '';
             const res = await fetch(`/api/authorities/notices/${noticeId}/attachment?token=${token}`);
             if (!res.ok) throw new Error('Failed to load attachment');
             const blob = await res.blob();

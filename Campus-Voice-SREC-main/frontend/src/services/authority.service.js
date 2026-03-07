@@ -1,4 +1,4 @@
-import { api } from '../utils/api';
+import { api, tokenStorage } from '../utils/api';
 
 // Authority Profile
 const getProfile = async () => {
@@ -86,7 +86,7 @@ const deactivateNotice = async (noticeId) => {
 
 // Upload attachment to a notice
 const uploadNoticeAttachment = async (noticeId, file) => {
-    const token = localStorage.getItem('token');
+    const token = tokenStorage.getAccessToken();
     const formData = new FormData();
     formData.append('file', file);
     const res = await fetch(`/api/authorities/notices/${noticeId}/attachment`, {

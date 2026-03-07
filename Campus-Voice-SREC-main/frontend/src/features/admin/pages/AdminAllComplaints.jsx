@@ -5,8 +5,9 @@ import AdminComplaintCard from '../components/AdminComplaintCard';
 import { Skeleton } from '../../../components/UI';
 import { Filter, X, Search, FileSearch, ShieldAlert, CheckCircle, XCircle } from 'lucide-react';
 import { STATUSES, PRIORITIES, CATEGORY_LIST } from '../../../utils/constants';
+import { tokenStorage } from '../../../utils/api';
 
-const getToken = () => localStorage.getItem('token');
+const getToken = () => tokenStorage.getAccessToken();
 
 export default function AdminAllComplaints() {
     const [searchParams] = useSearchParams();

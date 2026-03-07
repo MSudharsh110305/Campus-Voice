@@ -8,6 +8,7 @@ import { Select, Button, Skeleton, Card } from '../../../components/UI';
 import { STATUSES, PRIORITIES, CATEGORY_LIST, COMPLAINT_CATEGORIES } from '../../../utils/constants';
 import { FileX, Search, X, SlidersHorizontal, Calendar, AlertTriangle, FileText, CheckCircle, Clock } from 'lucide-react';
 import complaintService from '../../../services/complaint.service';
+import { tokenStorage } from '../../../utils/api';
 import { Link, useSearchParams } from 'react-router-dom';
 
 const STATUS_TABS = ['All', 'Raised', 'In Progress', 'Resolved', 'Closed', 'Spam'];
@@ -85,7 +86,7 @@ export default function MyComplaints() {
     const reason = window.prompt('Why do you think this is not spam? (Optional — press OK to skip)');
     if (reason === null) return; // user pressed Cancel
     try {
-      const token = localStorage.getItem('token');
+      const token = tokenStorage.getAccessToken();
       const url = `/api/complaints/${complaintId}/appeal-spam${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`;
       const res = await fetch(url, {
         method: 'POST',

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import authorityService from '../../../services/authority.service';
 import complaintService from '../../../services/complaint.service';
+import { tokenStorage } from '../../../utils/api';
 import ExportModal from '../../../components/ExportModal';
 import { Card, EliteButton, Select } from '../../../components/UI';
 import StatsCard from '../../../components/UI/StatsCard';
@@ -472,7 +473,7 @@ export default function AuthorityDashboard() {
                   onPostUpdate={openPostUpdateModal}
                   onEscalate={openEscalateModal}
                   onAttach={(e, id) => { e.stopPropagation(); setAttachModal({ open: true, complaintId: id }); setAttachFile(null); }}
-                  token={localStorage.getItem('token')}
+                  token={tokenStorage.getAccessToken()}
                 />
               ))}
             </div>
