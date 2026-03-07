@@ -107,6 +107,12 @@ const _isTokenExpired = (token) => {
 
 const _getValidToken = async () => {
     const token = tokenStorage.getAccessToken();
+    // No access token at all — only try refresh if we have a refresh token.
+    // If there's neither, the user is not logged in; return null so the request
+    // fires without auth (public endpoints like /login handle this correctly).
+    if (!token) {
+        return tokenStorage.getRefreshToken() ? await _attemptRefresh() : null;
+    }
     if (_isTokenExpired(token)) {
         return await _attemptRefresh();
     }
