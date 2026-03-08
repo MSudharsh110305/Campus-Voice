@@ -49,7 +49,8 @@ class ComplaintRepository(BaseRepository[Complaint]):
         thumbnail_data: Optional[bytes] = None,
         thumbnail_size: Optional[int] = None,
         image_verified: bool = False,
-        image_verification_status: Optional[str] = None
+        image_verification_status: Optional[str] = None,
+        initial_priority: Optional[str] = None
     ) -> Complaint:
         """
         Create new complaint with optional image.
@@ -106,7 +107,8 @@ class ComplaintRepository(BaseRepository[Complaint]):
             thumbnail_data=thumbnail_data,
             thumbnail_size=thumbnail_size,
             image_verified=image_verified,
-            image_verification_status=image_verification_status
+            image_verification_status=image_verification_status,
+            initial_priority=initial_priority
         )
         
         self.session.add(complaint)
