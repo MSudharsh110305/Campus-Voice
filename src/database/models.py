@@ -177,6 +177,10 @@ class Complaint(Base):
     downvotes = Column(Integer, default=0, nullable=False)
     priority_score = Column(Float, default=0.0, nullable=False, index=True)
     priority = Column(String(20), default="Medium", nullable=False, index=True)
+    # initial_priority: LLM-assessed priority at submission — never updated.
+    # Permanent anchor for vote recalculation so votes cannot ratchet a Low
+    # complaint all the way to Critical through accumulated drift.
+    initial_priority = Column(String(20), nullable=True)
     assigned_authority_id = Column(BigInteger, ForeignKey("authorities.id", ondelete="SET NULL"), nullable=True, index=True)
     assigned_at = Column(DateTime(timezone=True), nullable=True)
     original_assigned_authority_id = Column(BigInteger, nullable=True)

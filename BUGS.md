@@ -433,9 +433,21 @@ Focus on the intent and subject of the complaint, not spelling accuracy.
 
 ## BUG-033 — Voting System Unreliable: Single Vote Inflates Priority, No Net Score, No Reach Context
 
-**Status:** 🔴 Open
+**Status:** ✅ Fixed
 
-**Description:**
+**Note:** The original description was based on an old implementation. `vote_service.py` already has Wilson Score + reach dampening + engagement bonus + 1-level guard. The two real bugs that remained were:
+
+1. **Priority drift**: `recalculate_priority` anchored from `complaint.priority` (current, vote-shifted) instead of the LLM's original assessment → votes could ratchet Low → Critical through accumulation.
+2. **reach=0 kills vote effect**: For complaints created before the reach migration (or Public complaints with no dept filter), `reach=0` made `_vote_contribution` return 0.0 — votes had zero priority effect.
+
+**Fix applied:**
+- [x] Added `initial_priority VARCHAR(20)` column to `complaints` table — set once at creation, never updated
+- [x] Migration backfills existing rows from `priority` column
+- [x] `complaint_service.create_complaint` sets `initial_priority=priority` alongside `priority`
+- [x] `vote_service.recalculate_priority` now uses `complaint.initial_priority or old_priority` as the blended formula anchor — the LLM baseline is permanent
+- [x] `reach` floored at `max(reach, 30)` so pre-migration complaints (reach=0) still respond to votes; 30 is conservative — actual reach is always higher
+
+**Description (original):**
 The current voting system allows a single upvote to push a complaint from Low to Medium priority. This is unreliable and easily manipulated. There is no net vote calculation, no reach context (total eligible voters), and no dampening of vote impact relative to audience size.
 
 **Fix:**

@@ -703,6 +703,7 @@ class ComplaintService:
             rephrased_text=rephrased_text,
             visibility=visibility,
             priority=priority,
+            initial_priority=priority,   # frozen anchor — never updated after creation
             priority_score=priority_score,
             status=initial_status,
             is_marked_as_spam=is_spam_complaint,

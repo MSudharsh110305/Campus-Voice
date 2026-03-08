@@ -215,7 +215,17 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                         "ALTER TABLE complaints "
                         "ADD COLUMN IF NOT EXISTS view_count INTEGER NOT NULL DEFAULT 0"
                     ))
-                    logger.info("✅ Migration: complaints.reach + complaints.view_count ensured")
+                    # initial_priority: permanent LLM-assessed anchor for vote recalculation
+                    await conn.execute(text(
+                        "ALTER TABLE complaints "
+                        "ADD COLUMN IF NOT EXISTS initial_priority VARCHAR(20)"
+                    ))
+                    # Backfill existing rows — use current priority as best approximation
+                    await conn.execute(text(
+                        "UPDATE complaints SET initial_priority = priority "
+                        "WHERE initial_priority IS NULL"
+                    ))
+                    logger.info("✅ Migration: complaints.reach + view_count + initial_priority ensured")
                 except Exception as me:
                     logger.debug(f"Migration note (reach/view_count): {me}")
 
