@@ -518,6 +518,28 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                 except Exception as me:
                     logger.debug(f"Migration note (push_subscriptions): {me}")
 
+                # Image grace period columns
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS "
+                        "image_required BOOLEAN NOT NULL DEFAULT FALSE"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS "
+                        "image_pending BOOLEAN NOT NULL DEFAULT FALSE"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS "
+                        "image_required_deadline TIMESTAMPTZ"
+                    ))
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS "
+                        "image_authority_notified BOOLEAN NOT NULL DEFAULT FALSE"
+                    ))
+                    logger.info("✅ Migration: complaint image grace period columns ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (image grace period): {me}")
+
             async with AsyncSessionLocal() as session:
                 from src.database.models import Department
 
