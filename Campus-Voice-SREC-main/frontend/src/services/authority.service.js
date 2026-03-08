@@ -101,8 +101,29 @@ const uploadNoticeAttachment = async (noticeId, file) => {
     return await res.json();
 };
 
-// Get attachment download URL (public)
+// Get attachment download URL (public) — legacy single-file
 const getNoticeAttachmentUrl = (noticeId) => `/api/authorities/notices/${noticeId}/attachment`;
+
+// Upload one file to notice's multi-file attachment list (new)
+const addNoticeAttachment = async (noticeId, file) => {
+    const token = tokenStorage.getAccessToken();
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`/api/authorities/notices/${noticeId}/attachments`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.detail || 'Failed to upload attachment');
+    }
+    return await res.json();
+};
+
+// Get URL for a specific attachment by ID (new multi-file)
+const getNoticeAttachmentByIdUrl = (noticeId, attachmentId) =>
+    `/api/authorities/notices/${noticeId}/attachments/${attachmentId}`;
 
 // --- Notifications (Authority/Admin) ---
 
@@ -139,6 +160,8 @@ const authorityService = {
     deactivateNotice,
     uploadNoticeAttachment,
     getNoticeAttachmentUrl,
+    addNoticeAttachment,
+    getNoticeAttachmentByIdUrl,
     getNotifications,
     markNotificationRead,
     markAllNotificationsRead,

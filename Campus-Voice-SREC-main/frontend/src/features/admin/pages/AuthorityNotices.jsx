@@ -49,7 +49,7 @@ export default function AuthorityNotices() {
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [form, setForm] = useState(buildEmptyForm);
-    const [attachmentFile, setAttachmentFile] = useState(null);
+    const [attachmentFiles, setAttachmentFiles] = useState([]);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -102,15 +102,20 @@ export default function AuthorityNotices() {
         setSubmitting(true);
         try {
             const created = await authorityService.createNotice(payload);
-            if (attachmentFile && created?.id) {
-                try {
-                    await authorityService.uploadNoticeAttachment(created.id, attachmentFile);
-                } catch (attachErr) {
-                    console.error('Attachment upload failed:', attachErr);
-                    // Notice created successfully, just attachment failed
-                    setSuccess('Notice sent! (Attachment upload failed — try re-uploading)');
+            if (attachmentFiles.length > 0 && created?.id) {
+                const failed = [];
+                for (const file of attachmentFiles) {
+                    try {
+                        await authorityService.addNoticeAttachment(created.id, file);
+                    } catch (attachErr) {
+                        console.error('Attachment upload failed:', attachErr);
+                        failed.push(file.name);
+                    }
+                }
+                if (failed.length > 0) {
+                    setSuccess(`Notice sent! (${failed.length} attachment(s) failed: ${failed.join(', ')})`);
                     setForm(buildEmptyForm());
-                    setAttachmentFile(null);
+                    setAttachmentFiles([]);
                     setShowForm(false);
                     await loadNotices();
                     return;
@@ -118,7 +123,7 @@ export default function AuthorityNotices() {
             }
             setSuccess('Notice sent successfully!');
             setForm(buildEmptyForm());
-            setAttachmentFile(null);
+            setAttachmentFiles([]);
             setShowForm(false);
             await loadNotices();
         } catch (err) {
@@ -327,16 +332,24 @@ export default function AuthorityNotices() {
                                         </div>
                                     </div>
 
-                                    {/* Attachment */}
+                                    {/* Attachments — multiple files */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
                                             <Paperclip size={14} className="text-gray-400" />
-                                            Attach File <span className="font-normal text-gray-400 text-xs">(optional · PDF, Word, Excel, image · max 10 MB)</span>
+                                            Attach Files <span className="font-normal text-gray-400 text-xs">(optional · up to 5 files · PDF, Word, Excel, image · max 10 MB each)</span>
                                         </label>
                                         <input
                                             type="file"
                                             accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp"
-                                            onChange={e => setAttachmentFile(e.target.files[0] || null)}
+                                            multiple
+                                            onChange={e => {
+                                                const selected = Array.from(e.target.files || []).slice(0, 5);
+                                                setAttachmentFiles(prev => {
+                                                    const combined = [...prev, ...selected];
+                                                    return combined.slice(0, 5);
+                                                });
+                                                e.target.value = '';
+                                            }}
                                             className="block w-full text-sm text-gray-600
                                                        file:mr-3 file:py-2 file:px-3
                                                        file:rounded-lg file:border-0
@@ -345,14 +358,20 @@ export default function AuthorityNotices() {
                                                        hover:file:bg-srec-primarySoft/80
                                                        cursor-pointer"
                                         />
-                                        {attachmentFile && (
-                                            <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-500">
-                                                <Paperclip size={11} />
-                                                {attachmentFile.name}
-                                                <button type="button" onClick={() => setAttachmentFile(null)}
-                                                    className="text-red-400 hover:text-red-600 ml-1">
-                                                    <X size={12} />
-                                                </button>
+                                        {attachmentFiles.length > 0 && (
+                                            <div className="mt-2 space-y-1">
+                                                {attachmentFiles.map((f, i) => (
+                                                    <div key={i} className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-2 py-1.5">
+                                                        <Paperclip size={11} className="flex-shrink-0" />
+                                                        <span className="flex-1 truncate">{f.name}</span>
+                                                        <span className="text-gray-400 flex-shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
+                                                        <button type="button"
+                                                            onClick={() => setAttachmentFiles(prev => prev.filter((_, idx) => idx !== i))}
+                                                            className="text-red-400 hover:text-red-600 flex-shrink-0">
+                                                            <X size={12} />
+                                                        </button>
+                                                    </div>
+                                                ))}
                                             </div>
                                         )}
                                     </div>
@@ -403,7 +422,24 @@ export default function AuthorityNotices() {
                                                         Expires: {new Date(notice.expires_at).toLocaleDateString()}
                                                     </p>
                                                 )}
-                                                {notice.attachment_filename && (
+                                                {(notice.attachments?.length > 0) && (
+                                                    <div className="mt-2 flex flex-wrap gap-2">
+                                                        {notice.attachments.map(att => (
+                                                            <a
+                                                                key={att.id}
+                                                                href={authorityService.getNoticeAttachmentByIdUrl(notice.id, att.id)}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="inline-flex items-center gap-1.5 text-xs text-srec-primary hover:underline"
+                                                                onClick={e => e.stopPropagation()}
+                                                            >
+                                                                <Paperclip size={11} />
+                                                                {att.filename}
+                                                            </a>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {(!notice.attachments?.length && notice.attachment_filename) && (
                                                     <a
                                                         href={authorityService.getNoticeAttachmentUrl(notice.id)}
                                                         download={notice.attachment_filename}

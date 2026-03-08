@@ -1018,8 +1018,13 @@ async def get_my_notices(
     auth_name = authority.name if authority else None
     auth_type = authority.authority_type if authority else None
 
+    from src.schemas.authority import NoticeAttachmentItem
     items = []
     for n in notices:
+        att_items = [
+            NoticeAttachmentItem(id=a.id, filename=a.filename, mimetype=a.mimetype, size=a.size)
+            for a in (n.attachments or [])
+        ]
         items.append(NoticeResponse(
             id=n.id,
             authority_id=n.authority_id,
@@ -1036,6 +1041,9 @@ async def get_my_notices(
             is_active=n.is_active,
             created_at=n.created_at,
             expires_at=n.expires_at,
+            attachment_filename=n.attachment_filename,
+            attachment_mimetype=n.attachment_mimetype,
+            attachments=att_items,
         ))
 
     return NoticeListResponse(
@@ -1157,6 +1165,93 @@ async def download_notice_attachment(
         content=notice.attachment_data,
         media_type=notice.attachment_mimetype or "application/octet-stream",
         headers={"Content-Disposition": f'inline; filename="{notice.attachment_filename or "attachment"}"'},
+    )
+
+
+# ── Multi-file attachments (new) ─────────────────────────────────────────────
+
+@router.post(
+    "/notices/{notice_id}/attachments",
+    summary="Add a file attachment to a notice (multi-file support)",
+)
+async def add_notice_attachment(
+    notice_id: int,
+    file: UploadFile = File(...),
+    authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    """Add a file attachment to a notice. Can be called multiple times for multiple files."""
+    from src.database.models import AuthorityUpdate, NoticeAttachment
+    from sqlalchemy import select
+
+    result = await db.execute(select(AuthorityUpdate).where(AuthorityUpdate.id == notice_id))
+    notice = result.scalar_one_or_none()
+    if not notice:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Notice not found")
+
+    authority_repo = AuthorityRepository(db)
+    authority = await authority_repo.get(authority_id)
+    is_admin = authority and authority.authority_type == "Admin"
+    if not is_admin and notice.authority_id != authority_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="You can only attach files to your own notices")
+
+    MAX_SIZE = 10 * 1024 * 1024
+    ALLOWED_TYPES = {
+        "application/pdf", "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "image/jpeg", "image/png", "image/webp",
+    }
+    data = await file.read()
+    if len(data) > MAX_SIZE:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="File must be under 10 MB")
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Unsupported file type")
+
+    attachment = NoticeAttachment(
+        notice_id=notice_id,
+        filename=file.filename,
+        mimetype=file.content_type,
+        data=data,
+        size=len(data),
+    )
+    db.add(attachment)
+    await db.commit()
+    await db.refresh(attachment)
+
+    logger.info(f"Attachment '{file.filename}' added to notice {notice_id} (id={attachment.id})")
+    return {"success": True, "id": attachment.id, "filename": file.filename, "size": len(data)}
+
+
+@router.get(
+    "/notices/{notice_id}/attachments/{attachment_id}",
+    summary="Download a specific notice attachment",
+)
+async def download_notice_attachment_by_id(
+    notice_id: int,
+    attachment_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Download a specific attachment from a notice."""
+    from src.database.models import NoticeAttachment
+    from fastapi.responses import Response
+    from sqlalchemy import select
+
+    result = await db.execute(
+        select(NoticeAttachment).where(
+            NoticeAttachment.id == attachment_id,
+            NoticeAttachment.notice_id == notice_id,
+        )
+    )
+    att = result.scalar_one_or_none()
+    if not att:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Attachment not found")
+
+    return Response(
+        content=att.data,
+        media_type=att.mimetype or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{att.filename}"'},
     )
 
 

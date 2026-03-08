@@ -247,7 +247,7 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing }) {
             <span />
           )}
           <p className="text-[10px] text-gray-400">
-            {petition.creator_name || petition.created_by_roll_no} ·{' '}
+            Representative ·{' '}
             {petition.submitted_at
               ? new Date(petition.submitted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
               : ''}

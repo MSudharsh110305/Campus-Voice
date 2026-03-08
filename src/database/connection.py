@@ -540,6 +540,27 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                 except Exception as me:
                     logger.debug(f"Migration note (image grace period): {me}")
 
+            # Notice multi-file attachments table
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS notice_attachments (
+                            id BIGSERIAL PRIMARY KEY,
+                            notice_id BIGINT NOT NULL REFERENCES authority_updates(id) ON DELETE CASCADE,
+                            filename VARCHAR(255) NOT NULL,
+                            mimetype VARCHAR(100) NOT NULL,
+                            data BYTEA NOT NULL,
+                            size INTEGER NOT NULL,
+                            uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                    """))
+                    await conn.execute(text(
+                        "CREATE INDEX IF NOT EXISTS idx_notice_attachments_notice_id ON notice_attachments(notice_id)"
+                    ))
+                    logger.info("✅ Migration: notice_attachments table ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (notice_attachments): {me}")
+
             async with AsyncSessionLocal() as session:
                 from src.database.models import Department
 

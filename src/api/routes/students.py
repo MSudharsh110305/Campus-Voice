@@ -751,10 +751,14 @@ async def get_student_notices(
         for a in auth_r.scalars().all():
             auth_map[a.id] = a
 
-    from src.schemas.authority import NoticeResponse, NoticeListResponse
+    from src.schemas.authority import NoticeResponse, NoticeListResponse, NoticeAttachmentItem
     items = []
     for n in notices:
         auth = auth_map.get(n.authority_id)
+        att_items = [
+            NoticeAttachmentItem(id=a.id, filename=a.filename, mimetype=a.mimetype, size=a.size)
+            for a in (n.attachments or [])
+        ]
         items.append(NoticeResponse(
             id=n.id,
             authority_id=n.authority_id,
@@ -772,6 +776,8 @@ async def get_student_notices(
             created_at=n.created_at,
             expires_at=n.expires_at,
             attachment_filename=n.attachment_filename,
+            attachment_mimetype=n.attachment_mimetype if hasattr(n, 'attachment_mimetype') else None,
+            attachments=att_items,
         ))
 
     return NoticeListResponse(

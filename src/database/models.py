@@ -374,7 +374,8 @@ class AuthorityUpdate(Base):
     
     # Relationships
     authority = relationship("Authority", back_populates="authority_updates")
-    
+    attachments = relationship("NoticeAttachment", back_populates="notice", cascade="all, delete-orphan", lazy="selectin")
+
     __table_args__ = (
         CheckConstraint(
             "category IN ('Announcement', 'Policy Change', 'Event', 'Maintenance', 'Emergency', 'General')",
@@ -820,6 +821,27 @@ class PushSubscription(Base):
         return f"<PushSubscription(user_type={self.user_type}, user_id={self.user_id})>"
 
 
+# ==================== NOTICE ATTACHMENTS ====================
+
+
+class NoticeAttachment(Base):
+    """Multiple file attachments for a notice (authority_updates row)."""
+    __tablename__ = "notice_attachments"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    notice_id = Column(BigInteger, ForeignKey("authority_updates.id", ondelete="CASCADE"), nullable=False, index=True)
+    filename = Column(String(255), nullable=False)
+    mimetype = Column(String(100), nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    size = Column(Integer, nullable=False)
+    uploaded_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
+
+    notice = relationship("AuthorityUpdate", back_populates="attachments")
+
+    def __repr__(self):
+        return f"<NoticeAttachment(notice_id={self.notice_id}, filename={self.filename})>"
+
+
 # ==================== EXPORT ====================
 
 __all__ = [
@@ -844,4 +866,5 @@ __all__ = [
     "StudentRepresentative",
     "SystemSetting",
     "PushSubscription",
+    "NoticeAttachment",
 ]

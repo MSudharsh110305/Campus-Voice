@@ -236,18 +236,15 @@ npm install --include=dev && node ./node_modules/vite/bin/vite.js build
 
 ## BUG-024 — Stale Token on Browser Reopen: API Calls Fire Before Refresh Completes
 
-**Status:** 🔴 Open
+**Status:** ✅ Fixed
 
-**Description:**
-When the browser is closed and reopened, multiple API calls (`/notifications/unread-count`, `/notices`, `/petitions/me/status`, etc.) fire simultaneously with the expired access token before the token refresh completes — all returning `401`. After `POST /api/auth/refresh` succeeds, subsequent calls return `200 OK`. The user stays visually logged in throughout, which is correct behaviour, but the burst of `401` errors before refresh indicates the frontend is not awaiting token refresh before firing requests on page load.
+- [x] `_getValidToken()` in `api.js` proactively checks token expiry (with 10s early buffer) before every API call — if expired it calls `_attemptRefresh()` first, then fires the request with the fresh token
+- [x] `_refreshPromise` deduplication ensures all concurrent API calls queue behind a single in-flight refresh — no burst of 401s on page load
+- [x] Fallback: if access token is missing, refresh is attempted using the stored refresh token before any request fires
+- [x] On refresh failure: all tokens cleared and user redirected to /login
 
 **Root Cause:**
 On app initialisation, all components mount simultaneously and fire their API calls in parallel. The token refresh interceptor is async but components don't wait for it — they fire with the stale token and fail. The refresh eventually succeeds and retries work, but the initial burst of `401`s causes brief UI errors or empty states.
-
-**Fix:**
-Implement a refresh lock — queue all API calls until the initial refresh completes:
-
-All API calls must call `getValidToken()` before firing. This serialises the refresh and queues other requests until it resolves.
 
 ---
 

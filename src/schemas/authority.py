@@ -615,6 +615,16 @@ class NoticeCreate(BaseModel):
     }
 
 
+class NoticeAttachmentItem(BaseModel):
+    """A single attachment belonging to a notice."""
+    id: int
+    filename: str
+    mimetype: str
+    size: int
+
+    model_config = {"from_attributes": True}
+
+
 class NoticeResponse(BaseModel):
     """Schema for a notice/broadcast response"""
 
@@ -634,6 +644,9 @@ class NoticeResponse(BaseModel):
     created_at: datetime
     expires_at: Optional[datetime] = None
     attachment_filename: Optional[str] = None
+    attachment_mimetype: Optional[str] = None
+    # Multi-file attachments (new)
+    attachments: List[NoticeAttachmentItem] = []
 
     model_config = {"from_attributes": True}
 
@@ -685,4 +698,5 @@ __all__ = [
     "NoticeCreate",
     "NoticeResponse",
     "NoticeListResponse",
+    "NoticeAttachmentItem",
 ]

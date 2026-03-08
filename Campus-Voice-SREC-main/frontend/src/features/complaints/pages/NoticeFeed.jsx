@@ -84,7 +84,22 @@ function NoticeDetailModal({ notice, onClose, onOpenAttachment, attachLoading, C
                         </span>
                     </div>
 
-                    {notice.attachment_filename && (
+                    {notice.attachments?.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                            {notice.attachments.map(att => (
+                                <button
+                                    key={att.id}
+                                    onClick={() => { onClose(); onOpenAttachment(`${notice.id}/attachments/${att.id}`, att.filename, att.mimetype); }}
+                                    className="w-full flex items-center gap-2 py-2.5 px-3 rounded-xl border border-srec-border text-sm text-srec-primary font-medium hover:bg-srec-primarySoft transition-colors"
+                                >
+                                    <Paperclip size={14} />
+                                    <span className="truncate">{att.filename}</span>
+                                    <span className="ml-auto text-xs text-gray-400 flex-shrink-0">{(att.size / 1024).toFixed(0)} KB</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    {(!notice.attachments?.length && notice.attachment_filename) && (
                         <button
                             onClick={() => { onClose(); onOpenAttachment(notice.id, notice.attachment_filename, notice.attachment_mimetype); }}
                             disabled={attachLoading === notice.id}
@@ -207,12 +222,16 @@ export default function NoticeFeed() {
     const [selectedNotice, setSelectedNotice] = useState(null); // notice shown in detail modal
     const LIMIT = 20;
 
-    const openAttachment = useCallback(async (noticeId, filename, mimeType) => {
+    const openAttachment = useCallback(async (noticeIdOrPath, filename, mimeType) => {
         if (attachLoading) return;
-        setAttachLoading(noticeId);
+        setAttachLoading(noticeIdOrPath);
         try {
             const token = tokenStorage.getAccessToken() || '';
-            const res = await fetch(`/api/authorities/notices/${noticeId}/attachment?token=${token}`);
+            // Multi-file path looks like "123/attachments/456"; legacy is just a notice id
+            const urlPath = String(noticeIdOrPath).includes('/attachments/')
+                ? `/api/authorities/notices/${noticeIdOrPath}`
+                : `/api/authorities/notices/${noticeIdOrPath}/attachment`;
+            const res = await fetch(`${urlPath}?token=${token}`);
             if (!res.ok) throw new Error('Failed to load attachment');
             const blob = await res.blob();
             const blobUrl = URL.createObjectURL(blob);
@@ -402,16 +421,27 @@ export default function NoticeFeed() {
                                             {notice.title}
                                         </p>
 
-                                        {/* Content */}
-                                        <p className="text-xs text-gray-500 leading-relaxed line-clamp-3">
+                                        {/* Content — fixed height, scrollable so card ratio stays consistent */}
+                                        <div className="text-xs text-gray-500 leading-relaxed max-h-[54px] overflow-y-auto pr-0.5" style={{scrollbarWidth:'thin',scrollbarColor:'#d1d5db transparent'}}>
                                             {notice.content}
-                                        </p>
-                                        {notice.content && notice.content.length > 200 && (
-                                            <span className="text-[10px] text-srec-primary font-medium mt-0.5 inline-block">Read more…</span>
-                                        )}
+                                        </div>
 
-                                        {/* Attachment — opens in smooth popup modal */}
-                                        {notice.attachment_filename && (
+                                        {/* Attachments — multi-file support */}
+                                        {notice.attachments?.length > 0 && (
+                                            <div className="mt-2 flex flex-wrap gap-2">
+                                                {notice.attachments.map(att => (
+                                                    <button
+                                                        key={att.id}
+                                                        onClick={(e) => { e.stopPropagation(); openAttachment(`${notice.id}/attachments/${att.id}`, att.filename, att.mimetype); }}
+                                                        className="inline-flex items-center gap-1 text-[10px] text-srec-primary hover:underline"
+                                                    >
+                                                        <Paperclip size={10} />
+                                                        {att.filename}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {(!notice.attachments?.length && notice.attachment_filename) && (
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); openAttachment(notice.id, notice.attachment_filename, notice.attachment_mimetype); }}
                                                 disabled={attachLoading === notice.id}
