@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import {
   ThumbsUp, ThumbsDown, FileX, ShieldCheck,
-  Clock, Building2, AlertCircle, Copy, Check
+  Clock, Building2, AlertCircle, Copy, Check, ImagePlus
 } from 'lucide-react';
 import { Skeleton } from '../../../components/UI';
 import { VOTE_TYPES } from '../../../utils/constants';
@@ -63,7 +63,10 @@ export default function ComplaintCard({
   timestamp,
   isOwner = false,
   has_image = false,
-  assigned_authority_name = null
+  assigned_authority_name = null,
+  image_required = false,
+  image_pending = false,
+  image_required_deadline = null,
 }) {
   const { user } = useAuth();
   const [voteCount, setVoteCount] = useState({ up: upvotes || 0, down: downvotes || 0 });
@@ -73,6 +76,9 @@ export default function ComplaintCard({
   const [imageUrl, setImageUrl] = useState(null);
   const [imageLoading, setImageLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [imageUploaded, setImageUploaded] = useState(false);
+  const imgInputRef = useRef(null);
 
   const copyId = async (e, complaintId) => {
     e.preventDefault();
@@ -94,6 +100,23 @@ export default function ComplaintCard({
   const showVoteError = (msg) => {
     setVoteError(msg);
     setTimeout(() => setVoteError(null), 3000);
+  };
+
+  const handleImageUpload = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    try {
+      await complaintService.uploadImage(id, file);
+      setImageUploaded(true);
+    } catch (err) {
+      console.error('Image upload failed', err);
+    } finally {
+      setUploadingImage(false);
+      if (imgInputRef.current) imgInputRef.current.value = '';
+    }
   };
 
   useEffect(() => {
@@ -261,6 +284,46 @@ export default function ComplaintCard({
               </div>
             )}
           </div>
+
+          {/* Image upload prompt — shown to owner when image is required and not yet uploaded */}
+          {isOwner && image_required && image_pending && !has_image && !imageUploaded && (
+            <div
+              className="mt-2.5 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"
+              onClick={e => e.preventDefault()}
+            >
+              <ImagePlus size={13} className="text-amber-600 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-semibold text-amber-800 leading-none">Image required</p>
+                {image_required_deadline && (
+                  <p className="text-[9px] text-amber-600 mt-0.5">
+                    Due by {new Date(image_required_deadline).toLocaleDateString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                )}
+              </div>
+              <label
+                onClick={e => e.stopPropagation()}
+                className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-semibold cursor-pointer transition-colors ${
+                  uploadingImage ? 'bg-amber-200 text-amber-600' : 'bg-amber-500 text-white hover:bg-amber-600'
+                }`}
+              >
+                {uploadingImage ? 'Uploading…' : 'Upload'}
+                <input
+                  ref={imgInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageUpload}
+                  disabled={uploadingImage}
+                />
+              </label>
+            </div>
+          )}
+          {isOwner && image_required && image_pending && imageUploaded && (
+            <div className="mt-2.5 flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+              <Check size={13} className="text-emerald-600 flex-shrink-0" />
+              <p className="text-[10px] font-semibold text-emerald-700">Image uploaded — awaiting verification</p>
+            </div>
+          )}
 
           {/* Row 3: copy ID + vote buttons */}
           <div className="flex items-center mt-3 pt-2.5 border-t border-srec-borderLight">

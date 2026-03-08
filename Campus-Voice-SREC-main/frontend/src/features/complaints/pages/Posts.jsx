@@ -764,6 +764,9 @@ export default function Posts() {
                     timestamp={post.submitted_at || post.created_at}
                     isOwner={true}
                     assigned_authority_name={post.assigned_authority_name || null}
+                    image_required={post.image_required || false}
+                    image_pending={post.image_pending || false}
+                    image_required_deadline={post.image_required_deadline || null}
                   />
                 ))
               )}

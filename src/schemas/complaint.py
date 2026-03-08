@@ -146,6 +146,19 @@ class ComplaintResponse(BaseModel):
         default=None,
         description="Image verification status (Pending/Verified/Rejected)"
     )
+    # Image grace-period fields — shown to the complaint owner
+    image_required: bool = Field(
+        default=False,
+        description="LLM flagged this complaint as needing a supporting image"
+    )
+    image_pending: bool = Field(
+        default=False,
+        description="Complaint is in the image-upload grace period (awaiting owner upload)"
+    )
+    image_required_deadline: Optional[datetime] = Field(
+        default=None,
+        description="Deadline by which the owner must upload the image"
+    )
     
     submitted_at: datetime
     updated_at: datetime
