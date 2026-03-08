@@ -1122,8 +1122,22 @@ class ComplaintService:
             # Update verification results
             complaint.image_verified = verification_result["is_relevant"]
             complaint.image_verification_status = verification_result["status"]
+
+            # Rejected image → mark complaint as spam (same logic as initial submission)
+            if not verification_result["is_relevant"] or verification_result.get("confidence_score", 1.0) < 0.35:
+                complaint.is_marked_as_spam = True
+                complaint.status = "Spam"
+                complaint.spam_reason = (
+                    "Uploaded image not relevant to complaint: "
+                    + verification_result.get("explanation", "Image verification failed")
+                )
+                logger.warning(
+                    f"Late-upload image rejected for complaint {complaint_id} — marked as spam. "
+                    f"Confidence={verification_result.get('confidence_score', 0):.2f}"
+                )
+
             await self.db.commit()
-            
+
             logger.info(
                 f"Image uploaded for complaint {complaint_id}: "
                 f"Verified={verification_result['is_relevant']}, "

@@ -48,6 +48,25 @@ if ('serviceWorker' in navigator) {
         });
       });
 
+      // Listen for PERIODIC_REFRESH messages from the SW
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.type === 'PERIODIC_REFRESH') {
+          window.dispatchEvent(new CustomEvent('cv:new-notification'));
+        }
+      });
+
+      // Register periodic background sync (browsers that support it)
+      if ('periodicSync' in reg) {
+        try {
+          const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
+          if (status.state === 'granted') {
+            await reg.periodicSync.register('cv-refresh-notifications', { minInterval: 5 * 60 * 1000 });
+          }
+        } catch {
+          // periodic sync not supported — polling covers this
+        }
+      }
+
       // Set up push notifications if the user is logged in
       setupPushNotifications(reg);
     } catch {
@@ -117,3 +136,9 @@ async function setupPushNotifications(reg) {
     // Push setup is best-effort — never block the app
   }
 }
+
+// Expose so AuthContext can trigger push subscription on login
+window._cvSetupPush = async () => {
+  const reg = await navigator.serviceWorker.getRegistration();
+  if (reg) setupPushNotifications(reg);
+};

@@ -40,6 +40,8 @@ export const AuthProvider = ({ children }) => {
   const loginStudent = async (email, password) => {
     const data = await authService.loginStudent(email, password);
     setCurrentUser(data); // data is the user object with role merged
+    // Trigger push subscription now that user is logged in
+    if (typeof window._cvSetupPush === 'function') window._cvSetupPush();
     return data;
   };
 

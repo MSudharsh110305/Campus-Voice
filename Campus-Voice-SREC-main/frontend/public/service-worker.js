@@ -1,5 +1,5 @@
-const CACHE_STATIC = 'cv-static-v2';
-const CACHE_API = 'cv-api-v2';
+const CACHE_STATIC = 'cv-static-v3';
+const CACHE_API = 'cv-api-v3';
 const STATIC_ASSETS = ['/', '/offline.html', '/manifest.webmanifest'];
 
 // --- INSTALL ---
@@ -122,6 +122,20 @@ async function submitPendingComplaints() {
   }
 }
 
+// --- PERIODIC SYNC (background notification refresh) ---
+self.addEventListener('periodicsync', (event) => {
+  if (event.tag === 'cv-refresh-notifications') {
+    event.waitUntil(notifyClientsToRefresh());
+  }
+});
+
+async function notifyClientsToRefresh() {
+  const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+  for (const client of clientList) {
+    client.postMessage({ type: 'PERIODIC_REFRESH' });
+  }
+}
+
 // Minimal IndexedDB helpers inside SW
 function openIDB() {
   return new Promise((resolve, reject) => {
@@ -160,17 +174,26 @@ self.addEventListener('push', (event) => {
   let data = { title: 'CampusVoice', body: 'You have a new notification', url: '/', urgency: 'normal' };
   try { data = { ...data, ...event.data.json() }; } catch (e) {}
 
-  event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: '/icons/icon-192.svg',
-      badge: '/icons/icon-192.svg',
-      data: { url: data.url },
-      vibrate: data.urgency === 'urgent' ? [200, 100, 200, 100, 200] : [100],
-      tag: data.type || 'cv-notification',
-      renotify: true,
-    })
-  );
+  const showAndNotify = self.registration.showNotification(data.title, {
+    body: data.body,
+    icon: '/icons/icon-192.svg',
+    badge: '/icons/icon-192.svg',
+    data: { url: data.url },
+    // Vibration is in SW (not React) — works even when app is closed
+    vibrate: data.urgency === 'high' ? [200, 100, 200, 100, 200] : [150, 50, 150],
+    tag: data.type || 'cv-notification',
+    renotify: true,
+    requireInteraction: data.urgency === 'high',
+  }).then(() => {
+    // Tell any open tabs to refresh their notification counts immediately
+    if ('BroadcastChannel' in self) {
+      const bc = new BroadcastChannel('cv-notifications');
+      bc.postMessage({ type: 'PUSH_RECEIVED', data });
+      bc.close();
+    }
+  });
+
+  event.waitUntil(showAndNotify);
 });
 
 self.addEventListener('notificationclick', (event) => {
@@ -179,14 +202,17 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if (client.url === url && 'focus' in client) return client.focus();
+        if (client.url.includes(self.registration.scope) && 'focus' in client) {
+          client.navigate(url);
+          return client.focus();
+        }
       }
       return clients.openWindow(url);
     })
   );
 });
 
-// --- SW UPDATE ---
+// --- SW UPDATE & MESSAGES ---
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });

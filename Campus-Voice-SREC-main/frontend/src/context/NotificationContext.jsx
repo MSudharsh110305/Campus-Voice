@@ -9,13 +9,21 @@ export function NotificationProvider({ children }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadNoticeCount, setUnreadNoticeCount] = useState(0);
   const intervalRef = useRef(null);
+  const prevCountRef = useRef(0);
 
   const fetchCount = useCallback(async () => {
     try {
       const data = await studentService.getUnreadCount();
       const count = data.unread_count || 0;
-      setUnreadCount(count);
-      // Feature 5: Badging API — update app badge with unread count
+      setUnreadCount((prev) => {
+        if (count > prev && prev !== 0) {
+          // New notification arrived — let pages know so they can refresh data
+          window.dispatchEvent(new CustomEvent('cv:new-notification', { detail: { count } }));
+        }
+        prevCountRef.current = count;
+        return count;
+      });
+      // Badging API — update app badge with unread count
       if ('setAppBadge' in navigator) {
         if (count > 0) {
           navigator.setAppBadge(count).catch(() => {});
@@ -65,6 +73,20 @@ export function NotificationProvider({ children }) {
       intervalRef.current = null;
     }
   }, []);
+
+  // BroadcastChannel: receive push-received signal from Service Worker
+  // so we immediately refresh counts when a push arrives (even if tab is open)
+  useEffect(() => {
+    if (!('BroadcastChannel' in window)) return;
+    const bc = new BroadcastChannel('cv-notifications');
+    bc.onmessage = (e) => {
+      if (e.data?.type === 'PUSH_RECEIVED') {
+        fetchCount();
+        fetchNoticeCount();
+      }
+    };
+    return () => bc.close();
+  }, [fetchCount, fetchNoticeCount]);
 
   useEffect(() => {
     if (user?.role !== 'Student') {

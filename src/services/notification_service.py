@@ -78,10 +78,10 @@ class NotificationService:
             
             # TODO: Send real-time notification via WebSocket
             await self._send_realtime_notification(notification)
-            
-            # TODO: Send push notification (if enabled)
-            # await self._send_push_notification(notification)
-            
+
+            # Send Web Push notification (best-effort, non-blocking)
+            await self._send_push_notification(db, notification)
+
             return notification
             
         except Exception as e:
@@ -584,18 +584,34 @@ class NotificationService:
         logger.debug(f"TODO: Send WebSocket notification to {notification.recipient_id}")
         pass
     
-    async def _send_push_notification(self, notification: Notification):
-        """
-        Send push notification (mobile/browser).
-        TODO: Implement push notification service
-        
-        Args:
-            notification: Notification object
-        """
-        # Placeholder for push notification
-        # Example using Firebase Cloud Messaging or similar service
-        logger.debug(f"TODO: Send push notification to {notification.recipient_id}")
-        pass
+    async def _send_push_notification(self, db: AsyncSession, notification: Notification):
+        """Send Web Push notification to all registered devices for this user."""
+        try:
+            from src.services.push_service import send_push_to_user
+
+            # Build a deep-link URL so tapping the notification opens the right page
+            if notification.complaint_id:
+                url = f"/complaint/{notification.complaint_id}"
+            elif notification.notification_type in ("petition_approved", "petition_rejected"):
+                url = "/petitions"
+            else:
+                url = "/notifications"
+
+            # Urgent notification types get vibration pattern in SW
+            urgent_types = {"complaint_escalated", "vote_milestone"}
+            urgency = "high" if notification.notification_type in urgent_types else "normal"
+
+            await send_push_to_user(
+                db=db,
+                user_id=notification.recipient_id,
+                title="CampusVoice",
+                body=notification.message,
+                url=url,
+                urgency=urgency,
+            )
+        except Exception as e:
+            # Push is best-effort — never let it break the notification creation
+            logger.debug(f"Push notification skipped for {notification.recipient_id}: {e}")
 
 
 # Create global instance

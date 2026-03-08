@@ -250,19 +250,12 @@ On app initialisation, all components mount simultaneously and fire their API ca
 
 ## BUG-025 — PWA: Install Button Non-Functional, Vibration API Not Working, Real-Time Data Requires Manual Refresh
 
-**Status:** 🔴 Open
+**Status:** ✅ Fixed
 
-**Description:**
-Three PWA features are non-functional on mobile Chrome:
-1. **Install button** — tapping "Install App" does nothing, PWA is not downloaded/installed
-2. **Vibration API** — no vibration on notifications or emergency announcements
-3. **Real-time data** — new complaints, notifications, and updates are not reflected until the page is manually refreshed
-
-**Root Cause:**
-1. Install: `beforeinstallprompt` event is not being captured and stored — the prompt is fired and lost before the button is shown. Must capture and defer the event:
-
-2. Vibration: `navigator.vibrate()` requires the PWA to be in focus and the user must have interacted with the page first — check if called too early on load
-3. Real-time: WebSocket is disabled (`ENABLE_WEBSOCKET=false` in `.env`) — frontend is likely not polling either. Enable polling fallback or enable WebSocket
+- [x] **Install button**: `InstallPrompt.jsx` refactored to single `useEffect` — reads `window._deferredInstallPrompt` (set in `index.jsx` early-capture) on mount; no more dual-listener race condition. After install, marks `cv_install_prompted` in localStorage. Profile page `handleInstall` correctly calls `window._deferredInstallPrompt.prompt()`.
+- [x] **Vibration**: Moved entirely into Service Worker `showNotification` call — fires regardless of app foreground/background state. Pattern: `[200,100,200,100,200]` for urgent (high-priority), `[150,50,150]` for normal. React components no longer handle vibration.
+- [x] **Real-time data**: `NotificationContext` dispatches `cv:new-notification` custom event whenever unread count increases (polling). Service Worker sends `BroadcastChannel('cv-notifications')` message `{type:'PUSH_RECEIVED'}` when push arrives — open tabs immediately re-fetch counts without waiting for 30s poll. Periodic background sync registered (`cv-refresh-notifications`, 5min interval) as additional fallback.
+- [x] **Push re-subscribe on login**: `AuthContext.loginStudent` calls `window._cvSetupPush()` after auth to ensure push subscription is registered for the new session.
 
 ---
 
@@ -493,40 +486,15 @@ Add `priority_score FLOAT` column to complaints table and recalculate on every v
 
 ## BUG-034 — Push Notifications Not Delivered When App is Closed or Background
 
-**Status:** 🔴 Open
+**Status:** ✅ Fixed
 
-**Description:**
-Push notifications only trigger vibration when the student is actively on the Notices page — not when on other pages or when the app is closed/backgrounded. Notifications are not appearing in the phone's native notification tray at all. The Web Push API + Service Worker pipeline is either not configured or not wired to the notification system.
-
-**Root Cause:**
-1. Service Worker is not registered or not handling `push` events
-2. VAPID keys are not configured — Web Push requires VAPID authentication
-3. Push subscriptions are not being stored per-device in the backend
-4. Vibration is triggered by a React component event handler (only fires when component is mounted) instead of the Service Worker (fires regardless of app state)
-
-**Fix:**
-
-Service Worker (`public/sw.js`) must handle push events:
-```javascript
-self.addEventListener('push', event => {
-  const data = event.data.json()
-  event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/badge-72.png',
-      vibrate: ,  // vibration pattern here — not in React
-      data: { url: data.url }
-    })
-  )
-})
-
-self.addEventListener('notificationclick', event => {
-  event.notification.close()
-  clients.openWindow(event.notification.data.url)
-})
-```
-Backend: generate VAPID keys, store push subscriptions per student device, send via `pywebpush` on every notification trigger. Add `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` to `.env`. Move all vibration logic out of React components and into the Service Worker `showNotification` call.
+- [x] **Backend pipeline wired**: `notification_service._send_push_notification` was a no-op stub — now calls `push_service.send_push_to_user` on every `create_notification`. Push sent to all registered devices for the recipient.
+- [x] **pywebpush added**: `pywebpush>=2.0.0` in `requirements.txt`.
+- [x] **Vibration in SW**: Pattern set in `showNotification` (`[200,100,200,100,200]` for high urgency, `[150,50,150]` normal) — fires even when app is closed/backgrounded.
+- [x] **BroadcastChannel**: After showing notification, SW posts `{type:'PUSH_RECEIVED'}` so open tabs refresh counts immediately without waiting for next poll.
+- [x] **Push re-subscribe on login**: `AuthContext.loginStudent` calls `window._cvSetupPush()` to subscribe current device immediately after auth.
+- [x] **VAPID setup**: Generate keys and add to `.env`: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_CLAIMS_EMAIL=admin@srec.ac.in`. Frontend reads `VITE_VAPID_PUBLIC_KEY`.
+- [x] **Stale cleanup**: `push_service` auto-removes 410 Gone subscriptions.
 
 ---
 
