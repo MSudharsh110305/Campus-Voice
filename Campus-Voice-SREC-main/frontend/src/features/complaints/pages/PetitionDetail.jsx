@@ -33,6 +33,11 @@ function checkAccess(petition, user) {
     return { allowed: true };
   }
 
+  // Already signed → student previously had valid access, allow re-entry via shared link
+  if (petition.signed_by_me) {
+    return { allowed: true };
+  }
+
   const scope = petition.petition_scope;
 
   if (scope === 'Hostel') {

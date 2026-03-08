@@ -923,6 +923,110 @@ async def verify_complaint_image(
         )
 
 
+# ==================== IMAGE GRACE-PERIOD DECISION ====================
+
+@router.post(
+    "/{complaint_id}/image-decision",
+    summary="Authority image decision",
+    description=(
+        "Authority decides to keep or delete a complaint whose image upload grace period has expired. "
+        "Only the assigned authority (or Admin) can call this endpoint."
+    )
+)
+async def authority_image_decision(
+    complaint_id: UUID,
+    action: str = Form(..., description="'keep' or 'delete'"),
+    reason: Optional[str] = Form(None, description="Optional explanation"),
+    authority: dict = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    After a student's 24-hour image upload window expires, the assigned authority
+    receives a notification and calls this endpoint to either:
+    - **keep**: complaint stays as-is (image_pending cleared, life goes on)
+    - **delete**: complaint is soft-deleted and the student is notified
+    """
+    from sqlalchemy import select as _sel
+    from src.database.models import Complaint as _C
+    from src.services.notification_service import notification_service as _ns
+
+    action = action.strip().lower()
+    if action not in ("keep", "delete"):
+        raise HTTPException(status_code=400, detail="action must be 'keep' or 'delete'")
+
+    result = await db.execute(_sel(_C).where(_C.id == complaint_id, _C.is_deleted == False))
+    complaint = result.scalar_one_or_none()
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    authority_id = authority.get("id") or authority.get("user_id")
+    authority_level = authority.get("authority_level", 0)
+
+    # Only the assigned authority or Admin (level >= 100) may act
+    is_assigned = str(complaint.assigned_authority_id) == str(authority_id)
+    is_admin = authority_level >= 100
+    if not is_assigned and not is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the assigned authority or Admin can make this decision"
+        )
+
+    if not complaint.image_pending:
+        raise HTTPException(
+            status_code=400,
+            detail="This complaint is not awaiting an image decision"
+        )
+
+    now = datetime.now(timezone.utc)
+
+    if action == "keep":
+        # Clear grace period flags — complaint stands without image
+        complaint.image_pending = False
+        complaint.image_required_deadline = None
+        await db.commit()
+        # Notify student
+        try:
+            await _ns.create_notification(
+                db,
+                recipient_type="Student",
+                recipient_id=complaint.student_roll_no,
+                complaint_id=complaint.id,
+                notification_type="image_decision",
+                message=(
+                    "Your complaint has been kept on record by the authority even though "
+                    "supporting image evidence was not uploaded. Your complaint will continue "
+                    "to be reviewed normally."
+                )
+            )
+        except Exception:
+            pass
+        return {"success": True, "action": "keep", "message": "Complaint retained"}
+
+    else:  # delete
+        complaint.is_deleted = True
+        complaint.deleted_at = now
+        complaint.image_pending = False
+        await db.commit()
+        # Notify student
+        try:
+            await _ns.create_notification(
+                db,
+                recipient_type="Student",
+                recipient_id=complaint.student_roll_no,
+                complaint_id=complaint.id,
+                notification_type="image_decision",
+                message=(
+                    "Your complaint was removed because supporting visual evidence was not "
+                    f"uploaded within the required 24-hour window. "
+                    + (f"Authority note: {reason}" if reason else "")
+                    + " You may re-submit the complaint with an image attached."
+                )
+            )
+        except Exception:
+            pass
+        return {"success": True, "action": "delete", "message": "Complaint soft-deleted"}
+
+
 # ==================== STATUS TRACKING ====================
 
 @router.get(
@@ -1290,7 +1394,7 @@ async def _do_dispute(complaint_id: UUID, roll_no: str, reason: Optional[str], d
     appeal_text = reason or "No reason provided"
     preview = (complaint.original_text or "")[:100]
     msg = (
-        f"Spam dispute from student {roll_no}: "
+        f"Spam dispute received: "
         f"'{preview}{'...' if len(complaint.original_text or '') > 100 else ''}' "
         f"— Reason: {appeal_text}"
     )

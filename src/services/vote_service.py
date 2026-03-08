@@ -326,16 +326,87 @@ class VoteService:
 
         return adjusted_score, priority
 
+    # ── Blended priority: initial score + vote contribution ─────────────────
+    # Maps initial priority string → approximate base score (0-100 scale
+    # from priority_service: Critical≥50, High≥35, Medium≥20, Low<20)
+    _INITIAL_BASE_SCORES = {"Low": 12, "Medium": 27, "High": 42, "Critical": 60}
+
+    @staticmethod
+    def _vote_contribution(upvotes: int, downvotes: int, reach: int) -> float:
+        """
+        Calculate vote contribution to priority score, dampened by reach.
+
+        Formula:
+            net_ratio = net_votes / reach        → what fraction supports it
+            engagement = total_votes / reach     → what fraction interacted
+            contribution = net_ratio * 100 * min(engagement + 0.5, 2.0)
+            Capped to ±30 points.
+
+        For a department of 180 students:
+            1 upvote   → ~0.3 points  (negligible)
+            10 upvotes → ~3.1 points  (noticeable)
+            30 upvotes → ~11  points  (moves priority 1 tier)
+            50 upvotes → ~20  points  (significant, capped)
+        """
+        net = upvotes - downvotes
+        total = upvotes + downvotes
+        if reach <= 0 or total == 0:
+            return 0.0
+        net_ratio = net / reach
+        engagement = total / reach
+        contribution = net_ratio * 100 * min(engagement + 0.5, 2.0)
+        return max(-30.0, min(30.0, contribution))
+
+    @staticmethod
+    def _engagement_bonus(upvotes: int, downvotes: int, reach: int) -> float:
+        """
+        Engagement bonus: high participation = more credible signal.
+        Max +10 points. Only applies when engagement > 5% of reach.
+        """
+        total = upvotes + downvotes
+        if reach <= 0 or total == 0:
+            return 0.0
+        engagement_ratio = total / reach
+        if engagement_ratio < 0.05:
+            return 0.0
+        return min(10.0, engagement_ratio * 50.0)
+
+    def _blended_priority(
+        self, upvotes: int, downvotes: int, reach: int, initial_priority: str
+    ) -> tuple:
+        """
+        Blended priority: initial base score + vote contribution + engagement bonus.
+        Returns (final_score, proposed_priority).
+
+        The initial priority anchors the score. Votes can shift it by max ±30 + 10 bonus.
+        Scale: 0-100. Thresholds: Critical≥50, High≥35, Medium≥20, Low<20.
+        """
+        base = self._INITIAL_BASE_SCORES.get(initial_priority, 20)
+        vote_cont = self._vote_contribution(upvotes, downvotes, reach)
+        eng_bonus = self._engagement_bonus(upvotes, downvotes, reach)
+
+        final_score = max(0.0, min(100.0, base + vote_cont + eng_bonus))
+
+        if final_score >= 50:
+            priority = "Critical"
+        elif final_score >= 35:
+            priority = "High"
+        elif final_score >= 20:
+            priority = "Medium"
+        else:
+            priority = "Low"
+
+        return final_score, priority
+
     async def recalculate_priority(self, complaint_id: UUID) -> float:
         """
-        Recalculate priority using engagement-aware Wilson Score.
+        Recalculate priority using blended system: initial base + vote contribution.
 
-        adjusted_score = wilson(upvotes, downvotes) * 100 * engagement_factor
-        engagement_factor = 1.0 + (total_votes / max(reach, 1)) * 2.0  → [1.0, 3.0]
+        The initial priority (set by priority_service at creation) serves as the anchor.
+        Votes add/subtract from this base, dampened by reach (total eligible viewers).
+        Max vote influence: ±30 points + 10 engagement bonus = ±40.
 
-        Maps to: Critical ≥ 150 | High ≥ 75 | Medium ≥ 25 | Low < 25
-
-        Guard: new priority cannot be more than 1 level away from the current priority.
+        Guard: new priority cannot be more than 1 level away from current priority.
         """
         complaint = await self.complaint_repo.get(complaint_id)
         if not complaint:
@@ -347,33 +418,27 @@ class VoteService:
         total_votes = upvotes + downvotes
 
         if total_votes == 0:
-            # No votes yet — nothing to update
             return complaint.priority_score or 0.0
 
         reach = complaint.reach or 0
-        view_count = complaint.view_count or 0
 
-        # Engagement-based score
-        adjusted_score, proposed_priority = self._engagement_priority(
-            upvotes, downvotes, reach, view_count
+        # Blended score using initial priority as anchor
+        old_priority = complaint.priority
+        blended_score, proposed_priority = self._blended_priority(
+            upvotes, downvotes, reach, old_priority
         )
 
-        # Guard: never change by more than 1 level per vote update.
-        # Capture priority BEFORE update_priority_score() which commits and
-        # expires the SQLAlchemy session (accessing complaint.priority afterward
-        # would trigger a lazy load → async greenlet error).
-        old_priority = complaint.priority
+        # Guard: never change by more than 1 level per vote update
         current_idx = self._priority_index(old_priority)
         proposed_idx = self._priority_index(proposed_priority)
         guarded_idx = max(current_idx - 1, min(current_idx + 1, proposed_idx))
         guarded_priority = self._PRIORITY_ORDER[guarded_idx]
 
         # Persist priority_score (commits → expires session objects)
-        await self.complaint_repo.update_priority_score(complaint_id, adjusted_score)
+        await self.complaint_repo.update_priority_score(complaint_id, blended_score)
 
         # Update priority level only if it changed
         if guarded_priority != old_priority:
-            # Re-fetch complaint since session was expired by the commit above
             fresh = await self.complaint_repo.get(complaint_id)
             if fresh:
                 fresh.priority = guarded_priority
@@ -382,7 +447,7 @@ class VoteService:
                     f"Priority updated for {complaint_id}: {old_priority} → {guarded_priority}"
                 )
 
-                # Notify admin when votes promote a complaint to High or Critical
+                # Notify admin when votes promote to High or Critical
                 if guarded_priority in ("High", "Critical") and old_priority not in ("High", "Critical"):
                     try:
                         from src.services.notification_service import notification_service
@@ -398,7 +463,7 @@ class VoteService:
                                 complaint_id=complaint_id,
                                 notification_type="priority_promoted",
                                 message=(
-                                    f"🔺 Complaint promoted to {guarded_priority} priority via votes "
+                                    f"Complaint promoted to {guarded_priority} priority via votes "
                                     f"(was {old_priority}): \"{preview}...\""
                                 )
                             )
@@ -406,12 +471,15 @@ class VoteService:
                         logger.warning(f"Failed to notify admin of priority promotion: {_ne}")
 
         logger.info(
-            f"Engagement priority for {complaint_id}: up={upvotes} down={downvotes} "
-            f"reach={reach} view={view_count} score={adjusted_score:.2f} → {proposed_priority} "
+            f"Blended priority for {complaint_id}: up={upvotes} down={downvotes} "
+            f"reach={reach} base={self._INITIAL_BASE_SCORES.get(old_priority, 20)} "
+            f"vote_cont={self._vote_contribution(upvotes, downvotes, reach):.1f} "
+            f"eng_bonus={self._engagement_bonus(upvotes, downvotes, reach):.1f} "
+            f"score={blended_score:.1f} → {proposed_priority} "
             f"(was={old_priority} guarded={guarded_priority})"
         )
 
-        return adjusted_score
+        return blended_score
     
     async def _get_filtered_vote_counts(self, complaint: Complaint) -> tuple[int, int]:
         """

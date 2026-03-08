@@ -49,8 +49,243 @@ class LLMService:
         else:
             logger.warning("GROQ_API_KEY is not set. LLM features will use keyword-based fallback logic.")
     
-    # ==================== CATEGORIZATION ====================
-    
+    # ==================== COMBINED PROCESSING (single LLM call) ====================
+
+    @retry(
+        stop=stop_after_attempt(settings.LLM_MAX_RETRIES),
+        wait=wait_exponential(multiplier=1, min=1, max=60),
+        retry=retry_if_exception_type((httpx.HTTPError, TimeoutError))
+    )
+    async def process_complaint(
+        self,
+        text: str,
+        context: Dict[str, str]
+    ) -> Dict[str, Any]:
+        """
+        Combined LLM call: spam detection + categorization + rephrasing + image requirement.
+        Replaces 4 separate LLM calls with 1.
+
+        Args:
+            text: Complaint text (already normalized via aliases)
+            context: Student context (gender, stay_type, department)
+
+        Returns:
+            Dictionary with all processing results:
+            {
+                "is_spam": bool,
+                "spam_reason": str | None,
+                "category": str,
+                "target_department": str,
+                "reasoning": str,
+                "confidence": float,
+                "is_against_authority": bool,
+                "rephrased": str,
+                "image_required": bool,
+                "image_reasoning": str | None,
+                "suggested_evidence": str | None,
+                "tokens_used": int,
+                "processing_time_ms": int,
+                "model": str,
+                "status": str,
+            }
+        """
+        if not text or len(text.strip()) < MIN_COMPLAINT_LENGTH:
+            logger.warning("Text too short for processing")
+            fb = self._fallback_categorization(text, context)
+            fb.update({"is_spam": False, "spam_reason": None, "rephrased": text or "",
+                        "image_required": False, "image_reasoning": None, "suggested_evidence": None})
+            return fb
+
+        if not self.groq_client:
+            logger.info("Groq client unavailable, using fallback")
+            fb = self._fallback_categorization(text, context)
+            fb.update({"is_spam": False, "spam_reason": None, "rephrased": text,
+                        "image_required": False, "image_reasoning": None, "suggested_evidence": None})
+            return fb
+
+        prompt = self._build_combined_prompt(text, context)
+
+        try:
+            start_time = datetime.now(timezone.utc)
+
+            response = await asyncio.to_thread(
+                self.groq_client.chat.completions.create,
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=self.temperature,
+                max_tokens=600,
+                timeout=self.timeout
+            )
+
+            processing_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            content = response.choices[0].message.content
+            result = self._extract_json_from_response(content)
+
+            if not result or "category" not in result:
+                logger.warning("Failed to parse combined LLM response, using fallback")
+                fb = self._fallback_categorization(text, context)
+                fb.update({"is_spam": False, "spam_reason": None, "rephrased": text,
+                            "image_required": False, "image_reasoning": None, "suggested_evidence": None})
+                return fb
+
+            # Validate and fill defaults
+            valid_categories = ["Men's Hostel", "Women's Hostel", "General", "Department", "Disciplinary Committee"]
+            if result.get("category") not in valid_categories:
+                logger.warning(f"Invalid category '{result.get('category')}', using fallback")
+                fb = self._fallback_categorization(text, context)
+                fb.update({"is_spam": False, "spam_reason": None, "rephrased": text,
+                            "image_required": False, "image_reasoning": None, "suggested_evidence": None})
+                return fb
+
+            # Defaults for missing fields
+            result.setdefault("is_spam", False)
+            result.setdefault("spam_reason", None)
+            result.setdefault("target_department", context.get("department", "CSE"))
+            result.setdefault("confidence", 0.8)
+            result.setdefault("is_against_authority", False)
+            result.setdefault("rephrased", text)
+            result.setdefault("image_required", False)
+            result.setdefault("image_reasoning", None)
+            result.setdefault("suggested_evidence", None)
+            result.setdefault("reasoning", "")
+
+            # Validate priority
+            if result.get("priority") not in ("Low", "Medium", "High", "Critical"):
+                result["priority"] = "Medium"
+
+            # If rephrased is GIBBERISH sentinel, mark as spam
+            rephrased = result.get("rephrased", "")
+            if isinstance(rephrased, str) and rephrased.upper().startswith("GIBBERISH"):
+                result["is_spam"] = True
+                result["spam_reason"] = "Content appears to be meaningless or gibberish"
+                result["rephrased"] = text
+
+            # Metadata
+            result["tokens_used"] = response.usage.total_tokens
+            result["processing_time_ms"] = int(processing_time)
+            result["model"] = self.model
+            result["status"] = "Success"
+
+            # Deterministic overrides
+            result = self._apply_academic_override(text, result)
+            result = self._apply_repair_general_override(text, result)
+            result = self._apply_facility_general_override(text, result)
+
+            logger.info(
+                f"Combined processing: spam={result['is_spam']} cat={result['category']} "
+                f"dept={result['target_department']} img_req={result['image_required']} "
+                f"tokens={result['tokens_used']} time={result['processing_time_ms']}ms"
+            )
+            return result
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse combined LLM response: {e}")
+            fb = self._fallback_categorization(text, context)
+            fb.update({"is_spam": False, "spam_reason": None, "rephrased": text,
+                        "image_required": False, "image_reasoning": None, "suggested_evidence": None})
+            return fb
+        except Exception as e:
+            logger.error(f"Combined LLM processing error: {e}")
+            fb = self._fallback_categorization(text, context)
+            fb.update({"is_spam": False, "spam_reason": None, "rephrased": text,
+                        "image_required": False, "image_reasoning": None, "suggested_evidence": None})
+            return fb
+
+    def _build_combined_prompt(self, text: str, context: Dict[str, str]) -> str:
+        """Build single combined prompt for spam+categorize+rephrase+image_requirement."""
+        department_names = (
+            "Computer Science & Engineering (CSE), "
+            "Electronics & Communication Engineering (ECE), "
+            "Robotics and Automation (RAA), "
+            "Mechanical Engineering (MECH), "
+            "Electrical & Electronics Engineering (EEE), "
+            "Electronics & Instrumentation Engineering (EIE), "
+            "Biomedical Engineering (BIO), "
+            "Aeronautical Engineering (AERO), "
+            "Civil Engineering (CIVIL), "
+            "Information Technology (IT), "
+            "Management Studies (MBA), "
+            "Artificial Intelligence and Data Science (AIDS), "
+            "M.Tech in Computer Science and Engineering (MTECH_CSE), "
+            "English (ENG), Physics (PHY), Chemistry (CHEM), Mathematics (MATH)"
+        )
+
+        student_gender = context.get("gender", "")
+        student_stay = context.get("stay_type", "")
+        student_dept = context.get("department", "")
+        sup_lines = []
+        if student_gender:
+            sup_lines.append(f"  Gender: {student_gender}")
+        if student_stay:
+            sup_lines.append(f"  Stay: {student_stay}")
+        if student_dept:
+            sup_lines.append(f"  Dept: {student_dept}")
+        sup_block = "\n".join(sup_lines) if sup_lines else "  (not provided)"
+
+        return f"""You are a complaint processing system at SREC engineering college.
+Analyze the complaint and return a SINGLE JSON with spam check, categorization, rephrasing, and image requirement.
+
+SREC DEPARTMENTS: {department_names}
+ECE=Electronics & Communication (NEVER "Early Childhood Education")
+fc/food court=campus canteen area | ac=air conditioner | hod=head of department
+sdw=senior deputy warden | dept=department | lib=library | wc=washroom
+
+STUDENT CONTEXT (supplementary — tie-breaker only):
+{sup_block}
+
+COMPLAINT TEXT: "{text}"
+
+═══ TASK 1: SPAM CHECK ═══
+Mark is_spam=true ONLY for: gibberish, keyboard mashing, test/dummy content, abusive language,
+jokes/pranks with no real issue, grade manipulation requests (e.g. "increase my marks", "make us pass").
+NOT spam: typos, informal language, frustration, short but real complaints, mixed Tamil/English.
+
+═══ TASK 2: CATEGORIZE (skip if spam) ═══
+Categories:
+1. "Disciplinary Committee" — ONLY student-on-student misconduct (ragging, bullying, assault, stalking).
+   Teacher/faculty/staff complaints → Department. Warden complaints → Hostel.
+2. "Men's Hostel" / "Women's Hostel" — hostel living conditions, mess food, hostel facilities.
+   Gender: explicit text > student gender context > default Men's.
+3. "Department" — academic matters, faculty behaviour, lab equipment, exams, placements.
+   Cross-dept: if CSE student complains about ECE faculty → target_department=ECE.
+4. "General" — campus infrastructure, canteen, library, WiFi, restrooms (even in dept blocks).
+   Dept name in bathroom/toilet complaint = LOCATION, not responsible party → General.
+
+═══ TASK 3: REPHRASE (skip if spam) ═══
+Rewrite into 1-2 clear professional sentences (max 50 words). Keep department abbreviations as-is.
+If text is gibberish with no meaning, set rephrased to "GIBBERISH".
+
+═══ TASK 4: IMAGE REQUIREMENT (skip if spam) ═══
+image_required=true ONLY for physically visible damage that a photo would prove:
+broken furniture, cracked walls, burst pipes, exposed wires, visible mould/stains, damaged equipment.
+image_required=false for: pest reports, service failures, academic issues, staff behaviour,
+scheduling problems, anything not physically photographable. When uncertain, false.
+
+═══ TASK 5: AUTHORITY FLAG ═══
+is_against_authority=true ONLY when the complaint is specifically directed at the authority who would
+HANDLE the complaint (i.e., the HOD themselves for dept issues, the Warden themselves for hostel).
+Staff/faculty behaviour complaints → false (HOD handles those; they are not the target).
+"HOD is biased" or "complaining about HOD" → true. "ECE staff is strict" → false.
+
+Respond ONLY with valid JSON (no markdown, no code blocks):
+{{
+  "is_spam": true|false,
+  "spam_reason": "reason or null",
+  "category": "Men's Hostel|Women's Hostel|General|Department|Disciplinary Committee",
+  "target_department": "CSE|ECE|MECH|CIVIL|EEE|IT|BIO|AERO|RAA|EIE|MBA|AIDS|MTECH_CSE|ENG|PHY|CHEM|MATH",
+  "reasoning": "Max 40 words",
+  "confidence": 0.0-1.0,
+  "is_against_authority": false,
+  "rephrased": "Rephrased text or GIBBERISH",
+  "image_required": true|false,
+  "image_reasoning": "Why image needed or null",
+  "suggested_evidence": "What to photograph or null"
+}}
+
+JSON:"""
+
+    # ==================== LEGACY CATEGORIZATION (kept for backward compat) ====================
+
     @retry(
         stop=stop_after_attempt(settings.LLM_MAX_RETRIES),
         wait=wait_exponential(multiplier=1, min=1, max=60),
@@ -62,30 +297,16 @@ class LLMService:
         context: Dict[str, str]
     ) -> Dict[str, Any]:
         """
-        Categorize complaint using LLM.
-        
-        Args:
-            text: Complaint text
-            context: Student context (gender, stay_type, department)
-        
-        Returns:
-            Dictionary with category, priority, reasoning
+        Categorize complaint using LLM (legacy — use process_complaint instead).
         """
         if not text or len(text.strip()) < MIN_COMPLAINT_LENGTH:
-            logger.warning("Text too short for categorization")
             return self._fallback_categorization(text, context)
-
         if not self.groq_client:
-            logger.info("Groq client unavailable, using fallback categorization")
             return self._fallback_categorization(text, context)
 
         prompt = self._build_categorization_prompt(text, context)
-
         try:
-            # ✅ FIXED: Use timezone-aware datetime
             start_time = datetime.now(timezone.utc)
-            
-            # Call Groq API (synchronous, so wrap in asyncio.to_thread)
             response = await asyncio.to_thread(
                 self.groq_client.chat.completions.create,
                 model=self.model,
@@ -94,61 +315,28 @@ class LLMService:
                 max_tokens=self.max_tokens,
                 timeout=self.timeout
             )
-            
             processing_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
-            
-            # Parse response
             content = response.choices[0].message.content
-            
-            # Try to extract JSON from response
             result = self._extract_json_from_response(content)
-            
-            if not result:
-                logger.warning("Failed to parse LLM response as JSON, using fallback")
-                return self._fallback_categorization(text, context)
-            
-            # Validate result
-            if not self._validate_categorization_result(result):
-                logger.warning("Invalid categorization result, using fallback")
+
+            if not result or not self._validate_categorization_result(result):
                 return self._fallback_categorization(text, context)
 
-            # Ensure target_department is present (fallback to student's department)
-            if "target_department" not in result or not result["target_department"]:
-                result["target_department"] = context.get("department", "CSE")
-                logger.info(f"No target_department in LLM response, using student's department: {result['target_department']}")
-
-            # Ensure confidence is present
-            if "confidence" not in result:
-                result["confidence"] = 0.8  # Default confidence for successful LLM response
-
-            # Ensure priority is present (prompt no longer asks for it; default to Medium)
-            if "priority" not in result or result["priority"] not in ("Low", "Medium", "High", "Critical"):
+            result.setdefault("target_department", context.get("department", "CSE"))
+            result.setdefault("confidence", 0.8)
+            if result.get("priority") not in ("Low", "Medium", "High", "Critical"):
                 result["priority"] = "Medium"
 
-            # Add metadata
             result["tokens_used"] = response.usage.total_tokens
             result["processing_time_ms"] = int(processing_time)
             result["model"] = self.model
             result["status"] = "Success"
 
-            # Deterministic overrides (applied in order):
-            # 1. Hostel → Department if academic content detected
             result = self._apply_academic_override(text, result)
-            # 2. Department → General if physical repair of shared resource
             result = self._apply_repair_general_override(text, result)
-            # 3. Department → General if physical facility/hygiene complaint (BUG-014)
             result = self._apply_facility_general_override(text, result)
-
-            logger.info(
-                f"Categorization successful: {result['category']} "
-                f"(Priority: {result.get('priority', 'Medium')}, Target Dept: {result['target_department']}, "
-                f"Confidence: {result.get('confidence', 'N/A')}, Tokens: {result['tokens_used']})"
-            )
             return result
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse LLM response as JSON: {e}")
-            return self._fallback_categorization(text, context)
+
         except Exception as e:
             logger.error(f"LLM categorization error: {e}")
             return self._fallback_categorization(text, context)
@@ -197,6 +385,33 @@ class LLMService:
         return f"""You are a complaint routing system at SREC engineering college.
 Your job: read the complaint text and assign it to exactly ONE of these four categories.
 
+===========================================================================
+SREC DEPARTMENT ABBREVIATION GUIDE (CRITICAL — memorise these):
+===========================================================================
+ECE  = Electronics and Communication Engineering  (NEVER "Early Childhood Education")
+EEE  = Electrical and Electronics Engineering
+CSE  = Computer Science and Engineering
+MECH = Mechanical Engineering
+IT   = Information Technology
+AIDS = Artificial Intelligence and Data Science
+AERO = Aeronautical Engineering
+CIVIL= Civil Engineering
+RAA  = Robotics and Automation
+EIE  = Electronics and Instrumentation Engineering
+MBA  = Master of Business Administration
+BIO  = Biomedical Engineering
+MTECH_CSE = M.Tech Computer Science and Engineering
+ENG  = English Department | PHY = Physics | CHEM = Chemistry | MATH = Mathematics
+
+SHORTFORM GUIDE (campus context):
+  fc / food court = college canteen/food area (NOT "front of class")
+  ac  = air conditioner (unless "academic coordinator" is mentioned nearby)
+  hod = head of department
+  sdw = senior deputy warden
+  dept = department
+  lib = library
+  wc  = washroom
+
 STUDENT CONTEXT (supplementary — use as tie-breaker only when text is ambiguous):
 {supplementary_block}
 
@@ -208,25 +423,36 @@ CATEGORY DEFINITIONS AND ROUTING RULES
 ===========================================================================
 
 CATEGORY 1: "Disciplinary Committee"
-Assign here when the complaint describes ANY of the following — no exceptions:
+Assign here ONLY for STUDENT-ON-STUDENT misconduct. No exceptions.
   - Ragging, bullying, physical fighting, assault, brawling, threatening, stalking
-  - Sexual harassment, emotional harassment, targeted harassment of any kind
-  - BRIBERY or CORRUPTION by ANY person (student, warden, faculty, staff, anyone)
-    — keywords: bribery, bribe, corrupt, corruption, extortion, demanding money, taking money
-  - Hate speech, hate activities, discrimination based on caste/religion/gender
-  - Any serious rule violation that involves harm to another person
+  - Sexual harassment by a student against another student
+  - Hate speech, discrimination based on caste/religion/gender by students
+  - Any serious student-on-student rule violation involving harm
+
+CRITICAL RULE — Teacher/Faculty/Staff behaviour is NOT Disciplinary Committee:
+  - "professor scolded me" → Department (NOT Disciplinary Committee)
+  - "teacher is strict/unfair/biased" → Department (NOT Disciplinary Committee)
+  - "staff behaved rudely" → Department (NOT Disciplinary Committee)
+  - "faculty is harassing students" → Department (NOT Disciplinary Committee)
+  - Teacher/faculty misconduct (including harassment) is handled by the HOD, NOT DC.
+
+CRITICAL RULE — Bribery/corruption by an authority figure is NOT Disciplinary Committee:
+  - "warden demanding money" → Men's/Women's Hostel (handled by next-level hostel authority)
+  - "HOD taking bribe" → Department (handled by next-level academic authority)
+  - Disciplinary Committee is for STUDENT misconduct only.
 
 POSITIVE EXAMPLES (must route to Disciplinary Committee):
-  - "hostel warden is involved in bribery" → Disciplinary Committee (NOT admin, NOT hostel)
-  - "deputy warden demanding money from students" → Disciplinary Committee
   - "senior students are ragging juniors in hostel" → Disciplinary Committee
-  - "professor is harassing female students" → Disciplinary Committee
-  - "warden is taking bribes for room allotment" → Disciplinary Committee
+  - "boys are bullying girls near food court / fc" → Disciplinary Committee
+  - "a student threatened me with violence" → Disciplinary Committee
+  - "ragging is happening in the ECE department corridor" → Disciplinary Committee
 
 NEGATIVE EXAMPLES (do NOT route to Disciplinary Committee):
-  - "warden is rude or unhelpful" → Men's/Women's Hostel (rudeness is NOT misconduct)
-  - "HOD is not accessible or responsive" → Department (not disciplinary)
-  - "faculty is frequently absent" → Department (not disciplinary)
+  - "professor is harassing female students" → Department (teacher misconduct → HOD)
+  - "teacher scolded me / staff is very strict" → Department
+  - "warden is rude or demanding money" → Men's/Women's Hostel
+  - "HOD is not accessible or responsive" → Department
+  - "faculty is frequently absent" → Department
 
 ---------------------------------------------------------------------------
 
@@ -265,20 +491,28 @@ NEGATIVE EXAMPLES (do NOT route to Hostel):
 
 CATEGORY 3: "Department"
 Assign here when the complaint is about ACADEMIC MATTERS in a specific department.
-  - Faculty behavior or frequent absence (non-criminal, non-bribery)
+  - Faculty/staff/teacher behaviour: scolding, strictness, bias, rudeness, unfairness, harassment
+  - Faculty frequent absence (non-criminal)
   - Teaching quality, subject concerns, curriculum, timetable
-  - Exam scheduling, lab records, project submission, observation books
+  - Exam scheduling, internal marks disputes, lab records, project submission, observation books
+  - Bias or unfair evaluation in lab exams or internal assessments
   - Specialized department lab equipment (oscilloscopes, PCBs, CNC machines, embedded systems)
   - Department-specific lab computers and academic software
   - Placement cell, T&P office, internship/career guidance (route to student's own department HOD)
+  - Broken furniture/tables/chairs INSIDE a specific department's classroom or lab → Department
+    (because the HOD manages their department's rooms; unlike campus-wide infrastructure)
 
-Cross-department rule: if student from Dept X complains about Dept Y's faculty/lab,
+Cross-department rule: if student from Dept X complains about Dept Y's faculty/lab/staff,
 assign to HOD of Dept Y (not student's own dept HOD).
 
 POSITIVE EXAMPLES:
   - "CSE professor is frequently absent" → Department → target_department: CSE
   - "ECE lab oscilloscopes are broken" → Department → target_department: ECE
   - (CSE male student) "EEE HOD is not accessible" → Department → target_department: EEE
+  - "staffs in ECE department are very strict and scolding students" → Department → target_department: ECE
+  - "there is bias among staff in ECE department lab exams" → Department → target_department: ECE
+  - "broken tables in ECE classrooms" → Department → target_department: ECE
+  - "professor harassed students in class" → Department (NOT Disciplinary Committee)
 
 NEGATIVE EXAMPLES (do NOT route to Department):
   - "restrooms in IT block are dirty" → General (bathroom = infrastructure, not dept)
@@ -609,7 +843,10 @@ JSON:"""
             "priority": selected_priority,
             "reasoning": "Keyword-based categorization (LLM fallback)",
             "confidence": 0.5,  # Lower confidence for fallback
-            "is_against_authority": any(word in text_lower for word in ["faculty", "teacher", "professor", "staff", "warden", "hod"]),
+            # is_against_authority=True only when the complaint is specifically targeting
+            # the authority who WOULD handle it (HOD for dept, warden for hostel).
+            # Staff/faculty mentions are complaints FOR the HOD, not AGAINST the HOD.
+            "is_against_authority": any(word in text_lower for word in ["warden", "hod", "head of department"]),
             "requires_image": any(word in text_lower for word in ["broken", "damaged", "leaking", "dirty"]),
             "status": "Fallback"
         }
@@ -704,12 +941,20 @@ If the text has NO coherent meaning (random characters, keyboard mashing, meanin
 sequences with no identifiable issue), respond with exactly: GIBBERISH
 Do NOT invent or fabricate a complaint from meaningless input.
 
+CRITICAL — Abbreviation preservation (SREC Engineering College):
+- KEEP all department abbreviations EXACTLY as they appear: ECE, EEE, CSE, MECH, IT, AIDS, AERO, CIVIL, RAA, EIE, MBA, BIO
+- ECE = Electronics and Communication Engineering (NEVER expand to "Early Childhood Education")
+- EEE = Electrical and Electronics Engineering (NEVER expand to something else)
+- DO NOT replace department short codes with long forms — keep "ECE" as "ECE"
+- fc = food court (NEVER "front of class" or "front of the class")
+- ac = air conditioner (in infrastructure/hostel context)
+- DO NOT add information not in the original text
+
 Rules (when text IS a real complaint):
 - Output 1-2 concise sentences ONLY (max 50 words)
 - Preserve the core issue and key details
-- Fix grammar and spelling
+- Fix grammar and spelling errors
 - Keep it natural and professional
-- Do NOT add new information
 - Do NOT use bullet points or structured format
 - Do NOT start with "The student" or "I would like to"
 
@@ -813,6 +1058,10 @@ SPAM — mark is_spam=true for ANY of these:
 - Test or dummy content (e.g. "test", "asdf", "testing 123")
 - Advertisement or promotional content
 - Completely irrelevant to campus life (e.g. celebrity news, personal life unrelated to college)
+- UNETHICAL ACADEMIC MANIPULATION: requests to increase marks/grades without legitimate reason
+  (e.g. "please increase my internal marks", "give us more marks", "make us pass",
+   "increase the marks of our exam" — these are bribing attempts, NOT valid complaints)
+  EXCEPTION: "please re-evaluate my exam paper" or "my marks were wrongly totalled" ARE legitimate
 
 IMPORTANT — gibberish rule:
 If the text consists of random characters, meaningless sequences, keyboard mashing,

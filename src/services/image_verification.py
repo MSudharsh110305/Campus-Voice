@@ -218,45 +218,61 @@ class ImageVerificationService:
         complaint_text: str,
         image_description: Optional[str]
     ) -> str:
-        """Build prompt for image verification"""
-        
-        base_prompt = f"""You are an image verification system for a campus complaint management system.
+        """Build prompt for image verification — liberal, evidence-focused."""
 
-**Complaint Text:**
-"{complaint_text}"
+        base_prompt = f"""You are a LENIENT image verification system for a campus complaint system.
+Your default disposition is to ACCEPT. Students take photos in a hurry — quality varies.
 
-{"**Image Description:** " + image_description if image_description else ""}
+**Complaint:** "{complaint_text}"
+{"**Description:** " + image_description if image_description else ""}
 
-**Task:** Determine if this image is relevant supporting evidence for this complaint.
+**DEFAULT: ACCEPT the image.** Only reject if it clearly fails ALL relevance tests below.
 
-**ACCEPT the image if:**
-- It directly shows the subject being complained about (e.g., food/canteen area for a food complaint, a room/hostel for a hostel complaint, a broken item for a maintenance complaint)
-- It shows the specific location or issue mentioned in the complaint text
-- It clearly depicts the problem or evidence of the problem described
+**ACCEPT if ANY of these are true (even loosely):**
+- Shows anything related to the complaint topic (food, water, room, furniture, facility, campus area)
+- Shows the condition described OR a similar/related condition
+- Shows the location, area, or surroundings where the issue exists
+- Shows the result/effect/consequence of the problem
+- Contains ANY object mentioned or implied in the complaint (water, food, fan, AC, table, toilet, etc.)
+- Is taken inside a campus building, hostel, classroom, lab, canteen, or campus area
+- Could reasonably be interpreted as evidence by a human reviewer
 
-**REJECT the image if ANY of these apply:**
-- The image subject does not match the complaint topic (e.g., a ceiling fan for a food/canteen complaint, a classroom for a hostel complaint, a vehicle for a facilities complaint)
-- It is a meme, joke image, or internet screenshot unrelated to the issue
-- It contains offensive, inappropriate, or abusive content
-- It is clearly a test/dummy/random image with no connection to the complaint
-- The image shows something from a completely different category than what is described (infrastructure/equipment unrelated to the complaint)
+**EXAMPLES — ALL ACCEPTED:**
+- "water contaminated" + dirty glass of water → ACCEPT (shows the water condition)
+- "canteen food stale" + plate of food → ACCEPT (shows the food)
+- "bathroom dirty" + photo of dirty floor → ACCEPT (shows the mess)
+- "AC not working" + photo of AC unit → ACCEPT (shows the equipment)
+- "broken table" + photo of any damaged furniture → ACCEPT
+- "mess food bad" + photo of food tray → ACCEPT
+- "hostel room ceiling leaking" + photo of wet ceiling/floor → ACCEPT
+- "classroom projector broken" + photo of classroom → ACCEPT (shows location)
 
-**CRITICAL: Be strict. The image must be relevant to the specific subject of the complaint. A photo of something that exists on campus but is unrelated to the complaint topic should be REJECTED.**
+**REJECT ONLY IF ALL of these are true:**
+- Image has ZERO visual connection to ANY word in the complaint
+- AND it is clearly from a completely different context (nature photo for food complaint, selfie for infra issue)
+- AND it contains no campus-related content at all
+- OR it contains offensive/abusive/inappropriate content
+- OR it is obviously a meme, screenshot of social media, or stock photo
+
+**Scoring guide:**
+- If image relates to complaint topic at all → confidence 0.6-0.9
+- If loosely related (same general area/category) → confidence 0.5-0.7
+- If unrelated but campus photo → confidence 0.4-0.5, still ACCEPT
+- ONLY reject with confidence < 0.4 if truly unrelated
 
 Respond ONLY with valid JSON:
-
 {{
   "is_relevant": true/false,
   "confidence": 0.0-1.0,
-  "reason": "Brief explanation (max 100 words)",
+  "reason": "Brief explanation (max 80 words)",
   "detected_objects": ["list", "of", "visible", "objects"],
   "visible_issues": ["list", "of", "problems", "or", "none"],
   "quality_rating": "Good|Fair|Poor",
   "is_appropriate": true/false
 }}
 
-Analyze the provided image and respond with JSON:"""
-        
+JSON:"""
+
         return base_prompt
     
     def _transform_to_schema_format(

@@ -10,6 +10,7 @@ FastAPI application setup and route registration.
 ✅ ADDED: Request ID tracking
 """
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -53,9 +54,30 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Database initialization failed: {e}")
         # Don't raise - let health checks handle it
     
+    # Start background task: check image upload deadlines every hour
+    async def _image_deadline_loop():
+        while True:
+            await asyncio.sleep(3600)  # run every hour
+            try:
+                from src.database.connection import AsyncSessionLocal
+                from src.services.complaint_service import check_expired_image_deadlines
+                async with AsyncSessionLocal() as _sess:
+                    count = await check_expired_image_deadlines(_sess)
+                    if count:
+                        logger.info(f"[BG] Image deadline check: processed {count} complaints")
+            except Exception as _bg_err:
+                logger.error(f"[BG] Image deadline check failed: {_bg_err}")
+
+    _deadline_task = asyncio.create_task(_image_deadline_loop())
+
     yield  # Application runs here
-    
+
     # Shutdown
+    _deadline_task.cancel()
+    try:
+        await _deadline_task
+    except asyncio.CancelledError:
+        pass
     logger.info("🛑 Shutting down CampusVoice API")
     
     # Close database connections

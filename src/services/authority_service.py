@@ -81,9 +81,13 @@ class AuthorityService:
             logger.warning(f"No authority found for category {category_name}, attempting fallback")
             authority = await self._fallback_routing(db, category_name, department_id)
 
-        # If complaint is against authority, escalate immediately
-        # For hostel complaints against a warden, bypass ALL same-level wardens
-        if is_against_authority and authority:
+        # If complaint is against an authority, consider escalation.
+        # IMPORTANT: "Department" complaints about staff/faculty behaviour always go to the HOD —
+        # that is exactly what HODs are for. Only escalate a Department complaint if it is
+        # specifically directed at the HOD themselves (the LLM should set is_against_authority=True
+        # only in that narrow case; staff/faculty complaints are is_against_authority=False).
+        # For Hostel complaints, bypass same-level wardens as before.
+        if is_against_authority and authority and category_name != "Department":
             logger.info(f"Complaint is against authority, escalating from {authority.name}")
 
             # Check if complaint is about a warden - bypass all wardens of same level
@@ -106,6 +110,12 @@ class AuthorityService:
             else:
                 logger.warning(f"No escalation path found for {authority.name}, keeping original assignment")
                 # Keep original authority if no escalation available
+
+        elif is_against_authority and authority and category_name == "Department":
+            logger.info(
+                f"Department complaint flagged is_against_authority — routing to HOD {authority.name} "
+                f"(HOD handles staff/faculty complaints; escalation only triggered by explicit HOD complaints)"
+            )
 
         if authority:
             logger.info(f"Complaint routed to: {authority.name} (ID: {authority.id})")

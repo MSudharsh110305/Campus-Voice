@@ -8,6 +8,98 @@ import studentService from '../../../services/student.service';
 import { tokenStorage } from '../../../utils/api';
 import { Megaphone, Calendar, AlertTriangle, Info, Wrench, RefreshCw, Users, Paperclip, X, Download, FileText } from 'lucide-react';
 
+// ─── Notice Detail Modal ──────────────────────────────────────────────────────
+function NoticeDetailModal({ notice, onClose, onOpenAttachment, attachLoading, CATEGORY_CONFIG, PRIORITY_DOT, formatDate, formatExpiry, formatAudience }) {
+    useEffect(() => {
+        const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [onClose]);
+
+    if (!notice) return null;
+    const cfg = CATEGORY_CONFIG[notice.category] || CATEGORY_CONFIG['Announcement'];
+    const Icon = cfg.icon;
+    const dotColor = PRIORITY_DOT[notice.priority] || PRIORITY_DOT['Low'];
+    const isEmergency = notice.category === 'Emergency';
+    const expiryLabel = formatExpiry(notice.expires_at, notice.category);
+
+    return (
+        <div
+            className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-fadeIn"
+            onClick={onClose}
+        >
+            <div
+                className="relative bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Drag handle (mobile) */}
+                <div className="flex justify-center pt-3 pb-1 sm:hidden">
+                    <div className="w-10 h-1 bg-gray-200 rounded-full" />
+                </div>
+
+                {isEmergency && (
+                    <div className="px-5 py-1.5 bg-red-600 flex items-center gap-2">
+                        <AlertTriangle size={11} className="text-white flex-shrink-0" />
+                        <span className="text-[10px] font-bold text-white tracking-widest uppercase">Emergency Notice</span>
+                    </div>
+                )}
+
+                <div className="px-5 pt-4 pb-2 border-b border-gray-100">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.badge}`}>
+                                <Icon size={11} /> {notice.category}
+                            </span>
+                            <span className="flex items-center gap-1 text-xs text-gray-400">
+                                <span className={`w-2 h-2 rounded-full ${dotColor} inline-block`} />
+                                {notice.priority}
+                            </span>
+                        </div>
+                        <button onClick={onClose} className="text-gray-400 hover:text-gray-700 p-1 rounded-lg flex-shrink-0">
+                            <X size={18} />
+                        </button>
+                    </div>
+                    <h2 className="text-base font-bold text-gray-900 mt-3 leading-snug">{notice.title}</h2>
+                    <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
+                        <span className="font-medium text-gray-600">{notice.authority_name || 'Authority'}</span>
+                        {notice.authority_type && <span>· {notice.authority_type}</span>}
+                        <span className="ml-auto">{formatDate(notice.created_at)}</span>
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-5 py-4">
+                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{notice.content}</p>
+
+                    {expiryLabel && (
+                        <div className={`mt-4 p-3 rounded-xl text-xs font-medium flex items-center gap-2 ${
+                            isEmergency ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
+                        }`}>
+                            {isEmergency ? '⚠' : '⏰'} {expiryLabel}
+                        </div>
+                    )}
+
+                    <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
+                        <span className="flex items-center gap-1">
+                            <Users size={11} /> {formatAudience(notice)}
+                        </span>
+                    </div>
+
+                    {notice.attachment_filename && (
+                        <button
+                            onClick={() => { onClose(); onOpenAttachment(notice.id, notice.attachment_filename, notice.attachment_mimetype); }}
+                            disabled={attachLoading === notice.id}
+                            className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-srec-border text-sm text-srec-primary font-medium hover:bg-srec-primarySoft transition-colors disabled:opacity-60"
+                        >
+                            <Paperclip size={14} className={attachLoading === notice.id ? 'animate-pulse' : ''} />
+                            {attachLoading === notice.id ? 'Loading…' : `View Attachment: ${notice.attachment_filename}`}
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── Attachment Viewer Modal ─────────────────────────────────────────────────
 function AttachmentModal({ filename, mimeType, blobUrl, onClose }) {
     useEffect(() => {
@@ -112,6 +204,7 @@ export default function NoticeFeed() {
     const [error, setError] = useState(null);
     const [attachment, setAttachment] = useState(null); // { blobUrl, filename, mimeType }
     const [attachLoading, setAttachLoading] = useState(null); // noticeId being loaded
+    const [selectedNotice, setSelectedNotice] = useState(null); // notice shown in detail modal
     const LIMIT = 20;
 
     const openAttachment = useCallback(async (noticeId, filename, mimeType) => {
@@ -273,7 +366,8 @@ export default function NoticeFeed() {
                             return (
                                 <div
                                     key={notice.id}
-                                    className={`bg-white rounded-xl border overflow-hidden shadow-sm hover:shadow-md transition-shadow ${
+                                    onClick={() => setSelectedNotice(notice)}
+                                    className={`bg-white rounded-xl border overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer ${
                                         isEmergency
                                             ? 'border-red-300 border-l-4 border-l-red-600'
                                             : `border-gray-100 border-l-4 ${cfg.border}`
@@ -312,11 +406,14 @@ export default function NoticeFeed() {
                                         <p className="text-xs text-gray-500 leading-relaxed line-clamp-3">
                                             {notice.content}
                                         </p>
+                                        {notice.content && notice.content.length > 200 && (
+                                            <span className="text-[10px] text-srec-primary font-medium mt-0.5 inline-block">Read more…</span>
+                                        )}
 
                                         {/* Attachment — opens in smooth popup modal */}
                                         {notice.attachment_filename && (
                                             <button
-                                                onClick={() => openAttachment(notice.id, notice.attachment_filename, notice.attachment_mimetype)}
+                                                onClick={(e) => { e.stopPropagation(); openAttachment(notice.id, notice.attachment_filename, notice.attachment_mimetype); }}
                                                 disabled={attachLoading === notice.id}
                                                 className="mt-2 inline-flex items-center gap-1.5 text-[10px] text-srec-primary hover:underline disabled:opacity-60"
                                             >
@@ -369,6 +466,21 @@ export default function NoticeFeed() {
                 </div>
             </div>
             {user?.role === 'Student' && <BottomNav />}
+
+            {/* Notice detail modal */}
+            {selectedNotice && (
+                <NoticeDetailModal
+                    notice={selectedNotice}
+                    onClose={() => setSelectedNotice(null)}
+                    onOpenAttachment={openAttachment}
+                    attachLoading={attachLoading}
+                    CATEGORY_CONFIG={CATEGORY_CONFIG}
+                    PRIORITY_DOT={PRIORITY_DOT}
+                    formatDate={formatDate}
+                    formatExpiry={formatExpiry}
+                    formatAudience={formatAudience}
+                />
+            )}
 
             {/* Attachment viewer modal */}
             {attachment && (

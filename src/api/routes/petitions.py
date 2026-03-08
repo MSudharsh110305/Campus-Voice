@@ -730,6 +730,7 @@ def _petition_to_dict(petition, *, signed: bool = False) -> dict:
         "description": petition.description,
         "created_by_roll_no": petition.created_by_roll_no,
         "creator_name": creator_name,
+        "department_id": petition.department_id,
         "department_name": dept_name,
         "petition_scope": getattr(petition, "petition_scope", "General"),
         "is_published": getattr(petition, "is_published", False),

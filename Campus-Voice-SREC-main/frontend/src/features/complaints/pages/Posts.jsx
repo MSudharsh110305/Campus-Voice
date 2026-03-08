@@ -22,7 +22,15 @@ export default function Posts() {
 
   const switchTab = (tab) => {
     setActiveTab(tab);
-    setSearchParams(tab === 'create' ? {} : { tab });
+    if (tab === 'create') {
+      setSearchParams({});
+    } else {
+      // Preserve existing filter params when switching tabs
+      const next = { tab };
+      const s = searchParams.get('status'); if (s && s !== 'All') next.status = s;
+      const p = searchParams.get('priority'); if (p && p !== 'All') next.priority = p;
+      setSearchParams(next);
+    }
   };
 
   // Camera / gallery refs for mobile PWA feature
@@ -43,8 +51,29 @@ export default function Posts() {
   const [formError, setFormError] = useState('');
   const [idCopied, setIdCopied] = useState(false);
 
-  // My Posts filters
-  const [mineFilters, setMineFilters] = useState({ status: 'All', priority: 'All', search: '' });
+  // My Posts filters — status/priority persisted in URL so back navigation restores them
+  const [mineFilters, setMineFilters] = useState(() => ({
+    status: searchParams.get('status') || 'All',
+    priority: searchParams.get('priority') || 'All',
+    search: '',
+  }));
+
+  const updateMineFilter = (key, value) => {
+    setMineFilters(f => {
+      const next = { ...f, [key]: value };
+      // Sync status/priority to URL (search stays local)
+      const params = { tab: 'mine' };
+      if (next.status !== 'All') params.status = next.status;
+      if (next.priority !== 'All') params.priority = next.priority;
+      setSearchParams(params, { replace: true });
+      return next;
+    });
+  };
+
+  const clearMineFilters = () => {
+    setMineFilters({ status: 'All', priority: 'All', search: '' });
+    setSearchParams({ tab: 'mine' }, { replace: true });
+  };
 
   // Duplicate-check modal state
   const [dupModalOpen, setDupModalOpen] = useState(false);
@@ -674,7 +703,7 @@ export default function Posts() {
                   </div>
                   <select
                     value={mineFilters.status}
-                    onChange={e => setMineFilters(f => ({ ...f, status: e.target.value }))}
+                    onChange={e => updateMineFilter('status', e.target.value)}
                     className="py-1.5 px-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary outline-none"
                   >
                     <option value="All">All Status</option>
@@ -682,7 +711,7 @@ export default function Posts() {
                   </select>
                   <select
                     value={mineFilters.priority}
-                    onChange={e => setMineFilters(f => ({ ...f, priority: e.target.value }))}
+                    onChange={e => updateMineFilter('priority', e.target.value)}
                     className="py-1.5 px-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary outline-none"
                   >
                     <option value="All">All Priority</option>
@@ -690,7 +719,7 @@ export default function Posts() {
                   </select>
                   {(mineFilters.status !== 'All' || mineFilters.priority !== 'All' || mineFilters.search) && (
                     <button
-                      onClick={() => setMineFilters({ status: 'All', priority: 'All', search: '' })}
+                      onClick={clearMineFilters}
                       className="text-xs text-gray-400 hover:text-srec-danger flex items-center gap-1"
                     >
                       <X size={11} /> Reset

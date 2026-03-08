@@ -249,6 +249,18 @@ class Complaint(Base):
     # appeal_deadline: 3 days after admin rejects — student's last window
     appeal_deadline = Column(DateTime(timezone=True), nullable=True)
 
+    # ── Image grace period ─────────────────────────────────────────────────────
+    # When LLM says an image is required but student didn't provide one at submit time,
+    # the complaint is posted with a 24-hour upload window instead of being blocked.
+    # image_required: LLM flagged this complaint as needing visual evidence
+    # image_pending: True while student hasn't uploaded yet within the grace period
+    # image_required_deadline: 24h after submission — authority notified if missed
+    # image_authority_notified: prevents duplicate notifications to authority
+    image_required = Column(Boolean, default=False, server_default='false', nullable=False)
+    image_pending = Column(Boolean, default=False, server_default='false', nullable=False)
+    image_required_deadline = Column(DateTime(timezone=True), nullable=True)
+    image_authority_notified = Column(Boolean, default=False, server_default='false', nullable=False)
+
     # ── Soft delete / retention ────────────────────────────────────────────────
     # is_deleted: soft-deleted complaints are hidden from all list views but
     #             retrievable by ID for audit purposes (admin only).

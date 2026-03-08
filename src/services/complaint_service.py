@@ -9,7 +9,7 @@ Complaint service with main business logic.
 import logging
 from typing import Optional, Dict, Any, List
 from uuid import UUID
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from fastapi import UploadFile
@@ -24,7 +24,7 @@ from src.services.spam_detection import spam_detection_service
 from src.services.image_verification import image_verification_service
 from src.utils.file_upload import file_upload_handler
 from src.utils.exceptions import InvalidFileTypeError, FileTooLargeError, FileUploadError
-from src.config.constants import PRIORITY_SCORES
+from src.config.constants import PRIORITY_SCORES  # kept for external callers
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +35,9 @@ logger = logging.getLogger(__name__)
 # Pure Python — no LLM call, no DB call.
 # ---------------------------------------------------------------------------
 
-# Keywords that unconditionally force "Disciplinary Committee" regardless of LLM output
-# Keywords that ALWAYS trigger Disciplinary Committee (student-on-student misconduct only).
-# Disciplinary Committee is for students, not for complaints against authorities.
-# Complaints against wardens/HODs/staff go up the authority chain via bypass routing.
+# Keywords that unconditionally force "Disciplinary Committee" regardless of LLM output.
+# ONLY for clear student-on-student physical/criminal misconduct.
+# Teacher/faculty misconduct goes to Department HOD, NOT DC.
 _STUDENT_DISCIPLINARY_KEYWORDS = [
     "ragging", "rag ", " rag,", "rags",
     "bully", "bullying",
@@ -46,35 +45,130 @@ _STUDENT_DISCIPLINARY_KEYWORDS = [
     "molest",
     "rape",
     "hate speech",
-    "discrimination",
-    "fight", "fighting",
     "eve teasing",
-    # Student-on-student harassment always goes to DC regardless of context
-    "harass", "harassment", "harassing",
+    "physical fight", "physical violence",
 ]
 
-# These are serious but context-dependent: they trigger Disciplinary ONLY when
-# NO hostel/department authority is mentioned as the subject. If the complaint is
-# about a warden/deputy/HOD doing this, it stays in the authority's category and
-# uses bypass routing to reach the next authority up the chain.
+# These are context-dependent: trigger Disciplinary ONLY when NO authority figure
+# (warden/HOD/faculty) is mentioned as the subject.
 _AUTHORITY_MISCONDUCT_KEYWORDS = [
     "bribery", "bribe", "corrupt", "corruption", "extortion",
     "demanding money", "demand money", "taking money",
     "abuse", "abusing",
     "threat", "threaten",
+    # "harass" moved here — context-dependent:
+    # student-on-student harassment → DC; faculty/teacher harassment → Department
+    "harass", "harassment", "harassing",
+    # Discrimination is also context-dependent (faculty discrimination in marks → Dept)
+    "discrimination",
+    "fight", "fighting",
 ]
 
 # Authority figures — if ANY of these appear as the subject of the complaint,
-# skip the authority-misconduct Disciplinary override and let bypass routing handle it.
+# skip the Disciplinary override and let bypass routing handle it instead.
 _HOSTEL_AUTHORITY_SUBJECT_KEYWORDS = [
     "warden", "deputy warden", "senior deputy warden", "sdw",
 ]
 _DEPT_AUTHORITY_SUBJECT_KEYWORDS = [
     "hod", "head of department", "head of dept",
     "professor", "faculty", "lecturer",
-    # "staff" excluded — too generic (appears in non-authority contexts)
-    # "coordinator" excluded — too generic
+    "teacher", "instructor",
+    # "staff" handled separately via _is_staff_in_academic_context()
 ]
+
+# Academic context words — used to detect "staff" in an academic/dept context
+_ACADEMIC_CONTEXT_KEYWORDS = [
+    "lab", "class", "exam", "lecture", "department", "dept", "course",
+    "subject", "marks", "grade", "assignment", "practical", "seminar",
+    "timetable", "curriculum", "syllabus", "internal", "external",
+    "classrooms", "classroom",
+]
+
+
+def _is_staff_in_academic_context(text_lower: str) -> bool:
+    """Return True if 'staff'/'staffs' appears alongside academic/dept keywords."""
+    if "staff" not in text_lower:
+        return False
+    return any(kw in text_lower for kw in _ACADEMIC_CONTEXT_KEYWORDS)
+
+
+# ---------------------------------------------------------------------------
+# Shortform normalization
+# Called BEFORE LLM categorization so the LLM sees full English words.
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+# (regex_pattern, replacement) pairs — applied in order (longer patterns first)
+_SHORTFORM_SUBS = [
+    # Locations / facilities
+    (r'\bfc\b',       'food court'),
+    (r'\bwc\b',       'washroom'),
+    (r'\blib\b',      'library'),
+    (r'\bcant\b',     'canteen'),
+    # Roles / titles
+    (r'\bhod\b',      'head of department'),
+    (r'\bsdw\b',      'senior deputy warden'),
+    # Common terms
+    (r'\bdept\b',     'department'),
+    (r'\bwifi\b',     'wi-fi internet connection'),
+    (r'\bnet\b',      'internet'),
+]
+
+
+def _normalize_complaint_text(text: str) -> str:
+    """
+    Expand common campus shortforms so the LLM categorizes correctly.
+    Uses word-boundary matching and preserves original capitalisation of
+    unmatched words. Context-dependent shortforms (ac) are handled separately.
+    """
+    result = text
+    for pattern, replacement in _SHORTFORM_SUBS:
+        result = _re.sub(pattern, replacement, result, flags=_re.IGNORECASE)
+
+    # 'ac' = air conditioner by default; but keep as-is if 'coordinator' or
+    # 'academic' is in the surrounding 40-char window (academic coordinator).
+    def _replace_ac(m: _re.Match) -> str:
+        start = max(0, m.start() - 40)
+        end = min(len(result), m.end() + 40)
+        window = result[start:end].lower()
+        if 'coordinator' in window or 'academic coordinator' in window:
+            return 'academic coordinator'
+        return 'air conditioner'
+
+    result = _re.sub(r'\bac\b', _replace_ac, result, flags=_re.IGNORECASE)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Unethical academic manipulation — pre-LLM spam keywords
+# These requests are not valid complaints; they are bribe-like grade requests.
+# ---------------------------------------------------------------------------
+_UNETHICAL_ACADEMIC_PATTERNS = [
+    r'\bincrease\b.{0,30}\bmarks?\b',
+    r'\bgive\b.{0,20}\bmarks?\b',
+    r'\badd\b.{0,20}\bmarks?\b',
+    r'\bchange\b.{0,20}\bmarks?\b',
+    r'\bincrease\b.{0,30}\bgrades?\b',
+    r'\bgive\b.{0,20}\bgrades?\b',
+    r'\bplease pass\b',
+    r'\bkindly pass\b',
+    r'\bmake us pass\b',
+    r'\bmake me pass\b',
+    r'\bpass us\b',
+    r'\bgive passing\b',
+    r'\bincrease internal\b',
+    r'\bincrease external\b',
+]
+
+
+def _is_unethical_academic_request(text: str) -> bool:
+    """Return True if the complaint is a grade-manipulation bribe attempt."""
+    text_lower = text.lower()
+    for pattern in _UNETHICAL_ACADEMIC_PATTERNS:
+        if _re.search(pattern, text_lower):
+            return True
+    return False
 
 # Keywords that indicate physical infrastructure / hygiene — these complaints belong
 # to General (Admin Officer), never to Department (HOD).
@@ -115,7 +209,7 @@ def _override_category(text: str, llm_category: str, student_gender: str) -> str
     Logs every override with the reason.
 
     Args:
-        text: Original complaint text
+        text: Original complaint text (pre-shortform-expansion)
         llm_category: Category returned by the LLM (or fallback)
         student_gender: Student's gender ("Male", "Female", "Other", or "")
 
@@ -125,37 +219,45 @@ def _override_category(text: str, llm_category: str, student_gender: str) -> str
     text_lower = text.lower()
 
     # ------------------------------------------------------------------ #
+    # Pre-compute authority subject flags (used in OVERRIDE 0 and 1)      #
+    # ------------------------------------------------------------------ #
+    _is_about_hostel_authority = any(kw in text_lower for kw in _HOSTEL_AUTHORITY_SUBJECT_KEYWORDS)
+    _is_about_dept_authority = (
+        any(kw in text_lower for kw in _DEPT_AUTHORITY_SUBJECT_KEYWORDS)
+        or _is_staff_in_academic_context(text_lower)
+    )
+    _is_about_any_authority = _is_about_hostel_authority or _is_about_dept_authority
+
+    # ------------------------------------------------------------------ #
     # OVERRIDE 0: Un-DC complaints that LLM wrongly sent to DC            #
     # If LLM returned "Disciplinary Committee" but the complaint is       #
-    # ABOUT a named authority (warden/HOD/faculty), DC is wrong.          #
-    # DC is only for student-on-student misconduct. Authority misconduct  #
-    # stays in its category (hostel/dept) and uses bypass routing.        #
+    # ABOUT a named authority (warden/HOD/faculty/staff in dept context), #
+    # DC is wrong. DC is only for student-on-student misconduct.          #
+    # Authority misconduct stays in its category and uses bypass routing. #
     # ------------------------------------------------------------------ #
     if llm_category == "Disciplinary Committee":
-        _about_hostel = any(kw in text_lower for kw in _HOSTEL_AUTHORITY_SUBJECT_KEYWORDS)
-        _about_dept = any(kw in text_lower for kw in _DEPT_AUTHORITY_SUBJECT_KEYWORDS)
-        if _about_hostel:
+        if _is_about_hostel_authority:
             corrected = "Women's Hostel" if student_gender == "Female" else "Men's Hostel"
             logger.warning(
                 f"Category override: Disciplinary Committee -> {corrected} "
                 f"| reason: LLM wrongly assigned DC for hostel authority complaint | text: {text[:80]}"
             )
             return corrected
-        elif _about_dept:
+        elif _is_about_dept_authority:
             logger.warning(
                 f"Category override: Disciplinary Committee -> Department "
-                f"| reason: LLM wrongly assigned DC for dept authority complaint | text: {text[:80]}"
+                f"| reason: LLM wrongly assigned DC for dept/teacher/staff complaint | text: {text[:80]}"
             )
             return "Department"
 
     # ------------------------------------------------------------------ #
     # OVERRIDE 1: Disciplinary Committee                                   #
     # ONLY for student-on-student misconduct (ragging, assault, etc.).    #
-    # Complaints about authorities (warden/HOD misconduct) stay in their  #
+    # Complaints about authorities (warden/HOD/faculty) stay in their     #
     # category and use authority bypass routing instead.                  #
     # ------------------------------------------------------------------ #
 
-    # Step 1a: Always-Disciplinary keywords (student misconduct, no exceptions)
+    # Step 1a: Always-Disciplinary keywords (physical student misconduct, no exceptions)
     for kw in _STUDENT_DISCIPLINARY_KEYWORDS:
         if kw in text_lower:
             if llm_category != "Disciplinary Committee":
@@ -165,13 +267,9 @@ def _override_category(text: str, llm_category: str, student_gender: str) -> str
                 )
             return "Disciplinary Committee"
 
-    # Step 1b: Authority-misconduct keywords — only trigger Disciplinary if the
-    # complaint is NOT about a named authority (warden/HOD/faculty).
-    # If an authority is named as the subject, bypass routing handles it.
-    _is_about_hostel_authority = any(kw in text_lower for kw in _HOSTEL_AUTHORITY_SUBJECT_KEYWORDS)
-    _is_about_dept_authority = any(kw in text_lower for kw in _DEPT_AUTHORITY_SUBJECT_KEYWORDS)
-    _is_about_any_authority = _is_about_hostel_authority or _is_about_dept_authority
-
+    # Step 1b: Context-dependent misconduct keywords — only trigger DC when
+    # the complaint is NOT about a named authority (warden/HOD/faculty/staff).
+    # If an authority is the subject, bypass routing handles it.
     if not _is_about_any_authority:
         for kw in _AUTHORITY_MISCONDUCT_KEYWORDS:
             if kw in text_lower:
@@ -223,6 +321,61 @@ def _override_category(text: str, llm_category: str, student_gender: str) -> str
                     return "General"
 
     return llm_category
+
+
+async def check_expired_image_deadlines(db: AsyncSession) -> int:
+    """
+    Find complaints whose 24-hour image upload grace period has expired
+    and notify the assigned authority to keep or delete the complaint.
+
+    Returns the number of complaints processed.
+    Run this periodically (e.g. every hour via background task).
+    """
+    from src.database.models import Complaint as _C, Authority as _Auth
+    from src.services.notification_service import notification_service as _ns
+
+    now = datetime.now(timezone.utc)
+    # Fetch expired, un-notified, image-pending complaints that are still active
+    q = (
+        select(_C)
+        .where(
+            _C.image_pending == True,
+            _C.image_authority_notified == False,
+            _C.image_required_deadline <= now,
+            _C.is_deleted == False,
+        )
+    )
+    result = await db.execute(q)
+    expired = result.scalars().all()
+
+    processed = 0
+    for complaint in expired:
+        try:
+            if complaint.assigned_authority_id:
+                await _ns.create_notification(
+                    db,
+                    recipient_type="Authority",
+                    recipient_id=str(complaint.assigned_authority_id),
+                    complaint_id=complaint.id,
+                    notification_type="image_decision_required",
+                    message=(
+                        f"A complaint (ID: {str(complaint.id)[:8]}…) required visual evidence "
+                        f"but the student did not upload an image within 24 hours. "
+                        f"Text: \"{(complaint.rephrased_text or complaint.original_text)[:100]}…\" "
+                        f"Please decide: keep the complaint as-is, or delete it via the "
+                        f"complaint detail page → 'Image Decision' action."
+                    )
+                )
+            complaint.image_authority_notified = True
+            processed += 1
+        except Exception as _e:
+            logger.warning(f"Failed to notify authority for expired image deadline on {complaint.id}: {_e}")
+
+    if processed:
+        await db.commit()
+        logger.info(f"Image deadline checker: notified authority for {processed} expired complaints")
+
+    return processed
 
 
 class ComplaintService:
@@ -318,49 +471,57 @@ class ComplaintService:
                     "Male students cannot submit complaints about women's hostel facilities"
                 )
 
-        # Build context for LLM.
-        # Pass gender and stay_type so the LLM can pick the correct hostel
-        # category (Men's vs Women's) directly when the complaint text is ambiguous.
-        # The LLM prompt already guards against hostel-bias for non-hostel text.
+        # Build context for LLM
         context = {
             "department": student.department.code if (student.department and hasattr(student.department, 'code')) else "Unknown",
             "gender": student.gender or "",
             "stay_type": student.stay_type or "",
         }
 
-        # LLM Processing
         logger.info(f"Processing complaint for {student_roll_no}")
 
-        # Flag: set to True if spam is detected; complaint will be saved as spam
         is_spam_complaint = False
         spam_complaint_reason = None
         llm_failed = False
+        image_required_flag = False       # LLM wants an image but none provided
+        image_required_reason = None      # LLM explanation stored for notification
+
+        # ── Pre-LLM deterministic spam checks ────────────────────────────────
+        if _is_unethical_academic_request(original_text):
+            is_spam_complaint = True
+            spam_complaint_reason = (
+                "Request for grade/mark manipulation is not a valid complaint. "
+                "If your marks were incorrectly totalled or you believe there was "
+                "an evaluation error, please request a re-evaluation through your department."
+            )
+            logger.warning(
+                f"Pre-LLM spam rejection: unethical academic request from {student_roll_no} "
+                f"| text: {original_text[:80]}"
+            )
+
+        # Normalize shortforms using comprehensive SREC aliases
+        from src.constants.aliases import normalize_complaint_text as _normalize_aliases
+        normalized_text = _normalize_aliases(original_text)
+        if normalized_text != original_text.lower():
+            logger.info(
+                f"Alias normalization applied | "
+                f"original: {original_text[:60]!r} → normalized: {normalized_text[:60]!r}"
+            )
 
         try:
-            # 1. Check for spam FIRST (before processing)
-            spam_check = await llm_service.detect_spam(original_text)
+            if not is_spam_complaint:
+                # ── SINGLE COMBINED LLM CALL ──────────────────────────────────
+                # Replaces 4 separate calls: spam + categorize + rephrase + image_req
+                categorization = await llm_service.process_complaint(normalized_text, context)
 
-            # Save as spam (not block) when LLM has high confidence
-            SPAM_CONFIDENCE_THRESHOLD = 0.75
-            spam_confident = spam_check.get("confidence", 1.0) >= SPAM_CONFIDENCE_THRESHOLD
-            if spam_check.get("is_spam") and spam_confident:
-                spam_complaint_reason = spam_check.get("reason", "Content flagged as spam or abusive")
-                is_spam_complaint = True
-                logger.warning(
-                    f"Spam complaint detected for {student_roll_no}: {spam_complaint_reason} — saving as spam"
-                )
+                # Extract spam result from combined response
+                if categorization.get("is_spam"):
+                    is_spam_complaint = True
+                    spam_complaint_reason = categorization.get("spam_reason", "Content flagged as spam")
+                    logger.warning(f"Spam detected by combined LLM for {student_roll_no}: {spam_complaint_reason}")
 
             if not is_spam_complaint:
-                # 2. Categorize and get priority (✅ NOW INCLUDES department detection)
-                categorization = await llm_service.categorize_complaint(original_text, context)
-
-                # Apply deterministic overrides in order:
-                # 1. Hostel → Department if academic content detected (existing)
-                ai_category = categorization.get("category")
-                categorization = llm_service._apply_academic_override(original_text, categorization)
-                # BUG-014: 2. Department → General if physical facility/hygiene
-                categorization = llm_service._apply_facility_general_override(original_text, categorization)
-                # 3. New post-processing override layer (catches bribery, infra, hostel misroute)
+                # Apply deterministic overrides (catches LLM mistakes)
                 ai_category = categorization.get("category")
                 final_category = _override_category(
                     original_text, ai_category, student.gender or ""
@@ -369,20 +530,10 @@ class ComplaintService:
                     categorization["category"] = final_category
                 ai_category = categorization.get("category")
 
-                # Validate hostel category against student profile (Rules H1, H4)
+                # Validate hostel category against student profile
                 if ai_category in ("Men's Hostel", "Women's Hostel"):
-                    # H1: Day scholars cannot submit hostel complaints at all
                     if student.stay_type == "Day Scholar":
                         raise ValueError("Day scholars cannot submit hostel complaints")
-
-                    # H4: Guard against cross-gender hostel submissions.
-                    # The LLM may not know the student's gender and could assign the
-                    # wrong hostel category.  Instead of silently correcting, we now
-                    # reject with HTTP 403 so the student is aware of the mismatch.
-                    # A ValueError raised here propagates to the route as HTTP 400
-                    # (existing handler); the route will then surface it correctly.
-                    # We use a dedicated sentinel prefix so the route can convert it
-                    # to 403 specifically.
                     if ai_category == "Men's Hostel" and student.gender != "Male":
                         raise ValueError(
                             "HOSTEL_GENDER_MISMATCH: You cannot submit a complaint for the opposite hostel"
@@ -392,37 +543,25 @@ class ComplaintService:
                             "HOSTEL_GENDER_MISMATCH: You cannot submit a complaint for the opposite hostel"
                         )
 
-                # 3. Rephrase for professionalism.
-                # If rephrase_complaint returns None (gibberish/repeated words), flag as spam
-                # but still save the complaint (using original_text as fallback).
-                rephrased_text = await llm_service.rephrase_complaint(original_text)
-                if rephrased_text is None:
-                    logger.warning(
-                        f"Rephraser returned None (gibberish/repeated words) for {student_roll_no} — saving as spam"
-                    )
-                    is_spam_complaint = True
-                    spam_complaint_reason = "Content appears to be meaningless or contains repeated words"
-                    rephrased_text = original_text  # Use original as fallback for storage
+                # Extract rephrased text from combined response
+                rephrased_text = categorization.get("rephrased", original_text)
+                if not rephrased_text or len(rephrased_text) < 10:
+                    rephrased_text = original_text
 
-                # 4. Check if image is REQUIRED for this complaint (only if still not spam)
-                if not is_spam_complaint:
-                    image_requirement = await llm_service.check_image_requirement(
-                        complaint_text=original_text,
-                        category=categorization.get("category")
+                # Check image requirement from combined response.
+                # Instead of blocking submission, grant a 24-hour grace period.
+                # The complaint is posted with an "image_pending" tag so the student
+                # can upload evidence later. After 24 h the assigned authority decides.
+                if categorization.get("image_required") and not image_file:
+                    reason = categorization.get("image_reasoning", "Visual evidence required")
+                    image_required_flag = True
+                    image_required_reason = reason
+                    logger.info(
+                        f"Image required but not provided for {student_roll_no} — "
+                        f"granting 24-hour grace period. Reason: {reason}"
                     )
-                    if image_requirement.get("image_required") and not image_file:
-                        reason = image_requirement.get("reasoning", "Visual evidence required")
-                        suggested = image_requirement.get("suggested_evidence", "relevant photo")
-                        error_msg = (
-                            f"This complaint requires supporting images. {reason}. "
-                            f"Please upload at least one image showing {suggested}."
-                        )
-                        logger.warning(f"Image required but not provided for {student_roll_no}: {reason}")
-                        raise ValueError(error_msg)
-                else:
-                    image_requirement = {"image_required": False}
             else:
-                # Spam detected early — skip ALL LLM processing, use safe defaults
+                # Spam detected — skip LLM, use safe defaults
                 logger.info(f"Skipping LLM pipeline for spam complaint from {student_roll_no}")
                 categorization = {
                     "category": "General",
@@ -432,16 +571,11 @@ class ComplaintService:
                     "is_against_authority": False,
                 }
                 rephrased_text = original_text
-                image_requirement = {"image_required": False}
 
         except ValueError:
-            # Re-raise ValueError (spam rejection or missing image)
             raise
         except Exception as e:
             logger.error(f"LLM processing error: {e}")
-            # Fallback values — use "General" as base, then let the deterministic
-            # override layer correct it (e.g. "ragging" → Disciplinary Committee
-            # even when the LLM is unreachable).
             categorization = {
                 "category": "General",
                 "target_department": context.get("department", "CSE"),
@@ -450,11 +584,9 @@ class ComplaintService:
                 "is_against_authority": False
             }
             rephrased_text = original_text
-            image_requirement = {"image_required": False}
             llm_failed = True
 
-        # When LLM failed, the override layer inside the try block was never reached.
-        # Apply it now so keyword-based rules still fire (e.g. "ragging" → DC).
+        # When LLM failed, apply keyword-based overrides
         if llm_failed:
             _corrected_cat = _override_category(original_text, categorization.get("category", "General"), student.gender or "")
             if _corrected_cat != categorization.get("category"):
@@ -515,7 +647,9 @@ class ComplaintService:
             f"| llm_adj={_priority_result['llm_adjustment']} ({_priority_result['llm_reason']}) "
             f"| final={priority} (score={_priority_result['score']})"
         )
-        priority_score = PRIORITY_SCORES.get(priority, 50.0)
+        # Use raw numeric score from priority_service (0-100 scale)
+        # This serves as the base for vote-based blended recalculation
+        priority_score = float(_priority_result["score"])
 
         # Status: Spam if flagged, otherwise Raised
         initial_status = "Spam" if is_spam_complaint else "Raised"
@@ -609,6 +743,17 @@ class ComplaintService:
         except Exception as _reach_err:
             logger.warning(f"Could not calculate reach for {complaint.id}: {_reach_err}")
 
+        # ── Image grace period: flag complaint if LLM wants image but none uploaded ─
+        if image_required_flag:
+            complaint.image_required = True
+            complaint.image_pending = True
+            complaint.image_required_deadline = current_time + timedelta(hours=24)
+            await self.db.commit()
+            logger.info(
+                f"Complaint {complaint.id} flagged as image_pending — "
+                f"deadline: {complaint.image_required_deadline.isoformat()}"
+            )
+
         # ✅ NEW: Verify image if provided
         if image_bytes:
             try:
@@ -624,10 +769,12 @@ class ComplaintService:
                 complaint.image_verified = verification_result["is_relevant"]
                 complaint.image_verification_status = verification_result["status"]
 
-                # BUG-006 fix: mark complaint as spam if image is irrelevant or low confidence
+                # BUG-006 fix: mark complaint as spam if image is clearly irrelevant
+                # BUG-029 fix: liberal threshold — only reject truly unrelated images
+                # With liberal prompt, relevant images score 0.5+; only reject < 0.3
                 img_is_relevant = verification_result.get("is_relevant", True)
                 img_confidence = verification_result.get("confidence_score", 1.0)
-                if not img_is_relevant or img_confidence < 0.5:
+                if not img_is_relevant and img_confidence < 0.3:
                     complaint.is_marked_as_spam = True
                     complaint.status = "Spam"
                     complaint.spam_reason = (
@@ -656,6 +803,27 @@ class ComplaintService:
                 logger.error(f"Image verification error: {e}")
                 image_verification_message = f"Verification error: {str(e)}"
         
+        # Notify student about image grace period (if applicable)
+        if image_required_flag:
+            try:
+                deadline_str = (current_time + timedelta(hours=24)).strftime("%d %b %Y, %I:%M %p UTC")
+                await notification_service.create_notification(
+                    self.db,
+                    recipient_type="Student",
+                    recipient_id=student_roll_no,
+                    complaint_id=complaint.id,
+                    notification_type="image_required",
+                    message=(
+                        f"Your complaint was submitted successfully. However, it appears to require "
+                        f"supporting visual evidence ({image_required_reason}). "
+                        f"Please upload a photo before {deadline_str}. "
+                        f"If no image is uploaded by then, the assigned authority will decide whether "
+                        f"to keep or remove your complaint."
+                    )
+                )
+            except Exception as _img_notif_err:
+                logger.warning(f"Failed to send image-required notification: {_img_notif_err}")
+
         # ✅ Route to appropriate authority (skip routing for spam complaints)
         authority = None
         if is_spam_complaint:
@@ -804,9 +972,8 @@ class ComplaintService:
                         complaint_id=complaint.id,
                         notification_type="complaint_assigned",
                         message=(
-                            f"New complaint assigned to you: {_category_name} complaint "
-                            f"from student {student_roll_no}. "
-                            f"Issue: {rephrased_text[:80]}..."
+                            f"New complaint assigned to you: {_category_name} complaint. "
+                            f"Issue: {rephrased_text[:100]}"
                         )
                     )
 
@@ -845,7 +1012,7 @@ class ComplaintService:
             f"Category: {categorization.get('category')}, "
             f"Target Dept: {target_department_code}, "
             f"Has Image: {image_bytes is not None}, "
-            f"Image Required: {image_requirement.get('image_required', False)}, "
+            f"Image Required: {categorization.get('image_required', False)}, "
             f"LLM Failed: {llm_failed}"
         )
 
@@ -864,7 +1031,11 @@ class ComplaintService:
             "message": (
                 "Your complaint was received but flagged as potential spam. You may dispute this if it is genuine."
                 if is_spam_complaint
-                else "Complaint submitted successfully"
+                else (
+                    "Complaint submitted. Please upload supporting image evidence within 24 hours."
+                    if image_required_flag
+                    else "Complaint submitted successfully"
+                )
             ),
             # ✅ NEW: AI-driven categorization information
             "category": categorization.get("category"),
@@ -881,8 +1052,13 @@ class ComplaintService:
             "image_filename": image_filename,
             "image_size": image_size,
             # ✅ Image requirement information
-            "image_was_required": image_requirement.get("image_required", False),
-            "image_requirement_reasoning": image_requirement.get("reasoning")
+            "image_was_required": categorization.get("image_required", False),
+            "image_requirement_reasoning": categorization.get("image_reasoning"),
+            # Grace period fields
+            "image_pending": image_required_flag,
+            "image_required_deadline": (
+                (current_time + timedelta(hours=24)).isoformat() if image_required_flag else None
+            ),
         }
     
     async def upload_complaint_image(
@@ -927,6 +1103,11 @@ class ComplaintService:
             complaint.image_filename = image_filename
             complaint.image_verified = False
             complaint.image_verification_status = "Pending"
+            # Clear grace period flag — student fulfilled the image requirement
+            if complaint.image_pending:
+                complaint.image_pending = False
+                complaint.image_required_deadline = None
+                logger.info(f"Image grace period fulfilled for complaint {complaint_id}")
             await self.db.commit()
             
             # Verify image
