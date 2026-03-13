@@ -7,7 +7,7 @@ import ComplaintCard from '../components/ComplaintCard';
 import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import studentService from '../../../services/student.service';
-import { Upload, X, FileX, Inbox, AlertTriangle, ThumbsUp, Search, SlidersHorizontal, Camera, Image, WifiOff, Copy, Check, Trash2 } from 'lucide-react';
+import { Upload, X, FileX, Inbox, AlertTriangle, ThumbsUp, Search, SlidersHorizontal, Camera, Image, WifiOff, Copy, Check, Trash2, MapPin, Loader2 } from 'lucide-react';
 import { VISIBILITY, COMPLAINT_CATEGORIES, STATUSES, PRIORITIES } from '../../../utils/constants';
 
 export default function Posts() {
@@ -37,6 +37,40 @@ export default function Posts() {
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
   const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+
+  // Live GPS state — only set when user taps "Camera" (not gallery)
+  const [gpsCoords, setGpsCoords] = useState(null); // { lat, lon } or null
+  const [gpsStatus, setGpsStatus] = useState('idle'); // 'idle' | 'requesting' | 'granted' | 'denied'
+
+  // Request GPS permission and get current position (non-blocking)
+  const requestGps = () => {
+    if (!navigator.geolocation) return;
+    setGpsStatus('requesting');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGpsCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        setGpsStatus('granted');
+      },
+      () => {
+        // User denied or unavailable — silently continue without GPS
+        setGpsCoords(null);
+        setGpsStatus('denied');
+      },
+      { timeout: 10000, maximumAge: 60000, enableHighAccuracy: true }
+    );
+  };
+
+  const handleCameraClick = () => {
+    requestGps();          // ask for GPS (non-blocking, camera opens regardless)
+    cameraRef.current?.click();
+  };
+
+  const handleGalleryClick = () => {
+    // Gallery upload: rely on EXIF metadata only — no GPS request
+    setGpsCoords(null);
+    setGpsStatus('idle');
+    galleryRef.current?.click();
+  };
 
   const [formData, setFormData] = useState(() => {
     try {
@@ -261,6 +295,11 @@ export default function Posts() {
       if (formData.image) {
         fd.append('image', formData.image);
       }
+      // Append live GPS coords if captured from camera path
+      if (gpsCoords) {
+        fd.append('gps_lat', String(gpsCoords.lat));
+        fd.append('gps_lon', String(gpsCoords.lon));
+      }
 
       const response = await complaintService.submitComplaint(fd);
 
@@ -289,6 +328,8 @@ export default function Posts() {
       setFormData({ original_text: '', image: null, visibility: 'Public' });
       try { localStorage.removeItem('cv_complaint_draft'); } catch {}
       setImagePreview(null);
+      setGpsCoords(null);
+      setGpsStatus('idle');
       setDupCandidates([]);
 
     } catch (error) {
@@ -561,33 +602,55 @@ export default function Posts() {
                 {!imagePreview ? (
                   isMobile ? (
                     /* Mobile: two distinct tap targets */
-                    <div className="flex gap-3">
-                      <button
-                        type="button"
-                        onClick={() => cameraRef.current?.click()}
-                        className="flex-1 flex flex-col items-center justify-center gap-1.5 h-24 border-2 border-dashed border-srec-borderHover rounded-xl bg-srec-backgroundAlt hover:bg-srec-primarySoft hover:border-srec-primaryMuted transition-colors duration-200 cursor-pointer"
-                      >
-                        <Camera className="w-6 h-6 text-srec-textMuted" />
-                        <span className="text-xs text-srec-textMuted font-medium">Camera</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => galleryRef.current?.click()}
-                        className="flex-1 flex flex-col items-center justify-center gap-1.5 h-24 border-2 border-dashed border-srec-borderHover rounded-xl bg-srec-backgroundAlt hover:bg-srec-primarySoft hover:border-srec-primaryMuted transition-colors duration-200 cursor-pointer"
-                      >
-                        <Image className="w-6 h-6 text-srec-textMuted" />
-                        <span className="text-xs text-srec-textMuted font-medium">Gallery</span>
-                      </button>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={handleCameraClick}
+                          className="flex-1 flex flex-col items-center justify-center gap-1.5 h-24 border-2 border-dashed border-srec-borderHover rounded-xl bg-srec-backgroundAlt hover:bg-srec-primarySoft hover:border-srec-primaryMuted transition-colors duration-200 cursor-pointer"
+                        >
+                          <Camera className="w-6 h-6 text-srec-textMuted" />
+                          <span className="text-xs text-srec-textMuted font-medium">Camera</span>
+                          <span className="text-[10px] text-srec-textMuted opacity-70">with GPS</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleGalleryClick}
+                          className="flex-1 flex flex-col items-center justify-center gap-1.5 h-24 border-2 border-dashed border-srec-borderHover rounded-xl bg-srec-backgroundAlt hover:bg-srec-primarySoft hover:border-srec-primaryMuted transition-colors duration-200 cursor-pointer"
+                        >
+                          <Image className="w-6 h-6 text-srec-textMuted" />
+                          <span className="text-xs text-srec-textMuted font-medium">Gallery</span>
+                          <span className="text-[10px] text-srec-textMuted opacity-70">uses photo metadata</span>
+                        </button>
+                      </div>
+                      {/* GPS status indicator — only visible after Camera tap */}
+                      {gpsStatus === 'requesting' && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-amber-600">
+                          <Loader2 size={11} className="animate-spin" />
+                          Requesting location…
+                        </div>
+                      )}
+                      {gpsStatus === 'granted' && (
+                        <div className="flex items-center gap-1 text-[11px] text-teal-600 font-medium">
+                          <MapPin size={11} />
+                          Location captured — will verify if on campus
+                        </div>
+                      )}
+                      {gpsStatus === 'denied' && (
+                        <div className="text-[11px] text-gray-400">
+                          Location access denied — photo metadata will be checked instead
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    /* Desktop: single unified button */
+                    /* Desktop: single unified button (no camera; GPS not useful on desktop) */
                     <button
                       type="button"
-                      onClick={() => galleryRef.current?.click()}
+                      onClick={handleGalleryClick}
                       className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-srec-borderHover rounded-xl cursor-pointer bg-srec-backgroundAlt hover:bg-srec-primarySoft hover:border-srec-primaryMuted transition-colors duration-200"
                     >
                       <Upload className="w-7 h-7 mb-1.5 text-srec-textMuted" />
-                      <p className="text-xs text-srec-textMuted font-medium">Click to upload photo (optional, max 5MB)</p>
+                      <p className="text-xs text-srec-textMuted font-medium">Click to upload photo (optional, max 25MB)</p>
                     </button>
                   )
                 ) : (

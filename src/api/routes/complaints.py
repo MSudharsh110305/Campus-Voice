@@ -74,6 +74,8 @@ async def create_complaint(
     visibility: str = Form(default="Public", description="Visibility level (Public or Private)"),
     is_anonymous: bool = Form(default=False, description="Hide your identity from other students"),
     image: Optional[UploadFile] = File(None, description="Optional complaint image"),
+    gps_lat: Optional[float] = Form(None, description="Live GPS latitude from browser (camera capture only)"),
+    gps_lon: Optional[float] = Form(None, description="Live GPS longitude from browser (camera capture only)"),
     roll_no: str = Depends(get_current_student),
     db: AsyncSession = Depends(get_db)
 ):
@@ -117,6 +119,8 @@ async def create_complaint(
             visibility=visibility,
             image_file=image,
             is_anonymous=is_anonymous,
+            gps_lat=gps_lat,
+            gps_lon=gps_lon,
         )
 
         # Auto-merge check: if 10+ similar complaints exist, LLM merges them

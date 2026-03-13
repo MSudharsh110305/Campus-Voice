@@ -178,6 +178,26 @@ def extract_gps_from_image(image_bytes: bytes) -> Optional[Tuple[float, float]]:
         return None
 
 
+def verify_location_from_coords(lat: float, lon: float) -> bool:
+    """
+    Check whether a lat/lon coordinate pair falls within SREC campus.
+
+    Used when the frontend provides live GPS coordinates (camera capture path).
+    Returns True only if the point is inside the SREC polygon.
+    All exceptions are caught — never raises.
+    """
+    try:
+        result = _point_in_polygon(lat, lon)
+        if result:
+            logger.info(f"Live GPS verified within SREC: ({lat:.6f}, {lon:.6f})")
+        else:
+            logger.debug(f"Live GPS outside SREC polygon: ({lat:.6f}, {lon:.6f})")
+        return result
+    except Exception as e:
+        logger.debug(f"GPS coords verification error (non-fatal): {e}")
+        return False
+
+
 def verify_location_from_image(image_bytes: bytes) -> bool:
     """
     Check whether an image's GPS metadata places it within SREC campus.

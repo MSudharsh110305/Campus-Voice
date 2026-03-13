@@ -22,7 +22,7 @@ from src.services.authority_service import authority_service
 from src.services.notification_service import notification_service
 from src.services.spam_detection import spam_detection_service
 from src.services.image_verification import image_verification_service
-from src.services.location_service import verify_location_from_image
+from src.services.location_service import verify_location_from_image, verify_location_from_coords
 from src.utils.file_upload import file_upload_handler
 from src.utils.exceptions import InvalidFileTypeError, FileTooLargeError, FileUploadError
 from src.config.constants import PRIORITY_SCORES  # kept for external callers
@@ -395,6 +395,8 @@ class ComplaintService:
         visibility: str = "Public",
         image_file: Optional[UploadFile] = None,  # ✅ Accept UploadFile
         is_anonymous: bool = False,               # v2: hide submitter identity from peers
+        gps_lat: Optional[float] = None,          # live GPS from browser (camera capture)
+        gps_lon: Optional[float] = None,          # live GPS from browser (camera capture)
     ) -> Dict[str, Any]:
         """
         Create a new complaint with FULL AI-DRIVEN processing (no category_id required).
@@ -693,12 +695,21 @@ class ComplaintService:
 
                 logger.info(f"Image uploaded: {image_filename} ({image_size} bytes)")
 
-                # ── Location verification (EXIF GPS) ───────────────────────────
-                # Non-blocking: any failure leaves location_verified = False
+                # ── Location verification ──────────────────────────────────────
+                # Camera path: browser GPS coords take priority (more accurate).
+                # Gallery path: fall back to EXIF metadata in the image.
+                # Non-blocking: any failure leaves location_verified = False.
                 try:
-                    location_verified = verify_location_from_image(image_bytes)
-                    if location_verified:
-                        logger.info(f"Image GPS verified within SREC campus for {student_roll_no}")
+                    if gps_lat is not None and gps_lon is not None:
+                        location_verified = verify_location_from_coords(gps_lat, gps_lon)
+                        logger.info(
+                            f"Live GPS check for {student_roll_no}: "
+                            f"({gps_lat:.6f}, {gps_lon:.6f}) → {location_verified}"
+                        )
+                    else:
+                        location_verified = verify_location_from_image(image_bytes)
+                        if location_verified:
+                            logger.info(f"EXIF GPS verified within SREC campus for {student_roll_no}")
                 except Exception as _loc_err:
                     logger.debug(f"Location check skipped (non-fatal): {_loc_err}")
 
@@ -706,7 +717,18 @@ class ComplaintService:
                 logger.error(f"Image upload error: {e}")
                 # Continue without image
                 image_bytes = None
-        
+
+        # GPS coords provided but no image (text-only complaint via camera)
+        if not location_verified and gps_lat is not None and gps_lon is not None:
+            try:
+                location_verified = verify_location_from_coords(gps_lat, gps_lon)
+                logger.info(
+                    f"GPS-only location check for {student_roll_no}: "
+                    f"({gps_lat:.6f}, {gps_lon:.6f}) → {location_verified}"
+                )
+            except Exception as _loc_err:
+                logger.debug(f"GPS-only location check skipped (non-fatal): {_loc_err}")
+
         # DC1: Disciplinary Committee complaints are ALWAYS Private.
         # They must never appear in the public feed.
         final_category_name = categorization.get("category", "General")
