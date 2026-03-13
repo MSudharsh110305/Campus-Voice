@@ -239,6 +239,7 @@ export default function StudentHome() {
                     timestamp={item.submitted_at}
                     assigned_authority_name={item.assigned_authority_name || null}
                     isOwner={!!(user?.roll_no && item.student_roll_no === user.roll_no)}
+                    location_verified={item.location_verified || false}
                   />
                 ))}
                 {hasMore && !loading && (

@@ -787,6 +787,7 @@ export default function Posts() {
                         image_required={post.image_required || false}
                         image_pending={post.image_pending || false}
                         image_required_deadline={post.image_required_deadline || null}
+                        location_verified={post.location_verified || false}
                       />
                       {isDeletable && deleteConfirmId !== postId && (
                         <button

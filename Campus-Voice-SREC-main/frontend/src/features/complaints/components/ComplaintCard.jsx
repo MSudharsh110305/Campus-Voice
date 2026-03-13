@@ -4,7 +4,7 @@ import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import {
   ThumbsUp, ThumbsDown, FileX, ShieldCheck,
-  Clock, Building2, AlertCircle, Copy, Check, ImagePlus, Share2
+  Clock, Building2, AlertCircle, Copy, Check, ImagePlus, Share2, MapPin
 } from 'lucide-react';
 import { Skeleton } from '../../../components/UI';
 import { VOTE_TYPES } from '../../../utils/constants';
@@ -67,6 +67,7 @@ export default function ComplaintCard({
   image_required = false,
   image_pending = false,
   image_required_deadline = null,
+  location_verified = false,
 }) {
   const { user } = useAuth();
   const [voteCount, setVoteCount] = useState({ up: upvotes || 0, down: downvotes || 0 });
@@ -259,6 +260,15 @@ export default function ComplaintCard({
             {priority && priority !== 'Low' && (
               <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${pc.pill}`}>
                 {pc.label}
+              </span>
+            )}
+            {location_verified && (
+              <span
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-teal-50 text-teal-700 border border-teal-200"
+                title="GPS coordinates from this image confirm it was taken on SREC campus"
+              >
+                <MapPin size={9} />
+                On-campus
               </span>
             )}
             <span className="text-[10px] text-srec-textMuted ml-auto flex items-center gap-0.5 flex-shrink-0">

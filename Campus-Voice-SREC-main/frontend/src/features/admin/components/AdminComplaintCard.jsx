@@ -11,6 +11,7 @@ import {
     Trash2,
     RefreshCw,
     ShieldAlert,
+    MapPin,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -123,6 +124,13 @@ export default function AdminComplaintCard({ complaint, token, authorities = [],
                                         <ShieldAlert size={8} />Disputed
                                     </span>
                                 )}
+                            </div>
+                        )}
+                        {complaint.location_verified && (
+                            <div className="flex items-center gap-1 mt-1.5">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-px rounded text-[10px] font-semibold bg-teal-50 text-teal-700 border border-teal-200" title="Image GPS confirms on-campus location">
+                                    <MapPin size={8} />On-campus verified
+                                </span>
                             </div>
                         )}
                     </div>

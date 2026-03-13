@@ -204,6 +204,11 @@ class Complaint(Base):
     image_verified = Column(Boolean, default=False, nullable=False, index=True)
     image_verification_status = Column(String(50), nullable=True, index=True)
     # Status values: 'Pending', 'Verified', 'Rejected', 'Error'
+
+    # ── Location verification ──────────────────────────────────────────────────
+    # True when the image's EXIF GPS coordinates fall within the SREC campus
+    # polygon. Never blocks submission — purely informational badge.
+    location_verified = Column(Boolean, default=False, server_default='false', nullable=False)
     
     # Cross-department tracking
     complaint_department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)

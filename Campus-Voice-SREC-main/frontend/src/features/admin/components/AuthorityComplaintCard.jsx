@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBadge, PriorityBadge, EliteButton } from '../../../components/UI';
 import { format } from 'date-fns';
-import { MessageSquare, ThumbsUp, Image as ImageIcon, ArrowUpCircle, MessageCircle, ShieldAlert } from 'lucide-react';
+import { MessageSquare, ThumbsUp, Image as ImageIcon, ArrowUpCircle, MessageCircle, ShieldAlert, MapPin } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { VALID_STATUS_TRANSITIONS } from '../../../utils/constants';
 
@@ -103,12 +103,17 @@ const AuthorityComplaintCard = ({ complaint, onStatusUpdate, onPostUpdate, onEsc
             </div>
 
             {/* Status + Priority row */}
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <StatusBadge status={complaint.status} />
                 <PriorityBadge priority={complaint.priority} />
                 {complaint.is_marked_as_spam && complaint.has_disputed && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-50 text-orange-600 border border-orange-200">
                         <ShieldAlert size={9} />Disputed
+                    </span>
+                )}
+                {complaint.location_verified && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-teal-50 text-teal-700 border border-teal-200" title="Image GPS confirms on-campus location">
+                        <MapPin size={9} />On-campus
                     </span>
                 )}
                 {complaint.has_image && (

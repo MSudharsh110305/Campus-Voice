@@ -146,6 +146,10 @@ class ComplaintResponse(BaseModel):
         default=None,
         description="Image verification status (Pending/Verified/Rejected)"
     )
+    location_verified: bool = Field(
+        default=False,
+        description="Image EXIF GPS coordinates confirmed within SREC campus"
+    )
     # Image grace-period fields — shown to the complaint owner
     image_required: bool = Field(
         default=False,
@@ -314,6 +318,7 @@ class ComplaintSubmitResponse(BaseModel):
     image_verified: bool = False
     image_verification_status: Optional[str] = None
     image_verification_message: Optional[str] = None
+    location_verified: bool = False
 
     # ✅ Image requirement information
     image_was_required: bool = Field(

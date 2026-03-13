@@ -22,6 +22,7 @@ from src.services.authority_service import authority_service
 from src.services.notification_service import notification_service
 from src.services.spam_detection import spam_detection_service
 from src.services.image_verification import image_verification_service
+from src.services.location_service import verify_location_from_image
 from src.utils.file_upload import file_upload_handler
 from src.utils.exceptions import InvalidFileTypeError, FileTooLargeError, FileUploadError
 from src.config.constants import PRIORITY_SCORES  # kept for external callers
@@ -676,21 +677,31 @@ class ComplaintService:
         image_verified = False
         image_verification_status = "Pending"
         image_verification_message = None
-        
+        location_verified = False
+
         if image_file:
             try:
                 # Read image bytes
                 image_bytes, image_mimetype, image_size, image_filename = await file_upload_handler.read_image_bytes(
                     image_file, validate=True
                 )
-                
+
                 # Optimize image
                 image_bytes, image_size = await file_upload_handler.optimize_image_bytes(
                     image_bytes, image_mimetype
                 )
-                
+
                 logger.info(f"Image uploaded: {image_filename} ({image_size} bytes)")
-                
+
+                # ── Location verification (EXIF GPS) ───────────────────────────
+                # Non-blocking: any failure leaves location_verified = False
+                try:
+                    location_verified = verify_location_from_image(image_bytes)
+                    if location_verified:
+                        logger.info(f"Image GPS verified within SREC campus for {student_roll_no}")
+                except Exception as _loc_err:
+                    logger.debug(f"Location check skipped (non-fatal): {_loc_err}")
+
             except Exception as e:
                 logger.error(f"Image upload error: {e}")
                 # Continue without image
@@ -729,7 +740,8 @@ class ComplaintService:
             image_size=image_size,
             image_filename=image_filename,
             image_verified=False,
-            image_verification_status="Pending" if image_bytes else None
+            image_verification_status="Pending" if image_bytes else None,
+            location_verified=location_verified
         )
         
         # ── Calculate reach: how many students can see this complaint ─────────────
@@ -1074,6 +1086,8 @@ class ComplaintService:
             "image_required_deadline": (
                 (current_time + timedelta(hours=24)).isoformat() if image_required_flag else None
             ),
+            # Location verification badge
+            "location_verified": location_verified,
         }
     
     async def upload_complaint_image(
@@ -1111,6 +1125,15 @@ class ComplaintService:
                 image_bytes, image_mimetype
             )
             
+            # Check GPS location from EXIF before committing
+            try:
+                loc_verified = verify_location_from_image(image_bytes)
+                if loc_verified:
+                    logger.info(f"Late-upload image GPS verified within SREC for {complaint_id}")
+            except Exception as _loc_err:
+                logger.debug(f"Location check skipped on late upload (non-fatal): {_loc_err}")
+                loc_verified = False
+
             # Update complaint with image (has_image is a computed property based on image_data)
             complaint.image_data = image_bytes
             complaint.image_mimetype = image_mimetype
@@ -1118,6 +1141,7 @@ class ComplaintService:
             complaint.image_filename = image_filename
             complaint.image_verified = False
             complaint.image_verification_status = "Pending"
+            complaint.location_verified = loc_verified
             # Clear grace period flag — student fulfilled the image requirement
             if complaint.image_pending:
                 complaint.image_pending = False
@@ -1167,7 +1191,8 @@ class ComplaintService:
                 "verification_message": verification_result["explanation"],
                 "image_filename": image_filename,
                 "image_size": image_size,
-                "confidence_score": verification_result.get("confidence_score", 0.0)
+                "confidence_score": verification_result.get("confidence_score", 0.0),
+                "location_verified": loc_verified,
             }
             
         except (InvalidFileTypeError, FileTooLargeError, FileUploadError):
@@ -1371,7 +1396,8 @@ class ComplaintService:
                 # ✅ NEW: Image fields
                 "has_image": complaint.has_image,
                 "image_verified": complaint.image_verified,
-                "image_verification_status": complaint.image_verification_status
+                "image_verification_status": complaint.image_verification_status,
+                "location_verified": complaint.location_verified,
             })
         
         return result
@@ -1422,7 +1448,8 @@ class ComplaintService:
             "image_verified": complaint.image_verified,
             "image_verification_status": complaint.image_verification_status,
             "image_filename": complaint.image_filename,
-            "image_size": complaint.image_size
+            "image_size": complaint.image_size,
+            "location_verified": complaint.location_verified,
         }
     
     async def get_student_complaints(
@@ -1463,7 +1490,8 @@ class ComplaintService:
                 "visibility": complaint.visibility,
                 # ✅ NEW: Image fields
                 "has_image": complaint.has_image,
-                "image_verified": complaint.image_verified
+                "image_verified": complaint.image_verified,
+                "location_verified": complaint.location_verified,
             })
         
         return result
@@ -1604,7 +1632,8 @@ class ComplaintService:
             "image_verified": complaint.image_verified,
             "image_verification_status": complaint.image_verification_status,
             "image_filename": complaint.image_filename,
-            "image_size": complaint.image_size
+            "image_size": complaint.image_size,
+            "location_verified": complaint.location_verified,
         }
 
         # ✅ CRITICAL: Partial Anonymity Logic

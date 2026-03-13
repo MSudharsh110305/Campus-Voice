@@ -319,6 +319,7 @@ export default function MyComplaints() {
                     timestamp={c.submitted_at || c.created_at}
                     isOwner={true}
                     assigned_authority_name={c.assigned_authority_name || null}
+                    location_verified={c.location_verified || false}
                   />
                 </div>
               ))
