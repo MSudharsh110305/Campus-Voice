@@ -2,6 +2,8 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import HelpButton from './components/help/HelpButton';
+import HelpCenter from './pages/HelpCenter';
 import LoginPage from './features/auth/pages/LoginPage';
 import AuthorityLoginPage from './features/auth/pages/AuthorityLoginPage';
 import StudentHome from './features/complaints/pages/StudentHome';
@@ -40,6 +42,13 @@ import PetitionDetail from './features/complaints/pages/PetitionDetail';
 import AuthorityPetitions from './features/admin/pages/AuthorityPetitions';
 import AuthorityRepresentatives from './features/admin/pages/AuthorityRepresentatives';
 
+/* Show the floating help button only for authenticated users */
+function GlobalHelpButton() {
+  const { user } = useAuth();
+  if (!user) return null;
+  return <HelpButton />;
+}
+
 function ProtectedRoute({ children, allow, redirectTo = "/login" }) {
   const { user } = useAuth();
   if (!user) return <Navigate to={redirectTo} replace />;
@@ -74,6 +83,7 @@ export default function App() {
       <NotificationProvider>
       <OfflineIndicator />
       <InstallPrompt />
+      <GlobalHelpButton />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/authority-login" element={<Navigate to="/login?role=authority" replace />} />
@@ -238,6 +248,8 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        {/* Help Center — accessible to any authenticated user */}
+        <Route path="/help" element={<HelpCenter />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
       </NotificationProvider>

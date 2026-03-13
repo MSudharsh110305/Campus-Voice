@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Skeleton } from '../../../components/UI';
 import { VOTE_TYPES } from '../../../utils/constants';
+import InfoTooltip from '../../../components/help/InfoTooltip';
 
 // Status config: dot color, label, badge style
 const STATUS_CFG = {
@@ -394,6 +395,7 @@ export default function ComplaintCard({
 
             {!isOwner ? (
               <div className="flex items-center gap-1.5 ml-auto" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
+                <InfoTooltip text="Votes increase complaint priority." />
                 <button
                   onClick={e => handleVote(e, VOTE_TYPES.UPVOTE)}
                   disabled={isVoting}

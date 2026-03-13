@@ -8,6 +8,7 @@ import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import studentService from '../../../services/student.service';
 import { Upload, X, FileX, Inbox, AlertTriangle, ThumbsUp, Search, SlidersHorizontal, Camera, Image, WifiOff, Copy, Check, Trash2, MapPin, Loader2 } from 'lucide-react';
+import InfoTooltip from '../../../components/help/InfoTooltip';
 import { VISIBILITY, COMPLAINT_CATEGORIES, STATUSES, PRIORITIES } from '../../../utils/constants';
 
 export default function Posts() {
@@ -538,6 +539,10 @@ export default function Posts() {
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <label className="text-sm font-semibold text-gray-700">What happened?</label>
+                  <InfoTooltip text="Describe the issue clearly so AI can route it correctly. Mention the location for faster routing." />
+                </div>
                 <textarea
                   name="original_text"
                   value={formData.original_text}
@@ -582,6 +587,10 @@ export default function Posts() {
               </div>
 
               <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <label className="text-sm font-semibold text-gray-700">Evidence Photo</label>
+                  <InfoTooltip text="Evidence images help authorities verify the issue faster. Camera adds GPS location automatically." />
+                </div>
                 {/* Hidden file inputs — camera (mobile) and gallery */}
                 <input
                   ref={cameraRef}

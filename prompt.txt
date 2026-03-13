@@ -1,0 +1,400 @@
+TASK: Implement a professional Help / Instructions system for CampusVoice.
+
+This system must include:
+
+1. Floating Help Button (global)
+2. Help Drawer (quick topics)
+3. Full Help Center Page
+4. Tooltip-based contextual help
+5. Fully responsive design (mobile + desktop)
+
+DO NOT modify existing APIs or business logic.
+
+This feature is purely UI/UX.
+
+---
+
+SECTION 1 — GLOBAL FLOATING HELP BUTTON
+
+Create component:
+
+src/components/help/HelpButton.jsx
+
+Behavior:
+
+• Appears on ALL authenticated pages
+• Positioned bottom-right
+• Opens Help Drawer
+
+Style:
+
+position: fixed
+bottom: 20px
+right: 20px
+z-index: 50
+
+Button style:
+
+width: 52px
+height: 52px
+rounded-full
+shadow-lg
+bg-[#14532D]
+hover:bg-[#166534]
+text-white
+flex items-center justify-center
+transition-all
+
+Icon:
+
+HelpCircle (lucide-react)
+
+Mobile adjustments:
+
+bottom: 16px
+right: 16px
+size: 48px
+
+Ensure it never overlaps navbar or bottom navigation.
+
+---
+
+SECTION 2 — HELP DRAWER
+
+Create component:
+
+src/components/help/HelpDrawer.jsx
+
+Behavior:
+
+• Opens when HelpButton clicked
+• Slides from right side
+• Width responsive
+
+Desktop width:
+360px
+
+Mobile width:
+100%
+
+Use fixed position.
+
+Animation:
+
+translateX transition
+duration: 300ms
+
+Drawer header:
+
+Title:
+CampusVoice Help
+
+Style:
+
+text-lg font-semibold
+color: #14532D
+
+Add close button:
+
+X icon (lucide)
+
+---
+
+SECTION 3 — QUICK HELP TOPICS
+
+Inside drawer show clickable help topics.
+
+Use cards.
+
+Each card style:
+
+bg-white
+border border-[#E5E7EB]
+rounded-xl
+p-4
+cursor-pointer
+hover:shadow-md
+
+Topics:
+
+1. How to raise a complaint
+2. How AI categorizes complaints
+3. Anonymous posting
+4. How voting works
+5. Complaint status tracking
+6. Who receives complaints
+
+Each topic navigates to Help Center page section.
+
+Example route:
+
+/help#complaint-submission
+
+---
+
+SECTION 4 — HELP CENTER PAGE
+
+Create page:
+
+src/pages/HelpCenter.jsx
+
+Add route:
+
+/help
+
+Page layout:
+
+max-width: 900px
+margin: auto
+padding: 32px
+
+Background:
+
+bg-[#F8FAF8]
+
+---
+
+SECTION 5 — HELP PAGE SECTIONS
+
+Create accordion-style sections.
+
+Use collapsible panels.
+
+Sections:
+
+---
+
+SECTION A — Getting Started
+
+Title:
+Getting Started
+
+Content:
+
+CampusVoice allows students to raise campus-related issues which are automatically routed to the correct authority using AI.
+
+Steps:
+
+1. Click "Raise Issue"
+2. Describe the problem clearly
+3. Attach image evidence if available
+4. Choose complaint visibility
+5. Submit complaint
+
+---
+
+SECTION B — AI Complaint Routing
+
+Explain:
+
+The system analyzes complaint text and automatically identifies:
+
+• complaint category
+• relevant department
+• priority level
+• responsible authority
+
+Example:
+
+"ECE Lab equipment broken"
+
+→ routed to ECE HOD
+
+---
+
+SECTION C — Anonymous Posting
+
+Explain:
+
+Public complaints are anonymous to other students.
+
+Your identity is only visible to administrators for verification purposes.
+
+---
+
+SECTION D — Voting System
+
+Explain:
+
+Students can upvote complaints they also face.
+
+Voting increases complaint priority and helps authorities identify urgent problems.
+
+---
+
+SECTION E — Complaint Status
+
+Explain status stages:
+
+Raised
+In Progress
+Resolved
+Closed
+Spam
+
+Show small status badges.
+
+---
+
+SECTION F — Privacy & Safety
+
+Explain:
+
+Only authorized authorities can view identity when necessary.
+
+Spam complaints may be flagged by the AI moderation system.
+
+---
+
+SECTION 6 — CONTEXTUAL HELP TOOLTIP SYSTEM
+
+Create component:
+
+src/components/help/InfoTooltip.jsx
+
+Usage example:
+
+<InfoTooltip text="Mention the location to help route the complaint faster." />
+
+Implementation:
+
+Use icon:
+
+Info (lucide-react)
+
+When clicked:
+
+show small tooltip box.
+
+Tooltip style:
+
+bg-white
+border border-gray-200
+shadow-md
+rounded-lg
+p-3
+text-sm
+max-width: 220px
+
+Tooltip should auto close when clicking outside.
+
+Mobile behavior:
+
+Tap icon to open.
+
+---
+
+SECTION 7 — ADD TOOLTIP IN KEY PLACES
+
+Add InfoTooltip next to:
+
+Posts page:
+
+"What happened?"
+
+Text:
+
+Describe the issue clearly so AI can route it correctly.
+
+Image upload section:
+
+Text:
+
+Evidence images help authorities verify the issue faster.
+
+Voting section:
+
+Text:
+
+Votes increase complaint priority.
+
+---
+
+SECTION 8 — MOBILE RESPONSIVENESS
+
+Must support:
+
+Phones
+Tablets
+Desktop
+
+Rules:
+
+Drawer width = 100% on mobile
+Drawer width = 360px on desktop
+
+Help Center page padding reduces on mobile:
+
+padding: 16px
+
+Accordion cards stack vertically.
+
+Ensure floating button does not overlap mobile navigation.
+
+---
+
+SECTION 9 — SREC THEME COLORS
+
+Use these theme colors:
+
+Primary Green:
+#14532D
+
+Hover Green:
+#166534
+
+Light Green:
+#22C55E
+
+Gold Accent:
+#D4AF37
+
+Background:
+#F8FAF8
+
+Card:
+#FFFFFF
+
+Border:
+#E5E7EB
+
+Text Primary:
+#111827
+
+Text Secondary:
+#6B7280
+
+---
+
+SECTION 10 — PERFORMANCE SAFETY
+
+Ensure:
+
+• No API calls
+• No backend changes
+• No large libraries added
+
+Only use:
+
+lucide-react
+existing UI components
+React hooks
+
+---
+
+EXPECTED RESULT
+
+Users can:
+
+• access help from floating button
+• read structured instructions
+• understand complaint workflow
+• get contextual tips
+
+System must work smoothly on:
+
+Desktop
+Tablet
+Mobile
+
+Without breaking any existing pages.
