@@ -40,7 +40,7 @@ class FileUploadHandler:
         self.allowed_extensions = settings.ALLOWED_IMAGE_EXTENSIONS
         
         # Binary storage settings (for new methods)
-        self.max_image_size_mb = 10  # 10 MB limit for binary storage
+        self.max_image_size_mb = 25  # 25 MB limit — accepts raw photos from modern phones (S23, iPhone 15 etc.)
         self.allowed_mimetypes = {
             'image/jpeg', 'image/jpg', 'image/png', 
             'image/gif', 'image/webp', 'image/bmp'

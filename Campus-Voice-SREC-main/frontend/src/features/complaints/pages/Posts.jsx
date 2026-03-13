@@ -128,8 +128,8 @@ export default function Posts() {
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        setFormError('Image must be less than 5MB');
+      if (file.size > 25 * 1024 * 1024) {
+        setFormError('Image must be less than 25MB');
         return;
       }
       const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
