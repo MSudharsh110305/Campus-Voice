@@ -1,0 +1,1505 @@
+================================================================================
+                  CAMPUS VOICE — AI-POWERED CAMPUS COMPLAINT MANAGEMENT SYSTEM
+                           SREC (Sree Ranganathar Engineering College)
+                                   THEORY DOCUMENTATION
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. PROBLEM STATEMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Engineering college students face numerous day-to-day grievances — broken
+infrastructure, mess food quality, hostel maintenance, academic issues,
+disciplinary concerns — yet have no structured, transparent channel to raise
+and track them. The existing approach relies on informal verbal complaints,
+physical complaint registers, or direct emails, resulting in:
+
+  • Complaints getting lost or ignored with no tracking mechanism.
+  • Students not knowing who to contact for which issue.
+  • Authorities unaware of urgency or the scale of a problem.
+  • No accountability — no audit trail of what was done and when.
+  • Repeated complaints about the same issue going unnoticed.
+  • Misrouting — hostel issues going to the wrong warden, academic
+    issues going to admin instead of the HOD.
+  • Students afraid to complain due to lack of anonymity.
+  • No way for peers to collectively signal that an issue is widespread.
+
+Campus Voice solves all of these by providing a centralized, AI-driven,
+transparent, and role-based digital grievance management platform.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. OBJECTIVES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. Provide a single digital platform for students to raise campus complaints
+     anonymously, attach photo evidence, and track resolution status.
+
+  2. Use Artificial Intelligence (LLM) to automatically:
+       a. Classify complaints into the correct category.
+       b. Identify the target department.
+       c. Detect spam, abuse, and gibberish automatically.
+       d. Rephrase informal language into a formal complaint.
+       e. Verify that uploaded images are relevant to the complaint.
+       f. Determine if a complaint type requires photographic evidence.
+
+  3. Implement a smart authority routing system that sends each complaint
+     directly to the right person (Warden / HOD / Admin Officer / Disciplinary
+     Committee) based on complaint content — no manual categorization needed.
+
+  4. Build a democratic priority system where student upvotes/downvotes raise
+     or lower the urgency of a complaint, ensuring widespread issues are
+     addressed first.
+
+  5. Enforce automatic escalation — complaints unresolved for more than 7 days
+     are escalated up the authority hierarchy without manual intervention.
+
+  6. Give students real-time notifications and full visibility into their
+     complaint lifecycle.
+
+  7. Provide authorities with dashboards, analytics, and tools to manage their
+     workload efficiently.
+
+  8. Give the Admin complete control: manage users, authorities, bulk operations,
+     image moderation, and system-wide analytics.
+
+  9. Empower student leaders (Representatives) to raise Petitions for systemic or
+     large-scale changes, gathering signatures to meet custom milestones and
+     prompt official authority responses.
+
+  10. Highlight success stories through a "Wins" (Changelog) feed, showcasing
+      resolved popular issues to build trust in the platform.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. TECH STACK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+BACKEND
+  • Language      : Python 3.11+
+  • Framework     : FastAPI (async, RESTful, auto OpenAPI docs)
+  • Database      : PostgreSQL (with asyncpg async driver)
+  • ORM           : SQLAlchemy 2.0 (async mode)
+  • Auth          : JWT (JSON Web Tokens) — 7-day expiry
+  • Password Hash : bcrypt
+  • AI / LLM      : Groq API → Meta LLaMA 3.1 8B Instant
+  • Vision AI     : Groq API → Meta LLaMA 4 Scout 17B (image verification)
+  • Image Proc.   : Pillow (re-encoding, thumbnail generation)
+  • Rate Limiting : Custom token-bucket rate limiter (Redis-ready)
+  • Retry Policy  : Tenacity (exponential backoff for LLM calls)
+  • CORS          : FastAPI CORSMiddleware
+
+FRONTEND
+  • Framework     : React 18.3 + React Router 6.26
+  • Build Tool    : Vite 5.4
+  • Styling       : Tailwind CSS 3.4 (custom theme: srec-primary, srec-danger, etc.)
+  • Charts        : Recharts 3.7 (admin analytics)
+  • Icons         : Lucide React 0.555
+  • Date Utils    : date-fns 4.1
+  • HTTP Client   : Native fetch API (custom api() wrapper in utils/api.js)
+
+DEPLOYMENT NOTES
+  • Backend runs on localhost:8000 (uvicorn)
+  • Frontend proxied via Vite dev server (localhost:5173)
+  • /api/* proxied to localhost:8000 in development
+  • Images stored as binary (BYTEA) in PostgreSQL — no file system dependency
+  • No external storage (S3 / local disk) required
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. SYSTEM ARCHITECTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+                         ┌──────────────────────────────────┐
+                         │         React Frontend           │
+                         │  Student / Authority / Admin UI  │
+                         └──────────────┬───────────────────┘
+                                        │ HTTPS / REST API
+                         ┌──────────────▼───────────────────┐
+                         │     FastAPI Backend (Async)       │
+                         │   Routes → Services → Repos       │
+                         └──┬───────────────────────────┬───┘
+                            │                           │
+               ┌────────────▼──────────┐   ┌───────────▼────────────┐
+               │   PostgreSQL (Async)  │   │      Groq LLM API       │
+               │  Models: Students,    │   │  LLaMA 3.1 8B Instant  │
+               │  Complaints, Votes,   │   │  LLaMA 4 Scout (Vision) │
+               │  Authorities, etc.    │   └────────────────────────┘
+               └───────────────────────┘
+
+LAYER STRUCTURE:
+  Route Layer   → Validates HTTP request, calls service
+  Service Layer → Business logic, orchestrates repos + LLM calls
+  Repository    → Database queries (async SQLAlchemy)
+  Database      → PostgreSQL with 15+ tables
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. USER ROLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The system has three types of users, each with distinct capabilities:
+
+  ┌─────────────────┬──────────────────────────────────────────────────────┐
+  │ Role            │ Description                                           │
+  ├─────────────────┼──────────────────────────────────────────────────────┤
+  │ Student         │ Registered SREC student (roll_no @srec.ac.in)        │
+  │ Authority       │ Warden / HOD / Admin Officer / Disciplinary etc.     │
+  │ Admin           │ Super-authority (level 100) — full system control    │
+  └─────────────────┴──────────────────────────────────────────────────────┘
+
+Authority levels define the hierarchy (used in escalation):
+  Admin                        → Level 100
+  Admin Officer                → Level 50
+  Disciplinary Committee       → Level 20
+  Senior Deputy Warden         → Level 15
+  Men's Hostel Deputy Warden   → Level 10
+  Women's Hostel Deputy Warden → Level 10
+  HOD                          → Level 8
+  Men's Hostel Warden          → Level 5
+  Women's Hostel Warden        → Level 5
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. DATABASE MODELS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+6.1 STUDENTS
+  roll_no (PK), name, email (@srec.ac.in, unique), password_hash, gender
+  (Male/Female/Other), stay_type (Hostel/Day Scholar), year (1–10),
+  department_id (FK), is_active, email_verified, created_at, updated_at.
+  Relations: complaints, votes, spam_blacklist.
+
+6.2 AUTHORITIES
+  id (PK), name, email, password_hash, authority_type, authority_level,
+  department_id (FK, optional for HODs), designation, phone, is_active,
+  created_at, updated_at.
+  Relations: assigned_complaints, status_updates, announcements, audit_logs.
+
+6.3 DEPARTMENTS (17 departments)
+  id, code (CSE/ECE/MECH/CIVIL/EEE/IT/BIO/AERO/RAA/EIE/MBA/AIDS/
+  MTECH_CSE/ENG/PHY/CHEM/MATH), name, hod details, total_students, is_active.
+
+6.4 COMPLAINT CATEGORIES (5 fixed)
+  id, name (Men's Hostel / Women's Hostel / General / Department /
+  Disciplinary Committee), description, keywords[], default_authority_id.
+
+6.5 COMPLAINTS (Core Table)
+  id (UUID PK), student_roll_no (FK), category_id (FK), original_text,
+  rephrased_text, visibility (Public/Private/Department), upvotes, downvotes,
+  priority_score (float), priority (Low/Medium/High/Critical), status
+  (Raised/In Progress/Resolved/Closed/Spam), assigned_authority_id,
+  assigned_at, original_assigned_authority_id (for tracking escalations),
+  complaint_department_id, is_cross_department, is_marked_as_spam,
+  spam_reason, spam_flagged_by, submitted_at, updated_at, resolved_at.
+
+  IMAGE FIELDS (Binary — stored directly in DB, no file system):
+  image_data (BYTEA), image_filename, image_mimetype, image_size,
+  thumbnail_data (BYTEA), thumbnail_size, image_verified (bool),
+  image_verification_status (Pending/Verified/Rejected/Error).
+
+6.6 VOTES
+  id, complaint_id (FK), student_roll_no (FK), vote_type (Upvote/Downvote),
+  created_at. UNIQUE constraint: one vote per student per complaint.
+
+6.7 STATUS UPDATES (Full Audit Trail)
+  id, complaint_id (FK), updated_by (authority FK), old_status, new_status,
+  reason (required for Spam/Closed transitions), updated_at.
+
+6.8 AUTHORITY UPDATES (Notices/Announcements)
+  id, authority_id (FK), title, content, category (Announcement/Policy
+  Change/Event/Maintenance/Emergency/General), priority (Low/Medium/High/
+  Urgent), visibility (Department/Year/Hostel/Day Scholar/All Students),
+  target_departments[], target_years[], target_stay_types[], target_gender[],
+  is_highlighted, is_pinned, is_active, expires_at.
+
+6.9 IMAGE VERIFICATION LOG
+  id, complaint_id (FK), is_relevant, confidence_score (0–1), rejection_reason,
+  llm_response (JSONB: detected_objects, visible_issues, quality_rating,
+  is_appropriate), verified_at.
+
+6.10 LLM PROCESSING LOG (Audit for all AI calls)
+  id, complaint_id (FK), operation_type (categorization/rephrasing/
+  image_verification/spam_detection), prompt_used, llm_response,
+  tokens_used, processing_time_ms, cost, status (Success/Failed/Timeout),
+  error_message, processed_at.
+
+6.11 NOTIFICATIONS
+  id, recipient_type (Student/Authority), recipient_id, complaint_id (FK),
+  notification_type, message, is_read, created_at, read_at.
+
+6.12 COMMENTS
+  id, complaint_id (FK), author_id, author_type (Student/Authority),
+  comment_text, is_anonymous, created_at, updated_at.
+
+6.13 SPAM BLACKLIST
+  id, student_roll_no (FK), reason, spam_count, is_permanent, blacklisted_by
+  (authority FK), blacklisted_at, expires_at.
+
+6.14 AUTHORITY ROUTING RULES
+  id, category_id (FK), department_id (FK), authority_id (FK),
+  priority_level, is_active. Used to override default routing.
+
+6.15 ADMIN AUDIT LOG
+  id, admin_id (FK), action, target_type, target_id, changes (JSONB),
+  action_at. Full log of every admin action.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+7. AI / LLM FEATURES (GROQ API — LLaMA)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+All AI processing is done through the Groq API (fast LLM inference).
+Primary model: meta-llama/llama-3.1-8b-instant (text)
+Vision model: meta-llama/llama-4-scout-17b-16e-instruct (image)
+
+Every LLM call is logged to LLMProcessingLog with full prompt, response,
+token count, processing time, and cost for auditability.
+
+Retry strategy: Exponential backoff (min 2s, max 30s, max 3 retries).
+Fallback: If LLM unavailable, keyword-based classification is used.
+
+─────────────────────────────────────────────────────────────────────────────
+7.1 COMPLAINT CATEGORIZATION
+─────────────────────────────────────────────────────────────────────────────
+What it does:
+  Automatically assigns the correct category and department to a complaint
+  based purely on what the text says — no manual selection by the student.
+
+Output JSON:
+  {
+    "category": "Men's Hostel" | "Women's Hostel" | "General" |
+                "Department" | "Disciplinary Committee",
+    "target_department": "CSE" | "ECE" | "MECH" | ... (17 options),
+    "priority": "Low" | "Medium" | "High" | "Critical",
+    "reasoning": "Max 40-word explanation",
+    "confidence": 0.0–1.0,
+    "is_against_authority": true|false,
+    "requires_image": true|false
+  }
+
+Categorization Rules (in order of precedence):
+  1. Behavioral misconduct (ragging, violence, cheating, disruption)
+     → "Disciplinary Committee"
+  2. Academic/department facilities (labs, projectors, classrooms, faculty)
+     → "Department" + matching department code
+  3. Hostel facilities (rooms, mess, bathrooms, water, electricity)
+     → Gender-specific hostel based on complaint text or student gender
+  4. Campus-wide (roads, parking, wifi, canteen, library, auditorium)
+     → "General"
+
+Academic Override (post-processing):
+  If LLM returns hostel category BUT text contains academic keywords
+  (lab, classroom, faculty, professor, exam, software, seminar hall, etc.),
+  the category is overridden to "Department" deterministically.
+
+Department Detection (17 departments):
+  CSE→computer science lab / ECE→electronics / MECH→mechanical workshop /
+  CIVIL→surveying / EEE→electrical / IT→IT lab / AIDS→AI, data science /
+  MTECH_CSE→mtech / MBA→management / ENG/PHY/CHEM/MATH→subject names
+
+Priority Assignment:
+  Critical: Safety hazards, fire, violence, medical emergency
+  High:     Major infrastructure failures, large impact, no water/power
+  Medium:   Moderate inconveniences, partial failures
+  Low:      Minor issues, cosmetic problems
+
+─────────────────────────────────────────────────────────────────────────────
+7.2 COMPLAINT REPHRASING
+─────────────────────────────────────────────────────────────────────────────
+What it does:
+  Converts the student's informal, possibly grammatically incorrect, or
+  emotionally charged text into a formal, clear, 1-2 sentence complaint.
+
+Rules enforced by prompt:
+  • Maximum 50 words, 1–2 sentences
+  • Fix grammar and spelling
+  • Remove offensive/emotional language
+  • Preserve the core issue and key details (location, time, severity)
+  • Do NOT invent information not present in original
+
+Special case — Gibberish detection:
+  If the input is random characters, keyboard mashing (e.g. "asdfghjkl"),
+  or meaningless sequences, the LLM returns the sentinel string "GIBBERISH".
+  The system then treats the complaint as spam and rejects it.
+
+Output: Used as rephrased_text in the complaint (shown publicly).
+        Original text (original_text) is preserved for reference.
+
+─────────────────────────────────────────────────────────────────────────────
+7.3 SPAM & ABUSE DETECTION (Two-Layer)
+─────────────────────────────────────────────────────────────────────────────
+Layer 1 — Keyword Check (fast, synchronous):
+  Scans complaint text against a SPAM_KEYWORDS list:
+  ["spam", "test", "testing", "dummy", "fake", "xyz", "abc", "asdf",
+   "qwerty", "junk", "trash", "nonsense", "gibberish", "123"]
+  If matched → immediate spam flag without LLM call.
+
+Layer 2 — LLM Spam Classification (async):
+  Prompt asks LLM to determine if the complaint is spam.
+  Output: { "is_spam": true|false, "confidence": 0–1, "reason": "..." }
+
+IS Spam if:
+  • Random characters / keyboard mashing
+  • No coherent meaning (gibberish)
+  • Abusive or profane language
+  • Joke / prank submission
+  • Personal attack (not a campus issue)
+  • Test / dummy content
+  • Advertisement or promotion
+  • Completely irrelevant content
+
+NOT Spam (valid despite imperfections):
+  • Spelling errors (real but poorly written)
+  • Informal language with frustration ("this is so bad!!")
+  • Short but genuine ("AC broken in lab 3")
+  • Tamil/English code-switching (describes a real issue)
+  • Mentions of authorities in complaint context
+
+Outcome:
+  • Flagged complaints are saved with is_marked_as_spam=true
+  • Student + authority both notified
+  • Authority can manually review and override
+  • Admin can permanently blacklist repeat offenders
+
+─────────────────────────────────────────────────────────────────────────────
+7.4 IMAGE REQUIREMENT DETECTION
+─────────────────────────────────────────────────────────────────────────────
+What it does:
+  Analyzes complaint text to determine if photographic evidence is needed.
+
+REQUIRES IMAGE:
+  Physical damage (broken furniture, cracks, burst pipes, electrical hazards,
+  broken doors, mould, water leaking, stained walls, structural issues)
+
+DOES NOT REQUIRE:
+  Pest sightings (can't photograph on demand), staff absence, schedule
+  violations, service failures, academic issues, harassment, waiting complaints
+
+Default: false — a complaint is never blocked purely due to missing image
+unless the LLM explicitly flags it as requiring one.
+
+─────────────────────────────────────────────────────────────────────────────
+7.5 IMAGE VERIFICATION (Vision API — LLaMA 4 Scout)
+─────────────────────────────────────────────────────────────────────────────
+What it does:
+  When a student uploads an image, the vision LLM checks whether it is:
+  (a) relevant to the complaint text, and (b) not abusive/inappropriate.
+
+Input: Base64 data URI of the image + complaint text
+Output JSON:
+  {
+    "is_relevant": true|false,
+    "confidence": 0.0–1.0,
+    "reason": "Max 100-word explanation",
+    "detected_objects": ["list", "of", "objects"],
+    "visible_issues": ["visible", "problems"],
+    "quality_rating": "Good" | "Fair" | "Poor",
+    "is_appropriate": true|false
+  }
+
+Acceptance logic (lenient policy):
+  ACCEPT if: Related to the complaint topic at all (food photo for food
+  complaint, room photo for room complaint), genuine photograph even if
+  issue is not perfectly visible, loosely related context photo.
+
+  REJECT only if: Completely unrelated (selfie for plumbing complaint),
+  meme/internet image, offensive/inappropriate content, obvious test image.
+
+Markdown stripping:
+  LLMs sometimes wrap JSON in ```json...``` code blocks. The system strips
+  these before parsing so the response always parses correctly.
+
+Status tracking:
+  Pending → (admin moderates) → Verified | Rejected | Error
+
+─────────────────────────────────────────────────────────────────────────────
+7.6 LLM FALLBACK
+─────────────────────────────────────────────────────────────────────────────
+If the Groq API is unavailable:
+  • Categorization falls back to keyword matching against category keyword lists
+  • Spam detection falls back to keyword-only check
+  • Rephrasing is skipped; original text is used as-is
+  • Image verification falls back to "Pending" status (requires manual review)
+  • Complaint submission still succeeds — no complaint is lost due to AI failure
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+8. COMPLAINT LIFECYCLE (End-to-End)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1: SUBMISSION
+  Student fills in:
+    - Complaint description (What happened? Where? When?) — 10–2000 chars
+    - Visibility: Public | Private
+    - Optional: Photo evidence (JPEG/PNG/WebP, max 5MB)
+
+Step 2: SPAM CHECK (Layer 1 — Keyword)
+  Instant check against spam keyword list.
+  If matched → Reject immediately with HTTP 400.
+
+Step 3: LLM SPAM CHECK (Layer 2 — AI)
+  Groq LLM analyzes the text.
+  If spam detected → complaint saved as Spam, student notified.
+
+Step 4: LLM CATEGORIZATION
+  LLM determines:
+    • Category (which department/type)
+    • Target department (which HOD/authority)
+    • Priority (Low / Medium / High / Critical)
+    • Whether an image is required
+    • Whether it's against an authority (special routing)
+    • Whether it's cross-department
+
+Step 5: GIBBERISH / REPHRASING
+  LLM rephrases text into a formal 1-2 sentence complaint.
+  If gibberish detected → complaint rejected.
+
+Step 6: IMAGE PROCESSING (if image uploaded)
+  Pillow re-encodes image to JPEG (quality 85).
+  200×200 thumbnail generated.
+  Both stored as binary in PostgreSQL.
+  LLM vision API checks relevance → sets image_verification_status.
+
+Step 7: AUTHORITY ROUTING
+  System finds the right authority based on category + department:
+    Men's Hostel complaint  → Men's Hostel Warden
+    Women's Hostel complaint → Women's Hostel Warden
+    Department complaint    → HOD of that department
+    General complaint       → Admin Officer
+    Disciplinary complaint  → Disciplinary Committee
+    Complaint against authority → Skip to higher level (Deputy Warden etc.)
+
+Step 8: NOTIFICATION
+  Assigned authority receives a notification: "New complaint assigned to you."
+
+Step 9: STATUS = "Raised"
+  Complaint is live in the system. Student can see it in "My Posts".
+  If Public visibility, appears in Campus Feed for other students to vote on.
+
+Step 10: VOTING (Community)
+  Other students can upvote (supports the issue) or downvote (marks irrelevant).
+  Vote score recalculates priority_score continuously.
+  High vote scores can auto-escalate priority from Medium → High → Critical.
+
+Step 11: AUTHORITY ACTION
+  Authority reviews complaint and:
+    • Updates status: Raised → In Progress
+    • Posts public updates (progress messages)
+    • Escalates if needed (to Deputy Warden / Admin Officer)
+    • Resolves: In Progress → Resolved
+    • Or closes without resolution: → Closed
+
+Step 12: AUTO-ESCALATION (if no action for 7 days)
+  System automatically escalates to next authority in hierarchy.
+  original_assigned_authority_id saved for tracking.
+
+Step 13: RESOLUTION
+  Status → Resolved or Closed.
+  Student notified.
+  resolved_at timestamp recorded.
+
+  STATUS FLOW:
+  Raised → In Progress → Resolved → Closed
+       ↘                         ↗
+         Spam (at any active stage)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9. STUDENT FEATURES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+9.1 REGISTRATION & LOGIN
+  • Register with roll_no, name, email (@srec.ac.in), password, gender,
+    stay_type (Hostel/Day Scholar), year, department.
+  • Login with email or roll_no + password → JWT token (7 days).
+  • Change password with old password verification.
+
+9.2 COMPLAINT SUBMISSION
+  • Rate limited: 3 complaints per 10 minutes.
+  • Textarea with guided placeholder: "What happened? Where? When?"
+  • Quick tips shown: include location, time, add photo.
+  • Visibility selection: Public (seen by all) or Private (only you + authority).
+  • Optional photo upload with drag-zone UI (JPEG/PNG/WebP ≤ 5MB).
+  • AI automatically determines category, department, priority, authority.
+  • Submit button disabled until 10+ characters entered.
+  • Spinner + "Submitting your complaint..." message during processing.
+
+9.3 SUCCESS SCREEN (Post-Submission)
+  After submission, a full-screen success modal shows:
+    • Status (Raised)
+    • Category (AI-assigned)
+    • Priority (Low/Medium/High/Critical badge)
+    • Assigned To (authority name)
+    • Cross-Department routing indicator (if applicable)
+    • AI Rephrased Complaint (formatted version)
+    • Image Verification:
+        - Relevant: Yes/No (color coded)
+        - Status: Verified/Rejected/Pending
+        - Explanation text
+  Buttons: "View My Posts" and "Go to Home"
+
+9.4 MY POSTS
+  • List of all complaints submitted by the student.
+  • Each card shows: category, status, priority, timestamp ("2 hrs ago" format),
+    thumbnail if image attached, authority assigned (owner view only).
+  • "Your post" badge instead of vote buttons (can't vote own complaint).
+
+9.5 CAMPUS FEED (Home Page)
+  • Personalized public feed of all campus complaints.
+  • Gender-based filtering: Male students don't see Women's Hostel complaints;
+    Female students don't see Men's Hostel; Day Scholars see neither.
+  • Search bar + filter by status, priority.
+  • "Load More" pagination (20 per page).
+  • Greeting: "Hey, [First Name] 👋 — See what's being raised on campus, your vote matters"
+
+9.6 COMPLAINT CARDS
+  • Category badge with color (blue=Men's Hostel, pink=Women's Hostel, etc.)
+  • Status dot + label
+  • Priority indicator (Critical=red, High=orange, Medium=amber, Low=gray)
+  • Colored accent bar at top of card
+  • Complaint text (rephrased, 2-line clamp)
+  • Image thumbnail (16×16) if attached
+  • Department code (for public feed)
+  • Time ago: "just now", "5 min ago", "3 hrs ago", "2 days ago"
+  • Hover effect: card lifts + subtle border glow + "Tap to view →" hint
+  • Vote buttons (see Section 10)
+
+9.7 VOTING
+  • Upvote button (👍) — supports the issue
+  • Downvote button (👎) — marks it as irrelevant
+  • Buttons show count, scale up on hover, fill on active
+  • Hint text: "Your vote prioritizes this issue"
+  • Title tooltips: "Upvote to help prioritize" / "Downvote if irrelevant"
+  • Cannot vote on own complaint → friendly popup toast:
+      "😄 That's your own post! You can't vote on a complaint you raised."
+  • Error toast renders via React Portal (createPortal) so it always floats
+    above all cards at the bottom of the screen.
+
+9.8 NOTIFICATIONS
+  • Bell icon in top navigation.
+  • Shows unread count badge.
+  • Types: status_update, complaint_assigned, escalation, spam_alert,
+    comment_added, vote_milestone, complaint_resolved, complaint_closed,
+    authority_update_posted, urgent_update.
+  • Mark single / all as read. Delete notifications.
+
+9.9 NOTICES (Authority Announcements)
+  • Students receive personalized notices based on their profile:
+    - Hostel students: see hostel notices
+    - Day scholars: see day scholar notices
+    - Department: see department-specific notices
+    - Gender-targeted notices (e.g., women's hostel events)
+    - Year-targeted notices (e.g., first year orientation)
+  • Pinned notices appear at top.
+
+9.10 PROFILE MANAGEMENT
+  • View/edit name, gender, stay type, year.
+  • Change password.
+  • View personal stats: total complaints, raised, in progress, resolved,
+    closed, spam count, total votes cast.
+
+9.11 SPAM APPEAL
+  If a complaint is marked as spam, the student can dispute it:
+  POST /complaints/{id}/appeal-spam
+  Admin and the assigned authority are notified for manual review.
+
+9.12 PETITIONS (Student Representatives)
+  • Appointed Student Representatives can create petitions for systemic/large-scale issues.
+  • Scopes: General, Department (only same dept), Hostel (only hostel students).
+  • Requires authority approval to be published.
+  • Dynamic milestones (50, 100, 250 signatures) and custom targets with deadlines (max 15 days).
+  • Authorities are notified when milestones are reached and provide official responses.
+  • All signers are notified when the petition is acknowledged or resolved by the authority.
+
+9.13 WINS (CHANGELOG)
+  • A dedicated feed showcasing successfully resolved, highly upvoted complaints.
+  • Displays the original issue, resolution time, authority resolution note, and satisfaction rating.
+  • Builds trust in the system by highlighting that student voices lead to real action.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+10. VOTING SYSTEM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PURPOSE:
+  Voting lets the student community signal which issues are widespread and
+  urgent. High votes force the system to escalate priority — ensuring popular
+  complaints are never buried.
+
+MECHANICS:
+  • POST /complaints/{id}/vote — body: { "vote_type": "Upvote" | "Downvote" }
+  • DELETE /complaints/{id}/vote — remove vote
+  • GET /complaints/{id}/my-vote — check your current vote
+  • One vote per student per complaint (unique constraint in DB)
+  • Clicking same vote type again removes it (toggle)
+  • Clicking a different type replaces the current vote
+
+SCORE FORMULA:
+  vote_score        = (upvotes × 5) + (downvotes × -3)
+  priority_score    = base_priority_score + (vote_score × 2.0)
+
+  Base scores:
+    Low      → 10.0
+    Medium   → 50.0
+    High     → 100.0
+    Critical → 200.0
+
+AUTO-PRIORITY ESCALATION:
+  If priority_score reaches ≥ 150 (PRIORITY_AUTO_ESCALATE_THRESHOLD),
+  the complaint's priority is automatically upgraded:
+    score ≥ 200 → Critical
+    score ≥ 100 → High
+    score ≥ 50  → Medium
+    score < 50  → Low
+
+EXAMPLE:
+  A "Medium" complaint (base 50) with 20 upvotes and 2 downvotes:
+    vote_score = (20×5) + (2×−3) = 100 − 6 = 94
+    priority_score = 50 + (94 × 2) = 238 → Critical priority
+
+OWN VOTE PROTECTION:
+  Students cannot vote on their own complaints.
+  Backend returns HTTP 403. Frontend shows a friendly toast popup.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+11. AUTHORITY FEATURES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+11.1 DASHBOARD
+  • Stats overview: Total assigned, In Progress, Resolved, Raised, Spam,
+    Closed, Escalated counts.
+  • Detailed analytics: by category, by priority, by status, resolution rate,
+    average resolution time in hours, weekly trend graph.
+
+11.2 COMPLAINT MANAGEMENT
+  • View all complaints assigned to this authority (paginated).
+  • Filter by status, priority.
+  • Update complaint status:
+      Raised → In Progress (authority starts working on it)
+      In Progress → Resolved (issue fixed)
+      Any active → Spam (if complaint is fraudulent)
+      Resolved → Closed (permanently archived)
+      Reason required for: Spam, Closed transitions.
+  • Post public status messages (authority_updates) visible to the student
+    and other permitted viewers.
+  • View full complaint detail including original text, rephrased text,
+    AI analysis, image (if any), status history timeline.
+
+11.3 ESCALATION
+  • Authority can manually escalate a complaint to the next level.
+  • POST /authorities/complaints/{id}/escalate
+  • Input: reason for escalation.
+  • Effect:
+      - original_assigned_authority_id = current authority id (for tracking)
+      - New authority assigned (next in hierarchy)
+      - Both notified
+  • Example: Warden (L5) escalates to Deputy Warden (L10)
+
+11.4 ANNOUNCEMENTS / NOTICES
+  • Create targeted announcements for specific groups of students:
+    - By department: CSE students only
+    - By year: First years only
+    - By hostel: Men's hostel residents only
+    - By stay type: Day scholars only
+    - By gender: Female students only
+    - Or combinations of all the above (NULL = all)
+  • Fields: title, content, category, priority, visibility, expiry date,
+    pin to top, highlight flag.
+  • Edit and soft-delete own announcements.
+
+11.5 PROFILE & LOGIN
+  • Separate login endpoint for authorities (/authorities/login).
+  • JWT-based session same as students.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+12. AUTO-ESCALATION SYSTEM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+THRESHOLD: 7 days (ESCALATION_THRESHOLD_DAYS)
+
+If a complaint remains in "Raised" or "In Progress" status for more than
+7 days without any resolution, it is automatically escalated to the next
+authority in the hierarchy:
+
+ESCALATION CHAINS:
+  Men's Hostel Warden (L5)
+    → Men's Hostel Deputy Warden (L10)
+      → Senior Deputy Warden (L15)
+        → Admin (L100)
+
+  Women's Hostel Warden (L5)
+    → Women's Hostel Deputy Warden (L10)
+      → Senior Deputy Warden (L15)
+        → Admin (L100)
+
+  HOD (L8)
+    → Admin Officer (L50)
+      → Admin (L100)
+
+  Disciplinary Committee (L20)
+    → Admin (L100)
+
+  General / Admin Officer (L50)
+    → Admin (L100)
+
+WHEN ESCALATED:
+  • original_assigned_authority_id = current authority (escalation source)
+  • assigned_authority_id = new (higher) authority
+  • Both receive notifications
+  • Admin can see all escalated complaints in escalation dashboard
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+13. ADMIN FEATURES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Admin = Authority with level 100. Has ALL permissions plus exclusive ones.
+
+13.1 AUTHORITY MANAGEMENT
+  • Create new authority accounts (any type, any level).
+  • List all authorities (active/inactive filter).
+  • Activate/deactivate authority accounts.
+  • Delete authority (only if no assigned complaints).
+
+13.2 STUDENT MANAGEMENT
+  • View all students (filter by department, active status).
+  • Activate/deactivate student accounts.
+
+13.3 SYSTEM-WIDE COMPLAINT MANAGEMENT
+  • View ALL complaints across all categories/departments.
+  • Filter by: status, priority, category, department, keyword search,
+    date range.
+  • Bulk status update: change multiple complaints at once with reason.
+
+13.4 ANALYTICS DASHBOARD
+  Overview stats:
+    • Total complaints (all time), active students, total authorities
+    • Complaints by status (Raised/In Progress/Resolved/Closed/Spam)
+    • Complaints by priority (Low/Medium/High/Critical)
+    • Complaints by category
+    • Image attachment stats, verification stats
+    • Complaints by department
+
+  Time-series analytics (configurable: 1–365 days):
+    • Daily complaint trend
+    • Resolution rate percentage
+    • Average resolution time in hours
+
+13.5 ESCALATION MANAGEMENT
+  Three-section escalation dashboard:
+    • Currently escalated complaints (original authority tracked)
+    • Critical priority complaints (not yet escalated)
+    • Overdue complaints (>7 days, still active)
+
+13.6 IMAGE MODERATION
+  • View all complaints with images pending admin verification.
+  • Manually approve or reject images (with rejection reason).
+  • POST /admin/images/{complaint_id}/moderate?approve=true/false
+
+13.7 SYSTEM HEALTH
+  • Database size, pending complaint counts, old unresolved complaints (>7d),
+    image storage statistics.
+
+13.8 AUDIT LOGS
+  • Every admin action is logged with action type, target, before/after
+    changes (JSONB), timestamp.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+14. VISIBILITY & PRIVACY RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+COMPLAINT VISIBILITY LEVELS:
+  Public    → Visible to all permitted students in the feed + authority
+  Private   → Only the submitting student + assigned authority
+  Department→ Student + students of same department + authority
+
+GENDER-BASED HOSTEL FILTERING (applied in public feed):
+  Men's Hostel complaints:
+    • Hidden from Female students
+    • Hidden from Day Scholars
+    • Visible ONLY to Male Hostel students
+
+  Women's Hostel complaints:
+    • Hidden from Male students
+    • Hidden from Day Scholars
+    • Visible ONLY to Female Hostel students
+
+ANONYMOUS POSTING:
+  • Student identity is hidden from other students.
+  • Complaint appears as "Anonymous" in the feed.
+  • Only the assigned authority can see the student's identity.
+  • Admin can see all student identities.
+
+INTER-DEPARTMENT FILTERING:
+  • Department complaints are only visible to same-department students.
+  • General and Disciplinary Committee complaints are visible to all.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+15. IMAGE STORAGE & HANDLING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DESIGN DECISION: All images stored as binary (BYTEA) directly in PostgreSQL.
+No file system, no S3, no external storage. Fully self-contained.
+
+UPLOAD FLOW:
+  1. Student uploads file (≤5MB, JPEG/PNG/GIF/WebP).
+  2. Pillow library re-encodes to JPEG (quality 85) for consistency.
+  3. 200×200 thumbnail generated and stored separately.
+  4. Both stored as binary columns in the Complaints table.
+  5. LLM Vision API called to verify relevance.
+  6. Admin can later moderate via /admin/images/{id}/moderate.
+
+RETRIEVAL:
+  GET /complaints/{id}/image           → Streams original binary with MIME type
+  GET /complaints/{id}/image?thumbnail=true → Streams thumbnail
+
+LIMITS:
+  Max image size  : 5MB
+  Max dimensions  : 4096×4096
+  JPEG quality    : 85
+  Allowed types   : JPEG, PNG, GIF, WebP
+  Per complaint   : Up to 2 images
+
+VERIFICATION STATUSES:
+  Pending  → Just uploaded, awaiting review
+  Verified → LLM + admin approved
+  Rejected → Irrelevant, offensive, or not matching complaint
+  Error    → Processing failed (stored anyway for manual review)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+16. NOTIFICATION SYSTEM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Notifications are stored in the database and fetched by the client.
+Both students and authorities receive notifications.
+
+NOTIFICATION TYPES:
+  status_update         → Complaint status changed
+  complaint_assigned    → New complaint assigned to authority
+  escalation            → Complaint escalated to higher authority
+  spam_alert            → Complaint flagged as spam
+  spam_appeal           → Student disputed spam classification
+  comment_added         → New comment on complaint
+  vote_milestone        → Complaint reached vote threshold
+  complaint_resolved    → Status changed to Resolved
+  complaint_closed      → Status changed to Closed
+  authority_update_posted → New notice from authority
+  urgent_update         → High-priority announcement
+
+STUDENT NOTIFICATIONS (when):
+  • Their complaint is assigned to an authority
+  • Status of their complaint changes
+  • Their complaint is flagged as spam
+  • Their complaint is escalated
+  • A relevant authority posts an announcement
+
+AUTHORITY NOTIFICATIONS (when):
+  • New complaint assigned to them
+  • A complaint is escalated to them
+  • A student appeals a spam decision
+  • Another authority posts a system-wide update
+
+MANAGEMENT:
+  • Unread count shown as badge on bell icon
+  • Mark single notification as read
+  • Mark all as read
+  • Delete notification
+  • Filter by unread_only
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+17. RATE LIMITING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Implemented as a custom token-bucket rate limiter (Redis-ready):
+
+  Complaint submission : 3 requests per 10 minutes per student (strictest)
+  General API calls   : 100 requests per 60 seconds per IP
+
+Exceeded limit → HTTP 429 "Rate limit exceeded. Please try again later."
+
+Rate limit keys:
+  student:{roll_no}:complaints → per-student complaint rate
+  student:{roll_no}:votes      → per-student vote rate
+  student:{roll_no}:api        → general student API rate
+  authority:{id}:api           → authority API rate
+  global:api                   → global IP-based rate
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+18. SPAM MANAGEMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DETECTION (Two layers — Section 7.3)
+
+BLACKLISTING:
+  • Admin can blacklist repeat spam offenders.
+  • Temporary ban: e.g., 7 days (expires_at auto-calculated).
+  • Permanent ban: is_permanent=true.
+  • Blacklisted students cannot submit new complaints.
+  • Admin can manually remove from blacklist.
+
+APPEAL PROCESS:
+  • Student whose complaint was marked spam can appeal.
+  • POST /complaints/{id}/appeal-spam (with optional reason)
+  • Both Admin and the assigned authority are notified.
+  • Admin reviews and can unflag spam manually.
+
+MANUAL OVERRIDE:
+  • Authority can unflag spam: POST /complaints/{id}/unflag-spam
+  • Status reverts to "Raised".
+
+STATUS TRACKING:
+  • is_marked_as_spam boolean in complaint
+  • spam_reason, spam_flagged_by, spam_flagged_at tracked
+  • SpamBlacklist table for persistent offenders
+  • spam_count field tracks per-student spam incidents
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+19. SLA (SERVICE LEVEL AGREEMENT)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Resolution time targets based on priority:
+  Critical : 6 hours
+  High     : 24 hours (1 day)
+  Medium   : 72 hours (3 days)
+  Low      : 168 hours (7 days)
+
+Complaints exceeding SLA are eligible for auto-escalation.
+Admin sees "overdue" complaints (>7 days unresolved) in escalation dashboard.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+20. SECURITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  • JWT Authentication — 7-day tokens, stored in localStorage
+  • bcrypt password hashing (no plaintext passwords stored)
+  • Role-based access control (student / authority / admin — separate tokens)
+  • CORS configured via FastAPI middleware
+  • Rate limiting prevents abuse and brute force
+  • Email domain validation (@srec.ac.in only for both students and authorities)
+  • Input validation via Pydantic schemas (length, enum, regex)
+  • SQL injection impossible — SQLAlchemy ORM with parameterized queries
+  • No file system access — images stored in DB as binary (no path traversal risk)
+  • Visibility rules enforced server-side (not just frontend)
+  • Ownership checks — students cannot modify other students' complaints
+  • Admin-only endpoints guarded by authority_level == 100 check
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+21. API SUMMARY TABLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+STUDENT APIs (/students/*)
+  POST   /students/register              Register new student
+  POST   /students/login                 Login, get JWT
+  GET    /students/profile               View own profile
+  PUT    /students/profile               Update name/gender/stay_type/year
+  POST   /students/change-password       Change password
+  GET    /students/stats                 Complaint stats summary
+  GET    /students/my-complaints         My complaints (paginated)
+  GET    /students/notifications         My notifications
+  PUT    /students/notifications/{id}/read   Mark notification read
+  PUT    /students/notifications/mark-all-read  Mark all read
+  GET    /students/notifications/unread-count  Unread count
+  DELETE /students/notifications/{id}    Delete notification
+  GET    /students/notices               Personalized authority notices
+
+COMPLAINT APIs (/complaints/*)
+  POST   /complaints/submit              Submit complaint (AI-processed)
+  GET    /complaints/public-feed         Public complaint feed
+  GET    /complaints/filter/advanced     Advanced filtered feed
+  GET    /complaints/{id}                Complaint detail
+  POST   /complaints/{id}/vote           Upvote or downvote
+  DELETE /complaints/{id}/vote           Remove vote
+  GET    /complaints/{id}/my-vote        Check own vote
+  GET    /complaints/{id}/image          Stream complaint image
+  GET    /complaints/{id}/image?thumbnail=true  Stream thumbnail
+  POST   /complaints/{id}/flag-spam      Flag as spam (authority)
+  POST   /complaints/{id}/unflag-spam    Unflag spam (authority)
+  POST   /complaints/{id}/appeal-spam    Student disputes spam
+  GET    /complaints/{id}/status-history Status change timeline
+  GET    /complaints/{id}/timeline       Full complaint timeline
+
+AUTHORITY APIs (/authorities/*)
+  POST   /authorities/login              Authority login
+  GET    /authorities/dashboard          Dashboard stats
+  GET    /authorities/stats/detailed     Detailed analytics
+  GET    /authorities/complaints         Assigned complaints
+  PUT    /authorities/complaints/{id}/status  Update complaint status
+  POST   /authorities/complaints/{id}/update  Post public message
+  POST   /authorities/complaints/{id}/escalate  Escalate complaint
+  POST   /authorities/updates            Create announcement
+  GET    /authorities/updates            My announcements
+  PUT    /authorities/updates/{id}       Edit announcement
+  DELETE /authorities/updates/{id}       Delete announcement
+
+ADMIN APIs (/admin/*)
+  POST   /admin/authorities              Create authority
+  GET    /admin/authorities              List all authorities
+  PUT    /admin/authorities/{id}/toggle-active  Enable/disable authority
+  DELETE /admin/authorities/{id}         Delete authority
+  GET    /admin/students                 List all students
+  PUT    /admin/students/{roll}/toggle-active  Enable/disable student
+  GET    /admin/complaints               System-wide complaints
+  POST   /admin/complaints/bulk-status-update  Bulk status change
+  GET    /admin/stats/overview           System overview stats
+  GET    /admin/stats/analytics          Time-series analytics
+  GET    /admin/escalations              Escalation dashboard
+  GET    /admin/images/pending-verification  Pending image moderation
+  POST   /admin/images/{id}/moderate     Approve/reject image
+  GET    /admin/health/metrics           System health
+
+PUBLIC APIs
+  GET    /health                         Backend health check
+  GET    /departments                    List all departments
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+22. ADVANCED BACKEND ALGORITHMS AND PIPELINES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+22.1 HYBRID DUPLICATE-DETECTION (SEMANTIC + FUZZY)
+  • Purpose: Detect near-duplicate complaints before submission and auto-cluster repeated reports for merging.
+  • Method: Five-signal hybrid similarity with cluster-weight gating:
+    - Word Jaccard (weight 0.30): On normalized tokens.
+    - Topic Jaccard (weight 0.20): On topic-only tokens (location words removed).
+    - Bigram Jaccard (weight 0.10): On token-pairs.
+    - Character n-gram Jaccard (weight 0.15): Trigrams on condensed text.
+    - Fuzzy token match (weight 0.25): Using Levenshtein with length-dependent thresholds.
+    - Cluster gate: Multiplies raw score by 1.3 for same-topic clusters or 0.30 for disjoint clusters.
+  • Thresholds & Policy:
+    - Candidate surfacing threshold = 0.12; likely-duplicate warning ≥ 0.25.
+    - Auto-merge cluster if ≥ 10 members with per-member similarity ≥ 0.22.
+    - Auto-merge uses an LLM to synthesize a canonical summary from up to 15 items; votes are deduplicated (keep most recent vote per student).
+  • Implementation Notes: Synonym/normalization table, stop-word removal, topic clusters, trigram extraction, Levenshtein optimizations. (See code for exact token/synonym lists).
+
+22.2 DETERMINISTIC CATEGORY OVERRIDES & SHORTFORM NORMALIZATION
+  • Purpose: Correct systematic LLM misclassifications, preserve safety and policy constraints.
+  • Techniques:
+    - Pre-LLM Alias/Shortform Normalization: Comprehensive campus alias table; special handling for ambiguous shortforms like `ac`.
+    - Post-LLM Deterministic Overrides: Academic override (promote hostel→Department when lab/academic tokens present), repair/facility override (Department→General for shared repairs), Disciplinary Committee rules (student-on-student only), and hostel→General overrides when non-hostel location tokens appear.
+    - Unethical Check: Regexes pre-block grade manipulation/bribe-like requests.
+  • Rationale: Deterministic, transparent rules to guard LLM routing.
+
+22.3 HYBRID PRIORITY SCORING (MULTI-SIGNAL DETERMINISTIC + LLM)
+  • Purpose: Produce a traceable initial priority from complaint text (anchor for later vote blending).
+  • Signals (Deterministic; max totals shown):
+    - Category baseline (max 30).
+    - Urgency / safety keywords (max 25).
+    - Scope / affected population (max 20).
+    - Recurrence / duration (max 15).
+  • Mapping (Score → Label):
+    - Score ≥ 50 → Critical
+    - 35 ≤ Score < 50 → High
+    - 20 ≤ Score < 35 → Medium
+    - Score < 20 → Low
+  • Optional LLM Contextual Adjustment: LLM may suggest {-10, -5, 0, +5, +10} to fine-tune the deterministic score; final priority computed on adjusted score.
+  • Implementation: Deterministic scorer with regex and keyword groups, plus async LLM adjustment call when configured.
+
+22.4 VOTE-DRIVEN BLENDED PRIORITY (WILSON + ENGAGEMENT)
+  • Purpose: Let community voting influence priority without letting votes fully override anchor assessment.
+  • Core Techniques:
+    - Wilson score lower bound for upvote ratio (95% CI) to get a conservative estimate of the true upvote proportion.
+    - Engagement factor (based on votes / reach) multiplies Wilson score to reward high participation.
+    - Blended priority = initial anchor base score + vote contribution + engagement bonus. Anchor base map: Low=12, Medium=27, High=42, Critical=60.
+  • Equations (as implemented):
+    - Wilson lower bound w for upvotes u, downvotes d:
+      w = (p + (z^2)/(2n) - z*sqrt((p(1-p)+(z^2)/(4n))/n)) / (1+(z^2)/n),  p=u/n, n=u+d
+      (z=1.96 for 95% CI)
+    - vote_rate = (u+d) / max(reach, 1)
+    - engagement_factor = 1 + 2 * vote_rate
+    - adjusted_score ≈ w * 100 * engagement_factor
+    - Cap on vote contribution (±30 points), engagement bonus up to +10 points. Final blended score clamped to [0,100].
+  • Safety Guard: Priority can change by at most one level per vote update.
+  • Vote Filtering: Only votes from students eligible to view the complaint are counted (e.g., men's-hostel votes only from male hostel students).
+
+22.5 SPAM DETECTION & BLACKLISTING
+  • Purpose: Detect and mitigate low-value / malicious submissions.
+  • Techniques:
+    - Pre-LLM heuristics: Short-length rejection, regex detection of "grade manipulation" requests.
+    - Keyword list with Levenshtein-based fuzzy matching: Exact substring for short/multi-word spam keys. Fuzzy match for single-word keywords against each word in text (threshold: 1 for 4-5 letter keys, 2 for ≥6 letters).
+    - Persistent spam blacklist in DB with temporary/permanent bans and expiry logic.
+  • Behavior: Flagged as spam (Spam status) or student blacklisted per policy.
+
+22.6 LLM COMBINED PROCESSING PIPELINE
+  • Purpose: Single LLM call to produce spam check, category, target department, rephrasing, image requirement, and reasoning (improves latency & token usage).
+  • Design:
+    - Pre-LLM regex guard against off-topic/prompt-injection.
+    - Combined prompt returns a single JSON structure.
+    - Deterministic keyword fallback used if LLM is unavailable.
+  • Implementation Notes: Structured prompts, JSON extraction robust to code fences, deterministic post-processing overrides applied to LLM output.
+
+22.7 IMAGE VERIFICATION (VISION LLM + FALLBACK)
+  • Purpose: Automatically verify whether uploaded image evidence is relevant to the complaint.
+  • Method:
+    - Images stored as binary and encoded to data URI for Vision LLM calls.
+    - Vision LLM prompt is lenient (accept-by-default) returning JSON.
+    - Thresholds: Strict rejection only for confidence < ~0.3-0.4 with clear mismatch. Wait for manual check default if fallback.
+  • Context: Verified images strengthen complaints, irrelevant images can convert to Spam.
+
+22.8 AUTHORITY ROUTING AND BYPASS RULES
+  • Purpose: Map categorized complaints to the correct authority and handle complaints about authority figures.
+  • Rules:
+    - Default routing: category → authority type.
+    - Bypass rules: Complaints ABOUT an authority are assigned to the next-level authority to avoid conflict of interest.
+    - Minimum authority levels used to select an authority at or above a level.
+
+22.9 IMAGE-GRACE WORKFLOW, REACH, AND VISIBILITY
+  • Image Grace: When LLM marks an image as required but none provided, complaint is posted with `image_pending` flag and a 24-hour upload deadline. Authority notified if not uploaded.
+  • Reach Calculation: Number of eligible viewers computed from DB used in vote damping and engagement formulas.
+  • Visibility Rules: Disciplinary Committee complaints forced Private.
+
+22.10 IMPLEMENTATION POINTERS & EXACT PARAMETERS
+  • Duplicate Candidate Surfacing: 0.12 threshold (warn ≥ 0.25).
+  • Auto-merge: min cluster size = 10, per-member similarity ≥ 0.22, LLM cap 15 items.
+  • Priority Weights: Deterministic maxima (30, 25, 20, 15). Final thresholds: Critical≥50, High≥35, Medium≥20.
+  • Vote Damping: Wilson z = 1.96. Vote cap ±30 + engagement bonus (up to +10).
+  • Image Verification: Conf < ~0.3 (strict reject).
+  • Fuzzy Spam: Levenshtein limit relies strictly on key length.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+23. FEED SORTING ALGORITHMS (HOT, NEW, TOP)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+To provide a dynamic and engaging campus feed, we implement algorithms for 'Hot', 'New', and 'Top' sorting, allowing users to discover both recent and important grievances efficiently.
+
+23.1 NEW (Chronological)
+  • Formula: Sort completely based on `submitted_at` in descending order.
+  • Purpose: Provides a raw feed of the most recently submitted issues.
+
+23.2 TOP (Net Votes / Pure Popularity)
+  • Formula: Sort by overall engagement score or purely by (`upvotes` - `downvotes`) descending.
+  • Purpose: Shows the most universally agreed-upon issues of all time (or within a specific timeframe like "Top this month"). Highly effective for uncovering systemic, long-lasting campus grievances.
+
+23.3 HOT (Reddit-style Hotness Algorithm)
+  • Formula: Based on the Hacker News or Reddit 'Hot' algorithm, balancing upvotes against time decay.
+  • Example Implementation:
+    Score = log10(max(|u - d|, 1)) + (Sign(u - d) * (t_submitted - t_epoch) / 45000)
+    where t_epoch is a predefined past date (e.g., project inception), and 45000 is a tuning parameter matching gravity or time-decay factor (e.g., higher values = slower decay).
+  • Purpose: Surfaces rapidly gaining complaints (high engagement in a short time) while allowing older highly upvoted complaints to naturally fall off the feed.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+24. PROJECT FOLDER STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+campus-voice-backend/
+  main.py                          FastAPI app entry point, lifespan startup
+  lifespan.py                      Startup/shutdown hooks (DB init)
+  src/
+    api/
+      routes/
+        students.py                Student auth, profile, notifications, notices
+        complaints.py              Complaint CRUD, voting, images, spam
+        authorities.py             Authority dashboard, status, escalation
+        admin.py                   Admin-only management endpoints
+        health.py                  Health check
+      dependencies.py              JWT validation, DB session factory
+    config/
+      settings.py                  Environment variable loading (.env)
+      constants.py                 All fixed values (categories, priorities, etc.)
+    database/
+      models.py                    All SQLAlchemy ORM models (15+ tables)
+      connection.py                Async engine + session factory
+    repositories/
+      base.py                      Generic async CRUD repository
+      complaint_repo.py            Complaint-specific queries
+      student_repo.py              Student queries
+      authority_repo.py            Authority queries
+      authority_update_repo.py     Announcement queries
+      notification_repo.py         Notification queries
+      vote_repo.py                 Vote queries
+    services/
+      complaint_service.py         Full complaint lifecycle logic
+      llm_service.py               Groq API: categorize, rephrase, spam, image req
+      image_verification.py        Groq Vision: image relevance check
+      spam_detection.py            Spam detection, blacklist management
+      authority_service.py         Routing, escalation, workload
+      notification_service.py      Create and manage notifications
+      auth_service.py              JWT creation, password hashing
+      vote_service.py              Vote logic, priority recalculation
+    schemas/
+      complaint.py                 Pydantic schemas for complaints
+      student.py                   Pydantic schemas for students
+      authority.py                 Pydantic schemas for authorities
+      vote.py                      Pydantic schemas for votes
+      notification.py              Pydantic schemas for notifications
+      common.py                    Shared schemas (SuccessResponse, etc.)
+    middleware/
+      auth.py                      JWT middleware
+      cors.py                      CORS configuration
+      rate_limit.py                Token bucket rate limiter
+      error_handler.py             Global exception handler
+      logging.py                   Request logging middleware
+    utils/
+      exceptions.py                Custom exception classes
+      file_upload.py               Image validation and processing helpers
+      helpers.py                   General utility functions
+      jwt_utils.py                 JWT encode/decode helpers
+      validators.py                Input validation helpers
+
+Campus-Voice-SREC-main/
+  frontend/
+    src/
+      features/
+        complaints/
+          pages/
+            StudentHome.jsx        Home feed page
+            Posts.jsx              Complaint submission + my posts
+            ComplaintDetails.jsx   Full complaint view
+          components/
+            ComplaintCard.jsx      Reusable complaint card with voting
+            NewComplaintModal.jsx  Modal for quick complaint
+        authority/
+          pages/
+            AuthorityDashboard.jsx Authority home
+            ComplaintDetail.jsx    Authority's complaint view
+        admin/
+          pages/
+            AdminDashboard.jsx     Admin control panel
+      components/
+        UI.jsx                     Shared UI: Button, Card, Skeleton, etc.
+        Navbars.jsx                Top navigation
+        BottomNav.jsx              Mobile bottom navigation
+      context/
+        AuthContext.jsx            Global auth state (user, token)
+      services/
+        complaint.service.js       Complaint API calls
+        student.service.js         Student profile/notification calls
+        auth.service.js            Login/register calls
+        authority.service.js       Authority API calls
+      utils/
+        api.js                     Fetch wrapper (auth, error handling)
+        constants.js               Frontend constants (categories, statuses)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+25. COMPLETE FEATURE CHECKLIST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CORE COMPLAINT MANAGEMENT
+  [✓] Submit complaint with text (10–2000 chars) and optional image
+  [✓] AI auto-categorization (no manual category selection)
+  [✓] AI complaint rephrasing (formal language conversion)
+  [✓] AI spam & abuse detection (two-layer: keyword + LLM)
+  [✓] AI image requirement detection per complaint type
+  [✓] AI vision image relevance verification
+  [✓] Binary image storage in PostgreSQL (no file system)
+  [✓] 200×200 thumbnail auto-generation
+  [✓] Public / Private / Department visibility
+  [✓] Rate limiting (3 complaints per 10 minutes)
+  [✓] Full status lifecycle: Raised → In Progress → Resolved → Closed
+  [✓] Status change audit trail with reasons
+  [✓] Complaint timeline endpoint
+
+ROUTING & ESCALATION
+  [✓] Smart authority routing by category + department
+  [✓] Gender-aware hostel routing
+  [✓] Anti-authority complaint special routing (bypasses same level)
+  [✓] Cross-department complaint handling
+  [✓] Manual escalation by authority
+  [✓] Automatic escalation after 7 days inactivity
+  [✓] Full escalation chain per category type
+  [✓] original_assigned_authority_id tracking
+
+VOTING
+  [✓] Upvote and downvote by any student (except owner)
+  [✓] Toggle vote (click again to remove)
+  [✓] Switch vote type (replaces existing)
+  [✓] Vote-driven priority score formula
+  [✓] Auto-priority escalation when score ≥ 150
+  [✓] Friendly toast popup when voting on own complaint
+
+PETITIONS & WINS
+  [✓] Representative-only petition creation
+  [✓] Milestone and custom goal tracking for signatures
+  [✓] Authority petition approval workflow
+  [✓] Wins feed celebrating resolved popular issues
+
+NOTIFICATIONS
+  [✓] 10 notification types for students and authorities
+  [✓] Mark single / all notifications as read
+  [✓] Delete notifications
+  [✓] Unread badge count
+  [✓] Targeted authority announcements (by dept/year/gender/stay type)
+
+SPAM MANAGEMENT
+  [✓] Two-layer spam detection
+  [✓] Spam blacklisting (temporary and permanent)
+  [✓] Spam appeal by student
+  [✓] Manual authority unflag spam
+  [✓] Admin bulk spam management
+
+ADMIN
+  [✓] Full authority CRUD
+  [✓] Student activation/deactivation
+  [✓] System-wide complaint view + filter + search
+  [✓] Bulk complaint status update
+  [✓] System analytics (overview + time-series)
+  [✓] Escalation dashboard (escalated + critical + overdue)
+  [✓] Image moderation (approve/reject)
+  [✓] System health metrics
+  [✓] Admin audit log
+
+SECURITY & PERFORMANCE
+  [✓] JWT authentication (7-day tokens)
+  [✓] bcrypt password hashing
+  [✓] Role-based access control (3 roles, 7 authority levels)
+  [✓] CORS middleware
+  [✓] Rate limiting
+  [✓] Domain validation (@srec.ac.in)
+  [✓] Pydantic input validation
+  [✓] Async database queries (non-blocking)
+  [✓] LLM retry with exponential backoff
+  [✓] LLM fallback when API unavailable
+  [✓] Full LLM audit log (prompts, responses, tokens, cost, timing)
+
+UI / UX (Frontend)
+  [✓] Guided complaint form (What? Where? When? placeholder)
+  [✓] Tips callout (location, time, photo reminder)
+  [✓] Live character counter (warns at 1800)
+  [✓] Submit button disabled until valid input
+  [✓] Spinning loader with "Submitting your complaint..." during processing
+  [✓] Full success screen with AI analysis results
+  [✓] Complaint cards with priority bar, category badge, status dot
+  [✓] Hover lift effect + "Tap to view →" hint on cards
+  [✓] Bigger vote buttons with scale animations
+  [✓] "Your vote prioritizes this issue" hint text
+  [✓] Friendly own-vote popup via React Portal
+  [✓] "Tap to view →" hint fades in on hover
+  [✓] Readable timestamps ("2 hrs ago", "3 days ago")
+  [✓] Gender-filtered public feed
+  [✓] Search + filter (status, priority) on campus feed
+  [✓] Personalized notices for students
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+26. USER POV: HOW THE FLOW WORKS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+From a student's perspective, Campus Voice isn't just a form to fill out — it's
+a lively, democratic community platform where issues are surfaced, supported, and
+visibly resolved.
+
+1. DISCOVERY & AWARENESS (The Campus Feed)
+   When a student logs in, they aren't greeted by an empty dashboard, but by the
+   "Campus Feed". Here, they see the current heartbeat of campus life: complaints
+   raised by their peers about broken lab PCs, hostel water shortages, or
+   general campus infrastructure. They can scroll through these issues, seeing
+   what's trending, how severe each is, and which authority is handling them.
+
+2. RAISING A VOICE (Smart Submission)
+   When a student encounters a problem (e.g., "The fan in classroom 304 is making
+   loud noises"), they don't need to write a formal letter or figure out if
+   it goes to the HOD, the Admin Officer, or Maintenance. They just type what
+   they experienced in plain, informal language, snap a photo if needed, and hit
+   submit. Behind the scenes, the AI understands the context, corrects the grammar,
+   labels it "Department", and directs it straight to the relevant HOD. The student
+   is immediately presented with a clean, formal complaint card.
+
+3. BUILDING MOMENTUM (Voting & Petitions)
+   If an issue affects multiple people, the student doesn't suffer alone. Their
+   complaint appears in the public feed, where peers can upvote it. As votes pile
+   up, the background system automatically turns up the heat — moving the issue
+   from "Medium" to "High" to "Critical" priority. 
+   
+   For massive, policy-level changes (like extending library hours), a Student
+   Representative can bypass normal complaints and launch a formal "Petition". Once
+   approved, the whole student body signs it. Hitting milestones automatically rings
+   the alarm for higher authorities, showing undisputed collective demand.
+
+4. TRANSPARENCY & COMMUNICATION (Notifications)
+   Students are never left in the dark. If an authority starts working on their
+   complaint, their phone chimes with a notification. If an authority posts a
+   custom response on a petition or drops an announcement affecting their specific
+   hostel bloc, the student sees it immediately.
+
+5. CELEBRATING SUCCESS (The Wins Feed)
+   When the fan is finally fixed, the HOD marks the complaint as "Resolved".
+   The student gets the good news and leaves a satisfaction rating. The complaint
+   is then proudly displayed in the "Wins" tab alongside the authority's resolution
+   note. Instead of focusing only on broken things, students browse the Wins feed
+   and see a proven track record of the college listening and taking action.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+27. AUTHORITY POV: MANAGING THE CAMPUS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+From an authority's perspective (like a Warden, HOD, or Admin Officer), Campus
+Voice is a tool that brings order to chaos, prioritizing what truly matters and
+cutting out manual triage.
+
+1. NO MORE MISROUTED COMPLAINTS
+   Instead of receiving complaints meant for another department, the system’s AI
+   ensures authorities only see what they are supposed to fix. A Men's Hostel
+   Warden sees issues restricted to their hostel, while an HOD only sees
+   academic or departmental infrastructure issues.
+
+2. CUTTING THROUGH NOISE
+   Authorities don't need to read through hundreds of identical complaints. Spam
+   and gibberish are instantly blocked by the AI. When a legitimate issue is
+   submitted, the authority sees a single, clean dashboard with an AI-rephrased,
+   easy-to-read summary rather than a block of emotional text. 
+
+3. DEMOCRATIC PRIORITIZATION
+   Rather than guessing which broken window to fix first, the authority looks at
+   the priority badges. If an issue is upgraded to "Critical" because hundreds of
+   students upvoted it or signed a Petition, the authority immediately knows it
+   requires urgent attention. 
+
+4. DIRECT & SCALABLE COMMUNICATION
+   Instead of printing notices on public boards, authorities can shoot targeted
+   announcements directly to specific student groups—like "All female hostel
+   students" or "All first-year CSE day scholars." If a major issue is being
+   fixed, they can post a status update on the complaint, instantly notifying
+   everyone who cared about it.
+
+5. ACCOUNTABILITY & ESCALATION
+   Authorities know that if they let a complaint sit for over 7 days, it will
+   auto-escalate to their superior. This creates a transparent chain of
+   accountability, ensuring that issues don't fall through the cracks and are
+   resolved in a timely manner.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+28. ADMIN POV: GOVERNING THE PLATFORM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+From an Administrator's perspective (the absolute highest level of the system), Campus
+Voice is a comprehensive oversight and governance tool. The Admin ensures the entire 
+ecosystem is functioning fairly, smoothly, and securely.
+
+1. BIRD'S-EYE SYSTEM VISIBILITY
+   While Wardens and HODs see only their segmented piece of the pie, the Admin sees
+   everything. The global analytics dashboard highlights bottlenecks — for example, if a
+   particular department is consistently missing its 7-day SLA or if a specific hostel
+   is experiencing a sudden surge in infrastructure complaints.
+
+2. MANAGING THE AUTHORITIES
+   The Admin serves as the gatekeeper. They onboard new authorities, reset passwords,
+   and delegate system roles. If a Warden is on leave, the Admin can quickly adjust
+   the routing or assign a substitute to prevent complaints from stalling.
+
+3. ESCALATION & CRISIS MANAGEMENT
+   When severe issues go ignored for more than 7 days, they land directly on the Admin's
+   escalation dashboard. The Admin can trace the full audit log to see exactly where
+   the delay occurred and hold the original authority accountable, stepping in to close
+   the gap on critical priorities.
+
+4. PLATFORM INTEGRITY & MODERATION
+   The Admin has the ultimate say on spam, abuse, and platform health. They review the
+   system’s automated "Pending Verification" images to maintain community standards.
+   If a student persistently abuses the platform, the Admin can apply temporary or
+   permanent blacklists, preserving the system's reputation and ensuring authorities
+   are only spending time on legitimate grievances.
+
+5. DATA-DRIVEN POLICY MAKING
+   By analyzing long-term trends from the system health and time-series analytics, 
+   the Admin can make overarching policy and budget decisions (e.g., "We had 400 
+   complaints about Wi-Fi in the library this semester; it's time for an infrastructure upgrade").
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+29. CONCLUSION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Campus Voice is a comprehensive, production-grade campus grievance management
+system that leverages modern AI capabilities to remove friction from both ends:
+
+  • Students no longer need to know who to contact — AI routes it correctly.
+  • Students no longer need to worry about formal language — AI rephrases it.
+  • Authorities no longer face a backlog of irrelevant complaints — AI filters spam.
+  • Widespread issues surface automatically via the voting + priority system.
+  • No complaint is ever permanently buried — auto-escalation ensures accountability.
+  • The full audit trail means every decision is traceable and transparent.
+
+By combining a robust FastAPI backend, PostgreSQL data model, React frontend,
+and Groq LLM integration, Campus Voice delivers a scalable, intelligent, and
+student-friendly grievance platform ready for real-world deployment at SREC.
+
+================================================================================
+END OF DOCUMENT
+================================================================================

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#10b981"/>
+  <path d="M256 85 C 106 85 85 160 85 160 V 256 C 85 373 256 453 256 453 C 256 453 427 373 427 256 V 160 C 427 160 406 85 256 85 Z" fill="#ffffff"/>
+  <path d="M256 112 C 133 112 112 176 112 176 V 256 C 112 346 256 416 256 416 C 256 416 400 346 400 256 V 176 C 400 176 379 112 256 112 Z" fill="#10b981"/>
+  <text x="256" y="306" font-family="Arial, sans-serif" font-size="140" font-weight="bold" fill="#ffffff" text-anchor="middle">CV</text>
+  <path d="M256 85 L 85 160 L 427 160 Z" fill="rgba(0,0,0,0.1)"/>
+</svg>

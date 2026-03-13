@@ -1,0 +1,1703 @@
+================================================================================
+  CAMPUSVOICE API REFERENCE
+  Backend: FastAPI (async) | PostgreSQL | Groq LLM | JWT Auth
+  Base URL (local dev):  http://localhost:8000/api
+  Base URL (production): https://campusvoice-api-h528.onrender.com/api
+  Version: Current (425 combined tests, 97.9% pass rate)
+================================================================================
+
+This document is intended for frontend developers integrating with the
+CampusVoice backend. It covers all existing, implemented endpoints only.
+
+Swagger / OpenAPI interactive docs (development only):
+  http://localhost:8000/docs        <- Try endpoints in browser
+  http://localhost:8000/redoc       <- Read-only reference UI
+
+────────────────────────────────────────────────────────────────────────────────
+  CONTENTS
+────────────────────────────────────────────────────────────────────────────────
+  1. Authentication Overview
+  2. Database Architecture (all 15 tables)
+  3. Reference Data (Departments, Categories, Authority Types)
+  4. SECTION A — Student Endpoints
+  5. SECTION B — Complaint Endpoints (Student-facing)
+  6. SECTION C — Authority Endpoints
+  7. SECTION D — Admin Endpoints
+  8. Error Reference
+  9. Common Patterns & Notes for Frontend
+
+================================================================================
+  1. AUTHENTICATION OVERVIEW
+================================================================================
+
+All protected endpoints require a JWT token in the Authorization header.
+
+  Header:  Authorization: Bearer <token>
+
+Tokens are returned on login and registration. Token expiry: 7 days (604800s).
+
+  Token payload (decoded):
+    {
+      "sub": "22CS231",          // roll_no (Student) or str(authority_id) (Authority/Admin)
+      "role": "Student",         // "Student" | "Authority" | "Admin"
+      "exp": 1748000000
+    }
+
+Role mapping:
+  Student     → all /api/students/* and /api/complaints/* routes
+                (except flag-spam/unflag-spam which require Authority token)
+  Authority   → /api/authorities/* routes
+  Admin       → /api/admin/* routes + all Authority routes
+               (Admin is an Authority with authority_type="Admin" and authority_level=100)
+
+Public routes (no token required):
+  POST /api/students/register
+  POST /api/students/login
+  POST /api/authorities/login
+
+================================================================================
+  2. DATABASE ARCHITECTURE
+================================================================================
+
+--- TABLE: departments ---
+  id              INTEGER         PK, auto-increment
+  code            VARCHAR(10)     UNIQUE, NOT NULL (e.g. "CSE", "ECE")
+  name            VARCHAR(255)    NOT NULL (e.g. "Computer Science & Engineering")
+  hod_name        VARCHAR(255)    NULLABLE
+  hod_email       VARCHAR(255)    NULLABLE
+  hod_phone       VARCHAR(20)     NULLABLE
+  total_students  INTEGER         DEFAULT 0
+  is_active       BOOLEAN         DEFAULT TRUE
+  created_at      TIMESTAMPTZ     NOT NULL
+  updated_at      TIMESTAMPTZ     NOT NULL
+
+--- TABLE: complaint_categories ---
+  id                   INTEGER         PK, auto-increment
+  name                 VARCHAR(100)    UNIQUE, NOT NULL
+  description          TEXT            NULLABLE
+  keywords             ARRAY(VARCHAR)  NULLABLE (used by LLM for routing hints)
+  default_authority_id BIGINT          FK -> authorities.id, NULLABLE
+  is_active            BOOLEAN         DEFAULT TRUE
+  created_at           TIMESTAMPTZ     NOT NULL
+
+  Seeded categories (id: name):
+    1: Men's Hostel
+    2: Women's Hostel
+    3: General
+    4: Department
+    5: Disciplinary Committee
+
+--- TABLE: students ---
+  roll_no            VARCHAR(20)    PK (e.g. "22CS231", "23MTECH_CSE001")
+  name               VARCHAR(255)   NOT NULL
+  email              VARCHAR(255)   UNIQUE, NOT NULL  -> must end with @srec.ac.in
+  password_hash      VARCHAR(255)   NOT NULL (bcrypt)
+  gender             VARCHAR(10)    NOT NULL  CHECK: 'Male' | 'Female' | 'Other'
+  stay_type          VARCHAR(20)    NOT NULL  CHECK: 'Hostel' | 'Day Scholar'
+  year               INTEGER        NOT NULL  CHECK: 1-10
+  department_id      INTEGER        FK -> departments.id, NOT NULL
+  is_active          BOOLEAN        DEFAULT TRUE
+  email_verified     BOOLEAN        DEFAULT FALSE
+  verification_token VARCHAR(255)   NULLABLE
+  created_at         TIMESTAMPTZ    NOT NULL
+  updated_at         TIMESTAMPTZ    NOT NULL
+
+  NOTE: Students do NOT have a phone column. Only Authority accounts have phone.
+
+--- TABLE: authorities ---
+  id              BIGINT          PK, auto-increment
+  name            VARCHAR(255)    NOT NULL
+  email           VARCHAR(255)    UNIQUE, NOT NULL  -> must end with @srec.ac.in
+  password_hash   VARCHAR(255)    NOT NULL (bcrypt)
+  phone           VARCHAR(20)     NULLABLE
+  authority_type  VARCHAR(100)    NOT NULL (see authority types below)
+  department_id   INTEGER         FK -> departments.id, NULLABLE (NULL for non-HOD)
+  designation     VARCHAR(255)    NULLABLE
+  authority_level INTEGER         NOT NULL (see hierarchy below)
+  is_active       BOOLEAN         DEFAULT TRUE
+  created_at      TIMESTAMPTZ     NOT NULL
+  updated_at      TIMESTAMPTZ     NOT NULL
+
+--- TABLE: complaints ---
+  id                              UUID            PK, default uuid4()
+  student_roll_no                 VARCHAR(20)     FK -> students.roll_no, NOT NULL
+  category_id                     INTEGER         FK -> complaint_categories.id, NOT NULL
+  original_text                   TEXT            NOT NULL (student's raw text)
+  rephrased_text                  TEXT            NULLABLE (LLM-rephrased, professional)
+  visibility                      VARCHAR(50)     DEFAULT 'Private'
+                                                  CHECK: 'Private' | 'Public'
+  upvotes                         INTEGER         DEFAULT 0
+  downvotes                       INTEGER         DEFAULT 0
+  priority_score                  FLOAT           DEFAULT 0.0
+  priority                        VARCHAR(20)     DEFAULT 'Medium'
+                                                  CHECK: 'Low'|'Medium'|'High'|'Critical'
+  assigned_authority_id           BIGINT          FK -> authorities.id, NULLABLE
+  assigned_at                     TIMESTAMPTZ     NULLABLE
+  original_assigned_authority_id  BIGINT          NULLABLE (stores original before escalation)
+  status                          VARCHAR(50)     DEFAULT 'Raised'
+                                                  CHECK: 'Raised'|'In Progress'|'Resolved'|'Closed'|'Spam'
+  is_marked_as_spam               BOOLEAN         DEFAULT FALSE
+  spam_reason                     TEXT            NULLABLE
+  spam_flagged_by                 BIGINT          FK -> authorities.id, NULLABLE
+  spam_flagged_at                 TIMESTAMPTZ     NULLABLE
+  image_data                      BYTEA           NULLABLE (full image binary)
+  image_filename                  VARCHAR(255)    NULLABLE
+  image_mimetype                  VARCHAR(100)    NULLABLE (e.g. "image/jpeg")
+  image_size                      INTEGER         NULLABLE (bytes)
+  thumbnail_data                  BYTEA           NULLABLE (200x200 thumbnail binary)
+  thumbnail_size                  INTEGER         NULLABLE (bytes)
+  image_verified                  BOOLEAN         DEFAULT FALSE
+  image_verification_status       VARCHAR(50)     NULLABLE
+                                                  CHECK: 'Pending'|'Verified'|'Rejected'|'Error'
+  complaint_department_id         INTEGER         FK -> departments.id, NULLABLE
+  is_cross_department             BOOLEAN         DEFAULT FALSE
+  submitted_at                    TIMESTAMPTZ     NOT NULL
+  updated_at                      TIMESTAMPTZ     NOT NULL
+  resolved_at                     TIMESTAMPTZ     NULLABLE
+
+--- TABLE: authority_updates ---
+  id                  BIGINT          PK, auto-increment
+  authority_id        BIGINT          FK -> authorities.id, NOT NULL
+  title               VARCHAR(255)    NOT NULL
+  content             TEXT            NOT NULL
+  category            VARCHAR(50)     NOT NULL
+                                      CHECK: 'Announcement'|'Policy Change'|'Event'|'Maintenance'|'Emergency'|'General'
+  priority            VARCHAR(20)     NOT NULL  CHECK: 'Low'|'Medium'|'High'|'Urgent'
+  visibility          VARCHAR(50)     NOT NULL
+                                      CHECK: 'Department'|'Year'|'Hostel'|'Day Scholar'|'All Students'
+  target_gender       ARRAY(VARCHAR)  NULLABLE
+  target_departments  ARRAY(VARCHAR)  NULLABLE
+  target_years        ARRAY(VARCHAR)  NULLABLE
+  target_stay_types   ARRAY(VARCHAR)  NULLABLE
+  is_highlighted      BOOLEAN         DEFAULT FALSE
+  is_pinned           BOOLEAN         DEFAULT FALSE
+  is_active           BOOLEAN         DEFAULT TRUE
+  expires_at          TIMESTAMPTZ     NULLABLE
+  created_at          TIMESTAMPTZ     NOT NULL
+  updated_at          TIMESTAMPTZ     NOT NULL
+
+--- TABLE: votes ---
+  id              BIGINT          PK, auto-increment
+  complaint_id    UUID            FK -> complaints.id, NOT NULL
+  student_roll_no VARCHAR(20)     FK -> students.roll_no, NOT NULL
+  vote_type       VARCHAR(10)     NOT NULL  CHECK: 'Upvote' | 'Downvote'
+  created_at      TIMESTAMPTZ     NOT NULL
+  UNIQUE(complaint_id, student_roll_no)   <- one vote per student per complaint
+
+--- TABLE: status_updates ---
+  id              BIGINT          PK, auto-increment
+  complaint_id    UUID            FK -> complaints.id, NOT NULL
+  updated_by      BIGINT          FK -> authorities.id, NULLABLE
+  old_status      VARCHAR(50)     NOT NULL
+  new_status      VARCHAR(50)     NOT NULL
+  reason          TEXT            NULLABLE
+  updated_at      TIMESTAMPTZ     NOT NULL
+
+--- TABLE: authority_routing_rules ---
+  id              INTEGER         PK, auto-increment
+  category_id     INTEGER         FK -> complaint_categories.id, NOT NULL
+  department_id   INTEGER         FK -> departments.id, NULLABLE
+  authority_id    BIGINT          FK -> authorities.id, NOT NULL
+  priority_level  INTEGER         DEFAULT 1
+  is_active       BOOLEAN         DEFAULT TRUE
+  created_at      TIMESTAMPTZ     NOT NULL
+
+--- TABLE: image_verification_logs ---
+  id               BIGINT          PK, auto-increment
+  complaint_id     UUID            FK -> complaints.id, NOT NULL
+  is_relevant      BOOLEAN         NOT NULL
+  confidence_score FLOAT           NULLABLE
+  rejection_reason TEXT            NULLABLE
+  llm_response     JSONB           NULLABLE (full Groq Vision API response)
+  verified_at      TIMESTAMPTZ     NOT NULL
+
+--- TABLE: spam_blacklist ---
+  id              BIGINT          PK, auto-increment
+  student_roll_no VARCHAR(20)     FK -> students.roll_no, NOT NULL
+  reason          TEXT            NOT NULL
+  spam_count      INTEGER         DEFAULT 1
+  is_permanent    BOOLEAN         DEFAULT FALSE
+  blacklisted_by  BIGINT          FK -> authorities.id, NULLABLE
+  blacklisted_at  TIMESTAMPTZ     NOT NULL
+  expires_at      TIMESTAMPTZ     NULLABLE
+
+--- TABLE: llm_processing_logs ---
+  id                 BIGINT          PK, auto-increment
+  complaint_id       UUID            FK -> complaints.id, NOT NULL
+  operation_type     VARCHAR(100)    NOT NULL
+                                     ('categorization'|'rephrasing'|'image_verification'|'spam_detection')
+  prompt_used        TEXT            NULLABLE
+  llm_response       TEXT            NULLABLE
+  tokens_used        INTEGER         NULLABLE
+  processing_time_ms INTEGER         NULLABLE
+  cost               FLOAT           NULLABLE
+  status             VARCHAR(50)     NOT NULL  CHECK: 'Success'|'Failed'|'Timeout'
+  error_message      TEXT            NULLABLE
+  processed_at       TIMESTAMPTZ     NOT NULL
+
+--- TABLE: notifications ---
+  id                BIGINT          PK, auto-increment
+  recipient_type    VARCHAR(50)     NOT NULL  CHECK: 'Student' | 'Authority'
+  recipient_id      VARCHAR(255)    NOT NULL  (roll_no for students, str(id) for authorities)
+  complaint_id      UUID            FK -> complaints.id, NULLABLE
+  notification_type VARCHAR(100)    NOT NULL
+  message           TEXT            NOT NULL
+  is_read           BOOLEAN         DEFAULT FALSE
+  created_at        TIMESTAMPTZ     NOT NULL
+  read_at           TIMESTAMPTZ     NULLABLE
+
+--- TABLE: comments ---
+  id              BIGINT          PK, auto-increment
+  complaint_id    UUID            FK -> complaints.id, NOT NULL
+  author_id       VARCHAR(255)    NOT NULL
+  author_type     VARCHAR(50)     NOT NULL  CHECK: 'Student' | 'Authority'
+  comment_text    TEXT            NOT NULL
+  is_anonymous    BOOLEAN         DEFAULT TRUE
+  created_at      TIMESTAMPTZ     NOT NULL
+  updated_at      TIMESTAMPTZ     NOT NULL
+
+--- TABLE: admin_audit_log ---
+  id              BIGINT          PK, auto-increment
+  admin_id        BIGINT          FK -> authorities.id, NULLABLE
+  action          VARCHAR(255)    NOT NULL
+  target_type     VARCHAR(100)    NULLABLE
+  target_id       VARCHAR(255)    NULLABLE
+  changes         JSONB           NULLABLE
+  action_at       TIMESTAMPTZ     NOT NULL
+
+================================================================================
+  3. REFERENCE DATA
+================================================================================
+
+--- DEPARTMENTS (13 total) ---
+  ID  Code        Name
+  1   CSE         Computer Science & Engineering
+  2   ECE         Electronics & Communication Engineering
+  3   RAA         Robotics and Automation
+  4   MECH        Mechanical Engineering
+  5   EEE         Electrical & Electronics Engineering
+  6   EIE         Electronics & Instrumentation Engineering
+  7   BIO         Biomedical Engineering
+  8   AERO        Aeronautical Engineering
+  9   CIVIL       Civil Engineering
+  10  IT          Information Technology
+  11  MBA         Management Studies
+  12  AIDS        Artificial Intelligence and Data Science
+  13  MTECH_CSE   M.Tech in Computer Science and Engineering
+
+  NOTE: IDs above reflect the seeding order from constants.py.
+        If uncertain, fetch from server at app startup (no public endpoint exists for this;
+        read from the authorities table or hardcode based on the order above).
+
+--- COMPLAINT CATEGORIES (5 total) ---
+  Category                  Routed to default authority
+  Men's Hostel           -> Men's Hostel Warden
+  Women's Hostel         -> Women's Hostel Warden
+  General                -> Admin Officer
+  Department             -> HOD (of relevant department)
+  Disciplinary Committee -> Disciplinary Committee authority
+
+  NOTE: Category is determined entirely by AI. Students do NOT select category.
+
+--- AUTHORITY TYPES & LEVELS ---
+  Authority Type                  Level  Scope
+  Admin                           100    All complaints
+  Admin Officer                   50     General complaints
+  Disciplinary Committee          20     Disciplinary complaints
+  Senior Deputy Warden            15     Both hostels (after escalation)
+  Men's Hostel Deputy Warden      10     Men's Hostel
+  Women's Hostel Deputy Warden    10     Women's Hostel
+  HOD                             8      Department-specific complaints
+  Men's Hostel Warden             5      Men's Hostel (initial assignment)
+  Women's Hostel Warden           5      Women's Hostel (initial assignment)
+
+--- ESCALATION CHAIN ---
+  Men's Hostel Warden       -> Men's Hostel Deputy Warden -> Senior Deputy Warden -> Admin
+  Women's Hostel Warden     -> Women's Hostel Deputy Warden -> Senior Deputy Warden -> Admin
+  HOD                       -> Admin
+  Admin Officer             -> Admin
+  Disciplinary Committee    -> Admin
+
+--- STATUS WORKFLOW ---
+  Raised      -> In Progress, Spam, Closed
+  In Progress -> Resolved, Raised, Closed
+  Resolved    -> Closed, Raised
+  Closed      -> (no transitions — terminal state)
+  Spam        -> Closed
+
+  Rules:
+  - Changing to "Closed": reason field is REQUIRED
+  - Changing to "Spam": reason field is REQUIRED
+
+--- PRIORITY SYSTEM (vote-driven) ---
+  Priority   Score threshold
+  Low        < 50
+  Medium     50 - 99
+  High       100 - 199
+  Critical   >= 200
+
+  Priority recalculates automatically after each vote.
+
+--- EMAIL DOMAIN ---
+  All students and authorities must use @srec.ac.in addresses.
+  Any other domain is rejected with HTTP 400 or 422.
+
+================================================================================
+  SECTION A — STUDENT ENDPOINTS
+  Prefix: /api/students
+  Auth: None for register/login; Bearer token (role=Student) for all others
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A1. Register Student
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/students/register
+  Auth: None (public)
+  Content-Type: application/json
+
+  Request body:
+    roll_no       string   REQUIRED  5-20 chars, alphanumeric (e.g. "22CS231")
+    name          string   REQUIRED  2-255 chars, no digits
+    email         string   REQUIRED  Must end with @srec.ac.in
+    password      string   REQUIRED  Min 8 chars + uppercase + lowercase + digit
+    gender        string   REQUIRED  "Male" | "Female" | "Other"
+    stay_type     string   REQUIRED  "Hostel" | "Day Scholar"
+    department_id integer  REQUIRED  1-13 (must exist in DB)
+    year          integer  REQUIRED  1-10 (1-4 undergrad, 5+ postgrad)
+                                     IMPORTANT: Although the Pydantic schema marks this
+                                     as optional, omitting it causes a 500 error because
+                                     the database column is NOT NULL. Always provide year.
+
+  Response 201:
+    roll_no         string
+    name            string
+    email           string
+    gender          string
+    stay_type       string
+    year            integer
+    department_id   integer | null
+    department_name string | null
+    token           string    JWT token
+    token_type      string    "Bearer"
+    expires_in      integer   604800 (7 days in seconds)
+
+  Errors:
+    400  Email already registered
+    400  Roll number already registered
+    400  Department with id X does not exist
+    422  Validation error (bad email domain, weak password, etc.)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A2. Student Login
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/students/login
+  Auth: None (public)
+  Content-Type: application/json
+
+  Request body:
+    email_or_roll_no  string  Email address OR roll number
+    password          string  Account password
+
+  Response 200:  (same shape as register response — includes JWT token)
+    roll_no, name, email, gender, stay_type, year, department_id,
+    department_name, token, token_type, expires_in
+
+  NOTE: department_code is NOT in the login/register response.
+        Call GET /api/students/profile (A3) after login to get department_code.
+
+  Errors:
+    401  Invalid email or password
+    403  Account is inactive
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A3. Get Student Profile
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/students/profile
+  Auth: Student token
+
+  Response 200:
+    roll_no          string
+    name             string
+    email            string
+    gender           string
+    stay_type        string
+    department_id    integer
+    department_name  string | null
+    department_code  string | null   (e.g. "CSE")
+    year             integer | null
+    is_active        boolean
+    email_verified   boolean
+    created_at       string    ISO 8601 datetime
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A4. Update Student Profile
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PUT /api/students/profile
+  Auth: Student token
+  Content-Type: application/json
+
+  Request body (all optional; send only fields you want to update):
+    name   string   2-255 chars, no digits
+    email  string   Must still be @srec.ac.in
+    year   integer  1-10
+
+  NOTE: Phone cannot be updated for students (no phone column in students table).
+        Only Authority accounts have a phone field.
+
+  Response 200:  StudentProfile (same as GET /profile)
+
+  Errors:
+    400  No fields to update
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A5. Change Password
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/students/change-password
+  Auth: Student token
+  Content-Type: application/json
+
+  Request body:
+    old_password      string  REQUIRED  Current password (min 8 chars)
+    new_password      string  REQUIRED  New password (min 8 chars + uppercase + lowercase + digit)
+    confirm_password  string  REQUIRED  Must exactly match new_password
+
+  Response 200:
+    success  boolean  true
+    message  string   "Password changed successfully"
+
+  Errors:
+    400  Incorrect old password
+    422  Passwords do not match | Password too weak
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A6. Get Student Statistics
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/students/stats
+  Auth: Student token
+
+  Response 200:
+    total_complaints   integer
+    raised             integer
+    in_progress        integer
+    resolved           integer
+    closed             integer
+    spam               integer
+    total_votes_cast   integer
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A7. Get My Complaints
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/students/my-complaints
+  Auth: Student token
+
+  Query params:
+    skip           integer  default: 0   Pagination offset
+    limit          integer  default: 20  Max 100
+    status_filter  string   optional     "Raised"|"In Progress"|"Resolved"|"Closed"|"Spam"
+
+  Response 200:
+    complaints   array    List of ComplaintResponse objects (see Section B for structure)
+    total        integer  Total matching complaints
+    page         integer  Current page number
+    page_size    integer
+    total_pages  integer
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A8. Get Notifications
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/students/notifications
+  Auth: Student token
+
+  Query params:
+    skip         integer  default: 0
+    limit        integer  default: 20, max: 100
+    unread_only  boolean  default: false  Show only unread
+
+  Response 200:
+    notifications   array    List of notification objects
+    total           integer  Total count
+    unread_count    integer  Total unread (across all pages)
+
+  Notification object fields:
+    id                integer
+    recipient_type    string   "Student"
+    recipient_id      string   student's roll_no
+    complaint_id      string | null   UUID string
+    notification_type string   e.g. "status_update", "complaint_assigned", "escalation",
+                               "complaint_escalated", "complaint_update"
+    message           string
+    is_read           boolean
+    created_at        string   ISO 8601 datetime
+    read_at           string | null
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A9. Mark Notification as Read
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PUT /api/students/notifications/{notification_id}/read
+  Auth: Student token
+
+  Path param:
+    notification_id  integer
+
+  Response 200:
+    success  boolean  true
+    message  string
+
+  Errors:
+    403  Notification belongs to another user
+    404  Notification not found
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A10. Mark All Notifications as Read
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PUT /api/students/notifications/mark-all-read
+  Auth: Student token
+
+  Response 200:
+    success  boolean  true
+    message  string   "Marked N notifications as read"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A11. Get Unread Notification Count
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/students/notifications/unread-count
+  Auth: Student token
+
+  Response 200:
+    unread_count  integer
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A12. Delete Notification
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  DELETE /api/students/notifications/{notification_id}
+  Auth: Student token
+
+  Response 200:
+    success  boolean  true
+    message  string   "Notification deleted successfully"
+
+  Errors:
+    403  Notification belongs to another user
+    404  Notification not found
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A13. Get Notice Feed
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/students/notices
+  Auth: Student token
+
+  Returns active, non-expired notices targeted to the logged-in student.
+  Targeting is automatic: only notices whose audience matches the student's
+  gender, stay_type, department, and year are returned.
+  A null/empty target dimension = visible to ALL students on that dimension.
+
+  Query params:
+    skip   integer  default: 0
+    limit  integer  default: 20, max: 100
+
+  Response 200:
+    notices      array    List of notice objects
+    total        integer
+    page         integer
+    page_size    integer
+    total_pages  integer
+
+  Notice object fields:
+    id                integer
+    authority_id      integer
+    authority_name    string | null    Name of the authority who posted
+    authority_type    string | null    e.g. "Men's Hostel Warden"
+    title             string
+    content           string
+    category          string   "Announcement"|"Policy Change"|"Event"|"Maintenance"|"Emergency"|"General"
+    priority          string   "Low"|"Medium"|"High"|"Urgent"
+    target_gender     array | null     e.g. ["Male"] or null (all genders)
+    target_stay_types array | null     e.g. ["Hostel"] or null (all stay types)
+    target_departments array | null    e.g. ["CSE","ECE"] or null (all departments)
+    target_years      array | null     e.g. ["1","2"] or null (all years)
+    is_active         boolean
+    created_at        string   ISO 8601
+    expires_at        string | null
+
+  Errors:
+    401  Missing/invalid token
+
+================================================================================
+  SECTION B — COMPLAINT ENDPOINTS (Student-facing)
+  Prefix: /api/complaints
+  Auth: Student token for most; Authority token for flag-spam / unflag-spam
+================================================================================
+
+--- COMPLAINT OBJECT (ComplaintResponse) ---
+  id                          string    UUID
+  category_id                 integer   1-5
+  category_name               string | null
+  original_text               string    Student's original wording
+  rephrased_text              string | null   LLM-rephrased professional version
+  visibility                  string    "Public" | "Private"
+  upvotes                     integer
+  downvotes                   integer
+  priority                    string    "Low" | "Medium" | "High" | "Critical"
+  priority_score              float
+  status                      string    "Raised"|"In Progress"|"Resolved"|"Closed"|"Spam"
+  assigned_authority_name     string | null   Name of currently assigned authority
+  is_marked_as_spam           boolean
+  has_image                   boolean
+  image_verified              boolean
+  image_verification_status   string | null   "Pending" | "Verified" | "Rejected"
+  submitted_at                string    ISO 8601
+  updated_at                  string    ISO 8601
+  resolved_at                 string | null
+  student_roll_no             string | null   (anonymized in authority context)
+  student_name                string | null   (anonymized in authority context)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B1. Submit Complaint  [RATE LIMITED: 5/day per student]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/complaints/submit
+  Auth: Student token
+  Content-Type: multipart/form-data   <- ALWAYS required (even without image)
+  Rate limit: 5 per day per student
+
+  Form fields:
+    original_text  string   REQUIRED  10-2000 chars (complaint text)
+    visibility     string   optional  "Public" | "Private"  (default: "Public")
+    image          file     optional  JPEG/PNG/GIF/WebP, max 5MB
+                                      IMPORTANT: field name is exactly "image"
+
+  What the backend does automatically:
+    1. Spam / abusive content detection via LLM -> rejected if detected (HTTP 400)
+    2. Category determination via LLM (Men's Hostel / Women's Hostel / General / Department / Disciplinary)
+    3. Department identification from context
+    4. Routing to correct authority
+    5. Text rephrasing to professional language
+    6. Priority assignment based on complaint severity
+    7. Image verification via Groq Vision API (if image provided)
+    8. Stay-type validation: Day Scholars blocked from hostel categories
+    9. Gender validation: Male students blocked from Women's Hostel (and vice versa)
+
+  Response 201:
+    id                          string    UUID of created complaint
+    status                      string    "Submitted"  <- submission-only label; when you
+                                                          fetch the complaint via B3, its
+                                                          stored status will be "Raised"
+    message                     string    Human-readable confirmation
+    rephrased_text              string | null
+    priority                    string    "Low"|"Medium"|"High"|"Critical"
+    assigned_authority          string | null   Name of assigned authority
+    category                    string | null   AI-determined category
+    target_department_id        integer | null  AI-determined department
+    target_department_code      string | null   e.g. "CSE"
+    cross_department            boolean   True if complaint targets different dept than student's
+    llm_failed                  boolean   True if AI analysis failed and fallback was used
+    confidence_score            float | null   AI confidence score 0.0-1.0
+    has_image                   boolean
+    image_verified              boolean
+    image_verification_status   string | null
+    image_verification_message  string | null
+    image_was_required          boolean   Whether LLM decided an image was required
+    image_requirement_reasoning string | null   LLM's explanation
+
+  Errors:
+    400  Complaint detected as spam/abusive:
+         { "success": false, "error": "...", "reason": "...", "is_spam": true }
+    400  Image required but not provided:
+         { "success": false, "error": "Image required", "reason": "...", "image_required": true }
+    400  Invalid visibility value
+    400  Day scholars cannot submit hostel complaints
+    400  Gender mismatch for hostel category
+    429  Rate limit exceeded (> 5 complaints today)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B2. Get Public Complaint Feed
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/complaints/public-feed
+  Auth: Student token
+
+  Query params:
+    skip   integer  default: 0
+    limit  integer  default: 20, max: 100
+
+  Automatic visibility filtering (based on logged-in student's profile):
+    - Only Public complaints returned (Private complaints excluded)
+    - Closed complaints excluded
+    - Day Scholar students: Men's Hostel + Women's Hostel complaints hidden
+    - Male hostel students: Women's Hostel complaints hidden
+    - Female hostel students: Men's Hostel complaints hidden
+    - Department complaints: only shown to students of matching department
+    - General and Disciplinary Committee: visible to all students
+
+  Response 200:
+    complaints   array    List of ComplaintResponse
+    total        integer
+    page         integer
+    page_size    integer
+    total_pages  integer
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B3. Get Complaint Details
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/complaints/{complaint_id}
+  Auth: Student token
+
+  Path param:
+    complaint_id  string   UUID
+
+  Access rules: visible if student is owner OR complaint is Public (passes feed filters)
+
+  Response 200 (ComplaintDetailResponse extends ComplaintResponse):
+    All ComplaintResponse fields, plus:
+    student_department       string | null   (department_id as string)
+    student_gender           string | null
+    student_stay_type        string | null
+    student_year             integer | null
+    complaint_department_id  integer | null
+    is_cross_department      boolean
+    status_updates           array | null    Status change history (sorted oldest first)
+    comments_count           integer
+    vote_count               integer         upvotes - downvotes
+    image_filename           string | null
+    image_size               integer | null  (bytes)
+    image_mimetype           string | null
+
+  Each status_update item:
+    old_status   string
+    new_status   string
+    reason       string | null
+    updated_by   integer | null   authority ID
+    updated_at   string   ISO 8601
+
+  Errors:
+    403  Access denied (not owner and complaint not visible)
+    404  Complaint not found
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B4. Vote on Complaint
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/complaints/{complaint_id}/vote
+  Auth: Student token
+  Content-Type: application/json
+
+  Request body:
+    vote_type  string  REQUIRED  "Upvote" | "Downvote"
+
+  Response 200:
+    complaint_id    string   UUID
+    upvotes         integer
+    downvotes       integer
+    priority_score  float
+    priority        string   Updated priority after this vote
+    user_vote       string   The vote type just cast
+
+  Errors:
+    400  Already voted on this complaint
+    400  Complaint not found or not accessible
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B5. Remove Vote
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  DELETE /api/complaints/{complaint_id}/vote
+  Auth: Student token
+
+  Response 200:
+    success  boolean  true
+    message  string   "Vote removed successfully"
+
+  Errors:
+    400  No vote to remove
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B6. Get My Vote Status
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/complaints/{complaint_id}/my-vote
+  Auth: Student token
+
+  Response 200:
+    complaint_id  string   UUID
+    has_voted     boolean
+    vote_type     string | null   "Upvote" | "Downvote" | null (if not voted)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B7. Upload Image for Existing Complaint
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/complaints/{complaint_id}/upload-image
+  Auth: Student token  (must own the complaint)
+  Content-Type: multipart/form-data
+
+  IMPORTANT: Field name here is "file" (different from submission which uses "image")
+
+  Field:
+    file  file  REQUIRED  JPEG/PNG/GIF/WebP, max 5MB
+
+  Response 200 (ImageUploadResponse):
+    complaint_id          string   UUID
+    has_image             boolean
+    image_verified        boolean
+    verification_status   string   "Pending" | "Verified" | "Rejected"
+    verification_message  string
+    image_filename        string | null
+    image_size            integer | null  (bytes)
+    image_mimetype        string | null
+    confidence_score      float | null  (0.0-1.0)
+
+  Errors:
+    400  Invalid file type (not JPEG/PNG/GIF/WebP)
+    400  File size exceeds 5MB limit
+    403  Not the complaint owner
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B8. Get Complaint Image
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/complaints/{complaint_id}/image
+  Auth: Student token
+
+  Query params:
+    thumbnail  boolean  default: false  Return 200x200 thumbnail instead of full image
+
+  IMPORTANT: Returns raw binary image data, NOT JSON.
+    Content-Type will be "image/jpeg" or "image/png" (matching original)
+    Content-Disposition: inline; filename="original_name.jpg"
+
+  To display in browser: use fetch() to get blob, then URL.createObjectURL(blob)
+  (Cannot use as direct <img src> without token handling in a proxy)
+
+  Errors:
+    404  No image attached to complaint
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B9. Trigger Image Verification (Manual)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/complaints/{complaint_id}/verify-image
+  Auth: Student token  (must own the complaint)
+
+  Triggers Groq Vision API verification of the attached image.
+  Images attached during complaint submission are verified automatically.
+  Use this only for images uploaded separately via B7.
+
+  Response 200:  ImageUploadResponse (same structure as B7)
+
+  Errors:
+    400  No image attached
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B10. Get Status History
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/complaints/{complaint_id}/status-history
+  Auth: Student token
+
+  Response 200:
+    complaint_id    string   UUID
+    current_status  string
+    status_updates  array    Chronologically sorted
+      old_status   string
+      new_status   string
+      reason       string | null
+      updated_by   string   Authority name or "System"
+      updated_at   string   ISO 8601
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B11. Get Complaint Timeline
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/complaints/{complaint_id}/timeline
+  Auth: Student token
+
+  Response 200:
+    complaint_id  string   UUID
+    timeline      array    Chronological list of events
+      event        string   e.g. "Complaint Submitted", "Status Changed", "Complaint Resolved"
+      timestamp    string   ISO 8601
+      description  string
+      reason       string | null
+      updated_by   string | null   Authority name
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B12. Flag Complaint as Spam   [Authority only]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/complaints/{complaint_id}/flag-spam
+  Auth: Authority token  (NOT student token)
+  Content-Type: NOT JSON — reason passed as query param
+
+  Query params:
+    reason  string  REQUIRED. Reason for flagging.
+
+  Response 200:
+    success  boolean  true
+    message  string   "Complaint flagged as spam"
+
+  Errors:
+    404  Complaint not found
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B13. Remove Spam Flag   [Authority only]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/complaints/{complaint_id}/unflag-spam
+  Auth: Authority token
+
+  Response 200:
+    success  boolean  true
+    message  string   "Spam flag removed"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B14. Advanced Complaint Filter
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/complaints/filter/advanced
+  Auth: Student token
+
+  Query params:
+    skip          integer  default: 0
+    limit         integer  default: 20, max: 100
+    status        string   optional  "Raised"|"In Progress"|"Resolved"|"Closed"|"Spam"
+    priority      string   optional  "Low"|"Medium"|"High"|"Critical"
+    category_id   integer  optional  1-5
+    department_id integer  optional  Filter by complaint department (1-13)
+    date_from     string   optional  Start date filter "YYYY-MM-DD"
+    date_to       string   optional  End date filter "YYYY-MM-DD"
+    has_image     boolean  optional  true/false
+    is_verified   boolean  optional  true/false (image verification status)
+
+  Applies same hostel visibility rules as public-feed.
+  Only Public complaints included (same as B2 — Private complaints excluded).
+
+  Response 200:  ComplaintListResponse (same as public-feed)
+
+================================================================================
+  SECTION C — AUTHORITY ENDPOINTS
+  Prefix: /api/authorities
+  Auth: None for login; Bearer token (role=Authority or Admin) for all others
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C1. Authority Login
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/authorities/login
+  Auth: None (public)
+  Content-Type: application/json
+
+  Request body:
+    email     string  REQUIRED  Authority email (@srec.ac.in)
+    password  string  REQUIRED  Account password
+
+  Response 200:
+    id              integer
+    name            string
+    email           string
+    authority_type  string
+    department_id   integer | null
+    token           string   JWT token
+    token_type      string   "Bearer"
+    expires_in      integer  604800
+
+  NOTE: Admin accounts (authority_type="Admin") use this same endpoint.
+        JWT role = "Admin" for Admin accounts, "Authority" for all others.
+        department_code is NOT in this login response. Call GET /api/authorities/profile
+        (C2) after login if you need the department code (e.g. for HOD accounts).
+
+  Errors:
+    401  Invalid email or password
+    403  Account is inactive
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C2. Get Authority Profile
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/authorities/profile
+  Auth: Authority token
+
+  Response 200:
+    id               integer
+    name             string
+    email            string
+    phone            string | null
+    authority_type   string
+    department_id    integer | null
+    department_name  string | null
+    designation      string | null
+    authority_level  integer
+    is_active        boolean
+    created_at       string   ISO 8601
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C3. Get Authority Dashboard
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/authorities/dashboard
+  Auth: Authority token
+
+  Response 200:
+    profile                object    AuthorityProfile (same as C2)
+    stats                  object    (see stats fields below)
+    recent_complaints      array     Last 10 assigned complaints (ComplaintResponse)
+    urgent_complaints      array     Top 10 High/Critical active complaints (ComplaintResponse)
+    unread_notifications   integer
+
+  stats object:
+    total_assigned              integer
+    pending                     integer   (status = "Raised")
+    in_progress                 integer
+    resolved                    integer
+    closed                      integer
+    spam_flagged                integer
+    avg_resolution_time_hours   null      (NOT IMPLEMENTED — always null)
+    performance_rating          null      (NOT IMPLEMENTED — always null)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C4. Get Assigned Complaints
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/authorities/my-complaints
+  Auth: Authority token
+
+  Query params:
+    skip           integer  default: 0
+    limit          integer  default: 20, max: 100
+    status_filter  string   optional
+
+  Partial anonymity:
+    - student_roll_no and student_name are NULL for non-spam complaints
+    - student identity shown only for spam complaints (helps identify repeat offenders)
+    - Admin sees all student info regardless
+
+  Response 200:  ComplaintListResponse
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C5. Get Specific Complaint (Authority View)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/authorities/complaints/{complaint_id}
+  Auth: Authority token
+
+  Returns full complaint detail. Student info anonymized per same rules as C4.
+
+  Errors:
+    403  Complaint not assigned to this authority
+    404  Complaint not found
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C6. Update Complaint Status
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PUT /api/authorities/complaints/{complaint_id}/status
+  Auth: Authority token  (must be assigned to this complaint)
+  Content-Type: application/json
+
+  Request body:
+    status  string   REQUIRED  New status (must be valid transition from current)
+    reason  string   REQUIRED if status is "Closed" or "Spam"; optional otherwise
+
+  Valid transitions:
+    Raised      -> In Progress, Spam, Closed
+    In Progress -> Resolved, Raised, Closed
+    Resolved    -> Closed, Raised
+    Closed      -> (none)
+    Spam        -> Closed
+
+  Side effect: automatically creates a notification for the student.
+
+  Response 200:
+    success  boolean  true
+    message  string   "Complaint status updated to 'X'"
+
+  Errors:
+    400  Invalid status transition (e.g. In Progress -> Spam not allowed)
+    422  Reason required for Closed or Spam transitions
+    403  Not assigned to this complaint
+    404  Complaint not found
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C7. Post Public Update on Complaint
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/authorities/complaints/{complaint_id}/post-update
+  Auth: Authority token  (must be assigned to complaint)
+  Content-Type: NOT JSON — uses query params
+
+  Query params:
+    title    string  REQUIRED  Update title
+    content  string  REQUIRED  Update body/message
+
+  Adds a progress note without changing the complaint status.
+  Notifies the student.
+
+  Response 200:
+    success  boolean  true
+    message  string   "Update posted successfully"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C8. Escalate Complaint
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/authorities/complaints/{complaint_id}/escalate
+  Auth: Authority token  (must be assigned to complaint)
+  Content-Type: NOT JSON — reason passed as query param
+
+  Query params:
+    reason  string  REQUIRED  Reason for escalation
+
+  Finds next authority in chain and reassigns complaint.
+  Creates notification for student and new authority.
+
+  Response 200:
+    success  boolean  true
+    message  string   "Complaint escalated to [authority name]"
+
+  Errors:
+    400  No higher authority available (already at Admin)
+    403  Not assigned to this complaint
+    404  Complaint or authority not found
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C9. Get Escalation History
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/authorities/complaints/{complaint_id}/escalation-history
+  Auth: Authority token  (must be assigned to complaint)
+
+  Response 200:
+    complaint_id      string   UUID
+    escalation_count  integer
+    history           array    (chronological)
+      level            integer   Authority level number
+      authority_name   string
+      authority_type   string
+      assigned_at      string | null   ISO 8601 (original assignment)
+      escalated_at     string | null   ISO 8601 (when escalation happened)
+      reason           string | null
+      is_current       boolean
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C10. Get Authority Statistics
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/authorities/stats
+  Auth: Authority token
+
+  Response 200:
+    total_assigned              integer
+    pending                     integer
+    in_progress                 integer
+    resolved                    integer
+    closed                      integer
+    spam_flagged                integer
+    avg_resolution_time_hours   null      (NOT IMPLEMENTED — always null)
+    performance_rating          null      (NOT IMPLEMENTED — always null)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C11. Create Notice / Broadcast
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/authorities/notices
+  Auth: Authority token
+  Content-Type: application/json
+
+  Authorities can broadcast notices to targeted groups of students.
+  Scope is AUTOMATICALLY ENFORCED based on authority type — you cannot
+  target students outside your jurisdiction.
+
+  Scope enforcement rules:
+    Men's Hostel Warden / Deputy   -> target_gender locked to ["Male"],
+                                      target_stay_types locked to ["Hostel"]
+    Women's Hostel Warden / Deputy -> target_gender locked to ["Female"],
+                                      target_stay_types locked to ["Hostel"]
+    Senior Deputy Warden           -> target_stay_types locked to ["Hostel"]
+    HOD                            -> target_departments locked to their own dept
+    Admin / Admin Officer / DC     -> no restrictions (can target anyone)
+
+  Request body:
+    title              string    REQUIRED  5-255 chars
+    content            string    REQUIRED  10-5000 chars
+    category           string    optional  "Announcement"|"Policy Change"|"Event"|
+                                           "Maintenance"|"Emergency"|"General"
+                                           (default: "Announcement")
+    priority           string    optional  "Low"|"Medium"|"High"|"Urgent"
+                                           (default: "Medium")
+    target_gender      array     optional  ["Male"]|["Female"]|["Male","Female"]|null
+                                           (null = all genders)
+    target_stay_types  array     optional  ["Hostel"]|["Day Scholar"]|
+                                           ["Hostel","Day Scholar"]|null
+    target_departments array     optional  ["CSE","ECE",...]|null (dept codes)
+    target_years       array     optional  ["1","2","3","4"]|null
+    expires_at         string    optional  ISO 8601 datetime for auto-expiry
+
+  Response 200/201:
+    success            boolean   true
+    message            string    "Notice sent successfully"
+    id                 integer   Created notice ID
+    target_gender      array | null
+    target_stay_types  array | null
+    target_departments array | null
+    target_years       array | null
+    visibility         string    Human-readable scope (e.g. "Hostel", "All Students")
+
+  Errors:
+    400  title/content too short or too long
+    403  Attempted to target students outside your authority scope
+         (e.g. Men's Hostel Warden targeting Female students)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C12. Get My Notices
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/authorities/my-notices
+  Auth: Authority token
+
+  Returns notices created by the logged-in authority.
+
+  Query params:
+    skip        integer  default: 0
+    limit       integer  default: 20, max: 100
+    active_only boolean  default: true   Only return active (non-deactivated) notices
+
+  Response 200:
+    notices     array    List of notice objects (same shape as A13 notice object)
+    total       integer
+    page        integer
+    page_size   integer
+    total_pages integer
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+C13. Deactivate Notice
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  DELETE /api/authorities/notices/{notice_id}
+  Auth: Authority token
+
+  Soft-deletes (deactivates) a notice so it no longer appears in the student feed.
+  Only the notice creator or an Admin can deactivate a notice.
+
+  Path param:
+    notice_id  integer
+
+  Response 200:
+    success  boolean  true
+    message  string   "Notice deactivated"
+
+  Errors:
+    403  Not the notice creator (and not an Admin)
+    404  Notice not found
+
+================================================================================
+  SECTION D — ADMIN ENDPOINTS
+  Prefix: /api/admin
+  Auth: Admin token (authority_type="Admin", authority_level=100)
+================================================================================
+
+  Admin accounts log in using POST /api/authorities/login (Section C1).
+  The JWT will have role="Admin" for Admin accounts.
+
+  Default admin credentials (seeded on first run):
+    Email:     admin@srec.ac.in
+    Password:  Admin@123456
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D1. Create Authority Account
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/admin/authorities
+  Auth: Admin token
+  Content-Type: application/json
+
+  Request body:
+    name            string   REQUIRED
+    email           string   REQUIRED  Must end with @srec.ac.in
+    password        string   REQUIRED
+    authority_type  string   REQUIRED  One of: Admin, Admin Officer, Men's Hostel Warden,
+                                       Women's Hostel Warden, Men's Hostel Deputy Warden,
+                                       Women's Hostel Deputy Warden, Senior Deputy Warden,
+                                       HOD, Disciplinary Committee
+    authority_level integer  REQUIRED  Numeric level (see Section 3)
+    department_id   integer  optional  Required for HOD types
+    phone           string   optional
+    designation     string   optional
+
+  Response 201:
+    success  boolean  true
+    message  string   "Authority created successfully"
+
+  Errors:
+    400  Authority email must be a valid @srec.ac.in address
+    409  Email already registered
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D2. List All Authorities
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/admin/authorities
+  Auth: Admin token
+
+  Query params:
+    skip       integer  default: 0
+    limit      integer  default: 50, max: 100
+    is_active  boolean  optional  true/false
+
+  Response 200:
+    authorities  array    List of AuthorityProfile objects
+    total        integer
+
+  AuthorityProfile fields:
+    id, name, email, phone, authority_type, department_id, department_name,
+    designation, authority_level, is_active, created_at
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D3. Toggle Authority Active Status
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PUT /api/admin/authorities/{authority_id}/toggle-active
+  Auth: Admin token
+
+  Path param:
+    authority_id  integer
+
+  Query params:
+    activate  boolean  REQUIRED  true to activate, false to deactivate
+
+  Response 200:
+    success  boolean  true
+    message  string
+
+  Errors:
+    400  Cannot modify your own account status
+    404  Authority not found
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D4. Delete Authority Account
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  DELETE /api/admin/authorities/{authority_id}
+  Auth: Admin token
+
+  Response 200:
+    success  boolean  true
+    message  string   "Authority deleted successfully"
+
+  Errors:
+    400  Cannot delete your own account
+    400  Cannot delete authority with N assigned complaints
+    404  Authority not found
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D5. List All Students
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/admin/students
+  Auth: Admin token
+
+  Query params:
+    skip          integer  default: 0
+    limit         integer  default: 50, max: 100
+    is_active     boolean  optional
+    department_id integer  optional
+
+  Response 200:
+    students  array    List of StudentProfile objects (see A3 for fields)
+    total     integer
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D6. Toggle Student Active Status
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PUT /api/admin/students/{roll_no}/toggle-active
+  Auth: Admin token
+
+  Path param:
+    roll_no  string  Student roll number
+
+  Query params:
+    activate  boolean  REQUIRED
+
+  Response 200:
+    success  boolean  true
+    message  string
+
+  Errors:
+    404  Student not found
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D7. Get System Overview Statistics
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/admin/stats/overview
+  Auth: Admin token
+
+  Response 200:
+    total_students          integer
+    total_authorities       integer
+    total_complaints        integer
+    recent_complaints_7d    integer   Complaints in last 7 days
+    complaints_by_status    object    {"Raised": N, "In Progress": N, ...}
+    complaints_by_priority  object    {"Low": N, "Medium": N, "High": N, "Critical": N}
+    complaints_by_category  object    {"Men's Hostel": N, "General": N, ...}
+    image_statistics        object    Image storage breakdown
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D8. Get Advanced Analytics
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/admin/stats/analytics
+  Auth: Admin token
+
+  Query params:
+    days  integer  default: 30, min: 1, max: 365  Analysis period
+
+  Response 200:
+    period_days               integer
+    total_complaints          integer
+    resolved_complaints       integer
+    resolution_rate_percent   float    percentage
+    avg_resolution_time_hours float    (calculated from actual resolved complaints)
+    daily_complaints          array
+      date   string   "YYYY-MM-DD"
+      count  integer
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D9. Bulk Update Complaint Status
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/admin/complaints/bulk-status-update
+  Auth: Admin token
+  Content-Type: NOT JSON — all params as query params
+
+  Query params:
+    complaint_ids  string[]  REQUIRED  Repeat for each UUID:
+                                       ?complaint_ids=uuid1&complaint_ids=uuid2
+    new_status     string    REQUIRED  "Raised"|"In Progress"|"Resolved"|"Closed"|"Spam"
+    reason         string    REQUIRED  Reason for bulk update
+
+  Response 200:
+    success  boolean  true
+    message  string   "N complaints updated to 'status'"
+
+  Errors:
+    400  Invalid status
+    400  Invalid UUID format in complaint_ids
+    404  No complaints found with provided IDs
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D10. Get Images Pending Verification
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/admin/images/pending-verification
+  Auth: Admin token
+
+  Query params:
+    skip   integer  default: 0
+    limit  integer  default: 20, max: 100
+
+  Response 200:
+    total          integer
+    pending_images array
+      complaint_id    string   UUID
+      student_roll_no string
+      category        string | null
+      complaint_text  string   First 100 chars
+      image_filename  string | null
+      image_size_kb   integer
+      submitted_at    string   ISO 8601
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D11. Moderate Complaint Image
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  POST /api/admin/images/{complaint_id}/moderate
+  Auth: Admin token
+
+  Path param:
+    complaint_id  string   UUID string
+
+  Query params:
+    approve  boolean  REQUIRED  true to approve, false to reject
+    reason   string   optional  Required when approve=false
+
+  Response 200:
+    success  boolean  true
+    message  string   "Image approved" or "Image rejected: [reason]"
+
+  Errors:
+    400  Invalid complaint ID format
+    400  No image attached to complaint
+    400  Reason required for rejection
+    404  Complaint not found
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D12. Get System Health Metrics
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  GET /api/admin/health/metrics
+  Auth: Admin token
+
+  Response 200:
+    database_size_mb     float | null  PostgreSQL database size in MB
+    pending_complaints   integer       Complaints currently in "Raised" status
+    old_unresolved_7d    integer       Active complaints older than 7 days
+    image_statistics     object
+    timestamp            string        ISO 8601
+
+================================================================================
+  8. ERROR REFERENCE
+================================================================================
+
+HTTP status codes used:
+
+  200  OK             Request succeeded
+  201  Created        Resource created
+  400  Bad Request    Invalid input, business rule violation
+  401  Unauthorized   Missing/invalid token, or wrong credentials on login
+  403  Forbidden      Valid token but not authorized for this action/resource
+  404  Not Found      Resource does not exist
+  409  Conflict       Duplicate (email already registered)
+  422  Unprocessable  Pydantic validation failure (wrong types, missing required fields)
+  429  Too Many Reqs  Rate limit exceeded (complaint submission: 5/day per student)
+  500  Server Error   Unhandled server-side error
+
+Standard error response (all 4xx and 5xx):
+  {
+    "success": false,
+    "error": "Human-readable error message",
+    "error_code": "HTTP_400",      // HTTP_400, HTTP_401, HTTP_403, HTTP_404, etc.
+    "request_id": "uuid-string"    // For tracing; ignore in frontend logic
+  }
+
+Pydantic validation error (422):
+  {
+    "success": false,
+    "error": "Validation error",
+    "error_code": "VALIDATION_ERROR",
+    "details": {
+      "validation_errors": [
+        {
+          "field": "field_name",
+          "message": "Description of validation failure",
+          "type": "value_error"
+        }
+      ]
+    },
+    "request_id": "uuid-string"
+  }
+
+Spam rejection (400):
+  {
+    "success": false,
+    "error": "Complaint marked as spam/abusive",
+    "reason": "...",
+    "is_spam": true
+  }
+
+Image required (400):
+  {
+    "success": false,
+    "error": "Image required for this complaint",
+    "reason": "...",
+    "image_required": true
+  }
+
+================================================================================
+  9. COMMON PATTERNS & NOTES FOR FRONTEND DEVELOPERS
+================================================================================
+
+--- AUTHENTICATION FLOW ---
+
+1. Call login/register -> save token from response.token
+2. Include header on all protected requests:
+     Authorization: Bearer <your_token_here>
+3. Token lasts 7 days. On 401 response, redirect to login screen.
+4. No refresh token mechanism — user must re-login after expiry.
+
+--- HOW TO DETECT ADMIN vs AUTHORITY ---
+
+Both use POST /api/authorities/login. Differentiate via JWT payload:
+  role = "Admin"     -> Admin account (access to /api/admin/* endpoints)
+  role = "Authority" -> Regular authority
+
+You can also call GET /api/authorities/profile after login:
+  authority_type = "Admin" -> admin account
+
+--- SUBMITTING A COMPLAINT (IMPORTANT) ---
+
+The endpoint uses multipart/form-data — always, even without an image.
+Never send as application/json.
+
+  JavaScript fetch example:
+    const form = new FormData();
+    form.append("original_text", "The AC in room 302 is broken.");
+    form.append("visibility", "Public");
+    if (imageFile) {
+      form.append("image", imageFile);   // field name MUST be "image"
+    }
+    fetch("/api/complaints/submit", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + token },
+      body: form
+      // Do NOT manually set Content-Type here — browser adds multipart boundary
+    });
+
+--- UPLOADING IMAGE FOR EXISTING COMPLAINT ---
+
+After a complaint is created, upload image separately:
+  Field name: "file"   (NOT "image" — different from submission)
+  Endpoint: POST /api/complaints/{id}/upload-image
+
+--- DISPLAYING COMPLAINT IMAGES ---
+
+Images are stored in PostgreSQL as binary, served via:
+  GET /api/complaints/{id}/image
+
+This returns raw binary (not JSON). Handle as blob:
+
+  const res = await fetch(`/api/complaints/${id}/image`, {
+    headers: { "Authorization": "Bearer " + token }
+  });
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  // <img src={url} />
+
+  For thumbnail (200x200):
+  GET /api/complaints/{id}/image?thumbnail=true
+
+--- AUTHORITY ENDPOINTS THAT USE QUERY PARAMS (NOT JSON BODY) ---
+
+These three endpoints send parameters as URL query params, not JSON:
+
+  C7: POST /api/authorities/complaints/{id}/post-update
+      ?title=Update+title&content=Message+here
+
+  C8: POST /api/authorities/complaints/{id}/escalate
+      ?reason=Unresolved+after+48+hours
+
+  B12: POST /api/complaints/{id}/flag-spam
+       ?reason=Abusive+content
+
+  D9: POST /api/admin/complaints/bulk-status-update
+      ?complaint_ids=uuid1&complaint_ids=uuid2&new_status=Closed&reason=Old
+
+--- PAGINATION PATTERN ---
+
+  List responses use a resource-specific key (NOT "items"):
+    Complaints list:   { "complaints": [...], "total": 100, "page": 1, "page_size": 20, "total_pages": 5 }
+    Students list:     { "students": [...],   "total": 100 }
+    Authorities list:  { "authorities": [...], "total": 100 }
+    Notifications:     { "notifications": [...], "total": 100, "unread_count": 3 }
+
+  To get page N with size P:  skip = (N-1) * P, limit = P
+
+--- DO NOT LET STUDENTS SELECT CATEGORY ---
+
+Category is determined entirely by the AI backend.
+Do not show a category selector in the student complaint submission form.
+The assigned category is returned in the submission response.
+
+--- BASE URLS ---
+
+  Development:  http://localhost:8000/api
+  Production:   https://campusvoice-api-h528.onrender.com/api
+
+  Tip: Store the base URL in an environment variable/config so you can switch
+  between local and production without changing code.
+
+  Swagger UI (dev only): http://localhost:8000/docs
+  ReDoc UI  (dev only):  http://localhost:8000/redoc
+
+--- RATE LIMITING ---
+
+Only complaint submission is rate-limited:
+  POST /api/complaints/submit -> 5 requests per day per student
+  Limit hit: HTTP 429
+
+All other endpoints (votes, notifications, profile updates, etc.) are unlimited.
+
+--- FIELDS TO HIDE IN UI ---
+
+These fields always return null — do not show them:
+  AuthorityStats.avg_resolution_time_hours  (always null)
+  AuthorityStats.performance_rating         (always null)
+
+Student identity in authority context:
+  For non-spam complaints: student_roll_no and student_name are null (intentional)
+  For spam complaints: student identity is visible to authority
+
+--- VALID STATUS TRANSITIONS TO SHOW IN AUTHORITY UI ---
+
+Only offer valid next-status options based on current status:
+  Current: Raised      -> offer: "In Progress", "Spam" (needs reason), "Close" (needs reason)
+  Current: In Progress -> offer: "Resolved", "Reopen (Raised)", "Close" (needs reason)
+  Current: Resolved    -> offer: "Close" (needs reason), "Reopen (Raised)"
+  Current: Closed      -> no actions (terminal)
+  Current: Spam        -> offer: "Close" (needs reason)
+
+================================================================================
+  END OF API REFERENCE
+================================================================================

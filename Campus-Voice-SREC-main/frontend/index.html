@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#14532D" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <title>Campus Voice – SREC</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+
+<body class="bg-gray-50 h-full">
+  <div id="root" class="h-full">
+    <!-- Fallback Splash Screen (Visible until React loads) -->
+    <div style="
+        position: fixed;
+        inset: 0;
+        background-color: #ffffff;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+      ">
+      <div style="width: 120px; height: 120px; animation: pulse 2s infinite;">
+        <img src="/cv-logo.svg" alt="Campus Voice Logo" style="width: 100%; height: 100%;" />
+      </div>
+      <div style="margin-top: 24px; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+        <div style="
+            width: 32px;
+            height: 32px;
+            border: 3px solid #f3f4f6;
+            border-top-color: #14532D;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+          "></div>
+        <p style="
+            margin-top: 16px;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            color: #8A9B8A;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+          ">Powered by SREC</p>
+      </div>
+    </div>
+    <style>
+      @keyframes pulse {
+
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+
+        50% {
+          opacity: 0.8;
+          transform: scale(0.95);
+        }
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </div>
+  <script type="module" src="/src/index.jsx"></script>
+</body>
+
+</html>

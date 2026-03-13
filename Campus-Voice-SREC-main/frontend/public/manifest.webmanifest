@@ -1,0 +1,81 @@
+{
+  "id": "/",
+  "name": "CampusVoice SREC",
+  "short_name": "CampusVoice",
+  "description": "Campus grievance management for SREC students — raise, track, and resolve complaints.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#ffffff",
+  "theme_color": "#415d43",
+  "orientation": "portrait-primary",
+  "lang": "en",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Raise Complaint",
+      "short_name": "Raise",
+      "description": "Submit a new complaint",
+      "url": "/posts",
+      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Complaints",
+      "short_name": "My Posts",
+      "description": "View your complaints",
+      "url": "/my-complaints",
+      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Notices",
+      "short_name": "Notices",
+      "description": "View authority notices",
+      "url": "/notices",
+      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Notifications",
+      "short_name": "Alerts",
+      "description": "View your notifications",
+      "url": "/notifications",
+      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
+    }
+  ],
+  "share_target": {
+    "action": "/posts",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "prefer_related_applications": false
+}

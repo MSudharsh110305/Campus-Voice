@@ -1,0 +1,204 @@
+TASK: Redesign the onboarding pages to look modern, premium, and visually engaging while keeping the SREC theme.
+Do NOT remove the existing routing or functionality — only improve UI/UX.
+
+FILES:
+
+* src/features/auth/pages/Onboarding.jsx
+* src/components (create reusable onboarding components if needed)
+
+THEME COLORS (must be used consistently):
+Primary Green: #14532D / #166534 / #22C55E
+Gold Accent: #D4AF37 / #FACC15
+Background: #F8FAF8
+Card: #FFFFFF
+Text: #111827 / #6B7280
+
+---
+
+1️⃣ CREATE A PROPER ONBOARDING STRUCTURE
+
+Convert onboarding into a **3-slide product walkthrough**.
+
+Slide 1 — "Raise Issues Easily"
+Description:
+Report campus problems quickly with a clear complaint form.
+
+Slide 2 — "AI Smart Routing"
+Description:
+Your complaint is automatically analyzed and sent to the correct authority.
+
+Slide 3 — "Track & Resolve"
+Description:
+Track complaint status and get updates when action is taken.
+
+Each slide should contain:
+• Illustration/icon
+• Title
+• Description
+• Progress indicators
+• Next / Skip buttons
+
+---
+
+2️⃣ ADD A CENTERED PREMIUM CARD LAYOUT
+
+Use this layout:
+
+Full page background:
+bg-[#F8FAF8]
+
+Centered card:
+
+width: max-w-3xl
+rounded-2xl
+shadow-lg
+bg-white
+padding: p-10
+
+Add subtle border:
+border border-[#E5E7EB]
+
+---
+
+3️⃣ ADD LARGE ICON ILLUSTRATIONS
+
+Use lucide-react icons.
+
+Example:
+
+Slide 1 icon:
+AlertCircle or MessageSquare
+
+Slide 2 icon:
+Sparkles or Brain
+
+Slide 3 icon:
+CheckCircle2
+
+Style:
+
+w-20 h-20
+text-[#14532D]
+bg-green-50
+rounded-full
+p-4
+
+---
+
+4️⃣ ADD SMOOTH ANIMATION
+
+Use Framer Motion.
+
+Install if missing:
+npm install framer-motion
+
+Animate slide entry:
+
+initial: opacity 0, y 20
+animate: opacity 1, y 0
+transition: duration 0.4
+
+This makes slides feel smooth and professional.
+
+---
+
+5️⃣ ADD STEP PROGRESS INDICATOR
+
+At bottom of card:
+
+● ○ ○
+● ● ○
+● ● ●
+
+Use small circles.
+
+Active color:
+bg-[#14532D]
+
+Inactive:
+bg-gray-300
+
+---
+
+6️⃣ IMPROVE BUTTON DESIGN
+
+Buttons must match SREC theme.
+
+Next button:
+
+bg-[#14532D]
+hover:bg-[#166534]
+text-white
+rounded-xl
+px-6 py-2
+
+Skip button:
+
+text-gray-500
+hover:text-[#14532D]
+
+---
+
+7️⃣ ADD A HEADER
+
+Top of card:
+
+CampusVoice logo text
+
+CampusVoice
+Smart Campus Complaint System
+
+Use:
+
+font-bold text-xl
+text-[#14532D]
+
+---
+
+8️⃣ ADD ILLUSTRATION BACKDROP
+
+Behind icon add subtle glow:
+
+absolute
+bg-green-100
+blur-3xl
+opacity-40
+
+This creates a modern feel.
+
+---
+
+9️⃣ FINAL SLIDE CTA
+
+Final slide button text:
+
+"Get Started"
+
+Redirect to:
+
+/login
+
+---
+
+🔟 DO NOT BREAK EXISTING FLOW
+
+Maintain:
+
+Signup → Onboarding → Login
+
+Do not change routes.
+
+---
+
+EXPECTED RESULT
+
+Onboarding should look like a **modern SaaS product intro screen** with:
+
+• centered card layout
+• animated slides
+• large icons
+• smooth transitions
+• step indicators
+• premium button styles
+
+Users should feel the app is polished and professional.

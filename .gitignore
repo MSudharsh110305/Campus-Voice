@@ -1,0 +1,66 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+firebase-key.json
+*-key.json
+*.credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+nul
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Alembic
+alembic/versions/__pycache__/
+
+# Claude Code & Prompts
+prompts/
+.claude/
+
+# Test files & outputs
+test_render.py
+test_output.txt
+TEST_SUMMARY.md
+
+# Documentation (keep only API_REFERENCE.txt)
+BACKEND_OVERVIEW.txt
+
+# Project meta & AI tooling
+CLAUDE.md
+MANUAL_TESTING_GUIDE.txt
+credentials.txt

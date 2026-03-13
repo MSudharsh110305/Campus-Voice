@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- Soft Gradient Background simulated with solid for SVG simplicity -->
+  
+  <!-- Shield Icon -->
+  <path d="M100 20 C 50 20 40 50 40 50 V 90 C 40 140 100 180 100 180 C 100 180 160 140 160 90 V 50 C 160 50 150 20 100 20 Z" fill="#10b981"/>
+  
+  <!-- Inner White Shield -->
+  <path d="M100 30 C 60 30 52 55 52 55 V 90 C 52 130 100 165 100 165 C 100 165 148 130 148 90 V 55 C 148 55 140 30 100 30 Z" fill="#ffffff"/>
+
+  <!-- CV Text -->
+  <text x="100" y="115" font-family="Arial, sans-serif" font-size="60" font-weight="bold" fill="#10b981" text-anchor="middle">CV</text>
+  
+  <!-- Gold Accent -->
+  <circle cx="100" cy="150" r="4" fill="#d97706" />
+</svg>
