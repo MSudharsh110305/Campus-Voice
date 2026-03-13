@@ -566,6 +566,17 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                 except Exception as me:
                     logger.debug(f"Migration note (image grace period): {me}")
 
+            # Location verification column
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE complaints ADD COLUMN IF NOT EXISTS "
+                        "location_verified BOOLEAN NOT NULL DEFAULT FALSE"
+                    ))
+                    logger.info("✅ Migration: complaint location_verified column ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (location_verified): {me}")
+
             # Notice multi-file attachments table
             async with engine.begin() as conn:
                 try:
