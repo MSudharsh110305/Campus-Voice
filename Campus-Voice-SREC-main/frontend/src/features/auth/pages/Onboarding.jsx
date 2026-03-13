@@ -1,18 +1,23 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { MessageSquare, Sparkles, CheckCircle2 } from 'lucide-react';
 
 const slides = [
   {
-    title: 'Report campus issues easily & anonymously.',
-    icon: '📝',
+    title: 'Raise Issues Easily',
+    description: 'Report campus problems quickly with a clear complaint form.',
+    icon: MessageSquare,
   },
   {
-    title: 'Track progress transparently with real-time updates.',
-    icon: '📈',
+    title: 'AI Smart Routing',
+    description: 'Your complaint is automatically analyzed and sent to the correct authority.',
+    icon: Sparkles,
   },
   {
-    title: 'Your voice matters – make SREC better.',
-    icon: '🎓',
+    title: 'Track & Resolve',
+    description: 'Track complaint status and get updates when action is taken.',
+    icon: CheckCircle2,
   },
 ];
 
@@ -31,46 +36,82 @@ export default function Onboarding() {
     }
   };
 
+  const skip = () => {
+    localStorage.setItem('onboarded', 'true');
+    localStorage.removeItem('cv_last_tab');
+    navigate('/login');
+  };
+
   return (
-    <div className="min-h-screen bg-srec-background flex items-center justify-center px-4">
-      <div className="w-full max-w-[380px]">
-        <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-srec-primary tracking-tight">CampusVoice</h1>
+    <div className="min-h-screen bg-[#F8FAF8] flex items-center justify-center px-4 py-8">
+      <div className="w-full max-w-3xl rounded-2xl shadow-lg bg-white p-10 border border-[#E5E7EB] flex flex-col items-center">
+        
+        {/* Header */}
+        <div className="text-center w-full mb-12">
+          <h1 className="font-bold text-xl text-[#14532D]">CampusVoice</h1>
+          <p className="text-sm text-gray-500 font-medium">Smart Campus Complaint System</p>
         </div>
 
-        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-10 text-center">
-          <div className="transition-all duration-500 ease-in-out py-6">
-            <div className="text-6xl mb-6 select-none drop-shadow-sm">{slides[idx].icon}</div>
-            <h2 className="text-xl font-bold text-gray-900 leading-snug">{slides[idx].title}</h2>
-          </div>
+        {/* Slider Content */}
+        <div className="w-full flex-grow flex flex-col items-center justify-center min-h-[300px]">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={idx}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.4 }}
+              className="flex flex-col items-center text-center max-w-md w-full"
+            >
+              <div className="relative mb-8 flex justify-center items-center">
+                {/* Illustration Backdrop */}
+                <div className="absolute w-32 h-32 bg-green-100 blur-3xl opacity-40 rounded-full" />
+                
+                {/* Icon */}
+                <div className="w-20 h-20 text-[#14532D] bg-green-50 rounded-full p-4 relative z-10 flex items-center justify-center">
+                  {React.createElement(slides[idx].icon, { className: 'w-full h-full stroke-[1.5]' })}
+                </div>
+              </div>
 
-          {/* Dots */}
-          <div className="flex items-center justify-center gap-2 mb-8">
-            {slides.map((_, i) => (
-              <span
-                key={i}
-                className={`h-2 rounded-full transition-all duration-300 ${
-                  i === idx ? 'w-6 bg-srec-primary' : 'w-2 bg-gray-200'
-                }`}
-              />
-            ))}
-          </div>
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#111827] mb-3">
+                {slides[idx].title}
+              </h2>
+              <p className="text-[#6B7280] text-base sm:text-lg">
+                {slides[idx].description}
+              </p>
+            </motion.div>
+          </AnimatePresence>
+        </div>
 
+        {/* Step Progress Indicator */}
+        <div className="flex items-center justify-center gap-2 mt-10 mb-8 w-full">
+          {slides.map((_, i) => (
+            <span
+              key={i}
+              className={`h-2.5 rounded-full transition-all duration-300 ${
+                i === idx ? 'w-8 bg-[#14532D]' : 'w-2.5 bg-gray-300'
+              }`}
+            />
+          ))}
+        </div>
+
+        {/* Actions */}
+        <div className="w-full flex flex-col items-center gap-4 max-w-xs">
           <button
             onClick={next}
-            aria-label={isLast ? 'Get Started' : 'Next slide'}
-            className="w-full py-3.5 bg-srec-primary text-white font-semibold rounded-xl hover:bg-srec-primaryHover transition-all duration-200 shadow-sm text-base"
+            className="w-full bg-[#14532D] hover:bg-[#166534] text-white rounded-xl px-6 py-3 font-semibold transition-colors duration-200"
           >
             {isLast ? 'Get Started' : 'Next'}
           </button>
+          
+          <button
+            onClick={skip}
+            className="text-gray-500 hover:text-[#14532D] font-medium transition-colors"
+          >
+            Skip
+          </button>
         </div>
 
-        <button
-          onClick={() => { localStorage.setItem('onboarded', 'true'); navigate('/login'); }}
-          className="text-center text-xs text-gray-400 mt-4 w-full hover:text-gray-600 transition-colors"
-        >
-          Skip
-        </button>
       </div>
     </div>
   );
