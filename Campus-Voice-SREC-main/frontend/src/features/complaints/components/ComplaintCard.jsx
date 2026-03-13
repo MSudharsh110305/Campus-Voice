@@ -4,7 +4,7 @@ import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import {
   ThumbsUp, ThumbsDown, FileX, ShieldCheck,
-  Clock, Building2, AlertCircle, Copy, Check, ImagePlus
+  Clock, Building2, AlertCircle, Copy, Check, ImagePlus, Share2
 } from 'lucide-react';
 import { Skeleton } from '../../../components/UI';
 import { VOTE_TYPES } from '../../../utils/constants';
@@ -97,6 +97,29 @@ export default function ComplaintCard({
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const haptic = (ms = 10) => { try { navigator.vibrate?.(ms); } catch {} };
+
+  const shareComplaint = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    haptic(15);
+    const text = summary || rephrased_text || desc || '';
+    const shareData = {
+      title: `CampusVoice — ${category || 'Complaint'}`,
+      text: text.length > 120 ? text.slice(0, 117) + '…' : text,
+      url: `${window.location.origin}/complaint/${id}`,
+    };
+    try {
+      if (navigator.canShare?.(shareData)) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(shareData.url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }
+    } catch {}
+  };
+
   const showVoteError = (msg) => {
     setVoteError(msg);
     setTimeout(() => setVoteError(null), 3000);
@@ -156,6 +179,7 @@ export default function ComplaintCard({
     e.preventDefault();
     if (!user?.roll_no) { showVoteError("Login to vote"); return; }
     if (isVoting) return;
+    haptic(8);
     setIsVoting(true);
 
     const prevVote = userVote;
@@ -186,7 +210,8 @@ export default function ComplaintCard({
       // api.js sets err.status and err.data (not err.response)
       const errData = err?.data || {};
       const errDetail = errData?.detail;
-      const errMsg = errData?.error
+      const errRaw = errData?.error;
+      const errMsg = (typeof errRaw === 'string' ? errRaw : errRaw?.error)
         || (typeof errDetail === 'string' ? errDetail : errDetail?.error)
         || err.message || '';
       const errLower = errMsg.toLowerCase();
@@ -285,6 +310,14 @@ export default function ComplaintCard({
             )}
           </div>
 
+          {/* "Image needed" tag — visible to everyone when image is required but not yet uploaded */}
+          {!isOwner && image_required && !has_image && (
+            <div className="mt-2 flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-lg w-fit">
+              <ImagePlus size={11} className="text-amber-500 flex-shrink-0" />
+              <span className="text-[10px] font-semibold text-amber-700">Image needed — help verify this complaint</span>
+            </div>
+          )}
+
           {/* Image upload prompt — shown to owner when image is required and not yet uploaded */}
           {isOwner && image_required && image_pending && !has_image && !imageUploaded && (
             <div
@@ -340,6 +373,15 @@ export default function ComplaintCard({
               )}
             </button>
 
+            {/* Share button */}
+            <button
+              onClick={shareComplaint}
+              className="flex items-center gap-1 text-[10px] text-srec-textMuted hover:text-srec-primary transition-colors ml-2.5"
+              title="Share complaint"
+            >
+              <Share2 size={11} />
+            </button>
+
             {!isOwner ? (
               <div className="flex items-center gap-1.5 ml-auto" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
                 <button
@@ -368,7 +410,16 @@ export default function ComplaintCard({
                 </button>
               </div>
             ) : (
-              <span className="text-[10px] text-srec-textMuted ml-auto italic">Your complaint</span>
+              <div className="flex items-center gap-2 ml-auto">
+                <div className="flex items-center gap-1 text-[10px] text-srec-textMuted">
+                  <ThumbsUp size={10} />
+                  <span>{voteCount.up}</span>
+                </div>
+                <div className="flex items-center gap-1 text-[10px] text-srec-textMuted">
+                  <ThumbsDown size={10} />
+                  <span>{voteCount.down}</span>
+                </div>
+              </div>
             )}
           </div>
 

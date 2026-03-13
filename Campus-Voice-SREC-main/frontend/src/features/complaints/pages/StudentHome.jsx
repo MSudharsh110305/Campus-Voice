@@ -7,8 +7,9 @@ import BottomNav from '../../../components/BottomNav';
 import ComplaintCard from '../components/ComplaintCard';
 import NewComplaintModal from '../components/NewComplaintModal';
 import complaintService from '../../../services/complaint.service';
+import usePullToRefresh from '../../../hooks/usePullToRefresh';
 import {
-  AlertCircle, SlidersHorizontal, Search, X, Inbox,
+  AlertCircle, SlidersHorizontal, Search, X, Inbox, RefreshCw,
 } from 'lucide-react';
 import { STATUSES, PRIORITIES, COMPLAINT_CATEGORIES } from '../../../utils/constants';
 
@@ -32,11 +33,21 @@ export default function StudentHome() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState({
-    status: 'All', priority: 'All', category_id: 'All', search: '', sortBy: 'hot',
+  const [filters, setFilters] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('cv_feed_filters');
+      if (saved) return { status: 'All', priority: 'All', category_id: 'All', search: '', sortBy: 'hot', ...JSON.parse(saved) };
+    } catch {}
+    return { status: 'All', priority: 'All', category_id: 'All', search: '', sortBy: 'hot' };
   });
 
   const firstName = user?.name?.split(' ')[0] || user?.roll_no || 'Student';
+
+  // ── Pull-to-refresh ──────────────────────────────────────────────────────
+  const { refreshing, pullProgress, pullDistance, handlers: pullHandlers } = usePullToRefresh(
+    async () => { await fetchFeed(); },
+    { threshold: 80 }
+  );
 
   // ── Feed fetch ─────────────────────────────────────────────────────────────
   const fetchFeed = useCallback(async () => {
@@ -89,12 +100,25 @@ export default function StudentHome() {
   };
 
   useEffect(() => {
+    try { sessionStorage.setItem('cv_feed_filters', JSON.stringify({ sortBy: filters.sortBy, category_id: filters.category_id })); } catch {}
     fetchFeed();
   }, [filters]);
 
   return (
-    <div className="min-h-screen bg-srec-background">
+    <div className="min-h-screen bg-srec-background" {...pullHandlers}>
       <TopNav />
+
+      {/* Pull-to-refresh indicator */}
+      {(pullDistance > 0 || refreshing) && (
+        <div className="flex items-center justify-center py-2 transition-all" style={{ height: refreshing ? 40 : pullDistance * 0.5 }}>
+          <RefreshCw
+            size={18}
+            className={`text-srec-primary transition-transform ${refreshing ? 'animate-spin' : ''}`}
+            style={{ opacity: pullProgress, transform: `rotate(${pullProgress * 360}deg)` }}
+          />
+        </div>
+      )}
+
       <div className="animate-fadeIn max-w-3xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
 
         {/* Greeting banner */}
@@ -205,6 +229,8 @@ export default function StudentHome() {
                     category={item.category_name || COMPLAINT_CATEGORIES[item.category_id]}
                     department_code={item.department_code}
                     has_image={item.has_image}
+                    image_required={item.image_required}
+                    image_pending={item.image_pending}
                     author={item.is_anonymous ? 'Anonymous' : (item.author || item.student_roll_no)}
                     status={item.status}
                     priority={item.priority}
@@ -212,6 +238,7 @@ export default function StudentHome() {
                     downvotes={item.downvotes}
                     timestamp={item.submitted_at}
                     assigned_authority_name={item.assigned_authority_name || null}
+                    isOwner={!!(user?.roll_no && item.student_roll_no === user.roll_no)}
                   />
                 ))}
                 {hasMore && !loading && (

@@ -399,7 +399,7 @@ async def admin_list_complaints(
         conditions.append(Complaint.category_id == category_id)
     if category_name:
         cat_subq = select(ComplaintCategory.id).where(
-            ComplaintCategory.name.ilike(f"%{category_name}%")
+            ComplaintCategory.name == category_name
         ).scalar_subquery()
         conditions.append(Complaint.category_id.in_(cat_subq))
     if department_code:
@@ -1696,17 +1696,53 @@ class UpdateSettingBody(BaseModel):
 
 # Known settings with their validation rules and descriptions
 _KNOWN_SETTINGS = {
+    # ── Petition Settings ──
     "petition_cooldown_days": {
         "description": "Legacy: Minimum days between petition creations per representative (0 = no limit)",
-        "type": "int",
-        "min": 0,
-        "max": 365,
+        "type": "int", "min": 0, "max": 365, "group": "petitions",
     },
     "petition_weekly_limit": {
         "description": "Number of petitions a representative can create per week (0 = unlimited)",
-        "type": "int",
-        "min": 0,
-        "max": 20,
+        "type": "int", "min": 0, "max": 20, "group": "petitions",
+    },
+    # ── Feature Toggles ──
+    "enable_spam_detection": {
+        "description": "Enable LLM-based spam detection on complaint submission",
+        "type": "bool", "group": "features",
+    },
+    "enable_image_verification": {
+        "description": "Enable LLM-based image verification for complaint images",
+        "type": "bool", "group": "features",
+    },
+    "enable_auto_escalation": {
+        "description": "Automatically escalate unresolved complaints after threshold hours",
+        "type": "bool", "group": "features",
+    },
+    "enable_push_notifications": {
+        "description": "Enable Web Push notifications to student/authority devices",
+        "type": "bool", "group": "features",
+    },
+    "enable_email_verification": {
+        "description": "Require email verification on student registration",
+        "type": "bool", "group": "features",
+    },
+    # ── Rate Limits ──
+    "rate_limit_student_complaints_per_day": {
+        "description": "Maximum complaints a student can submit per day",
+        "type": "int", "min": 1, "max": 50, "group": "rate_limits",
+    },
+    "rate_limit_global_per_minute": {
+        "description": "Global API rate limit per minute for unauthenticated requests",
+        "type": "int", "min": 10, "max": 500, "group": "rate_limits",
+    },
+    # ── Data Management ──
+    "data_retention_months": {
+        "description": "Months to retain resolved/closed complaints before eligible for cleanup",
+        "type": "int", "min": 1, "max": 120, "group": "data",
+    },
+    "auto_delete_old_complaints": {
+        "description": "Automatically delete complaints older than retention period",
+        "type": "bool", "group": "data",
     },
 }
 
@@ -1732,6 +1768,7 @@ async def get_system_settings(
             "value": s.value,
             "description": s.description or meta.get("description", ""),
             "type": meta.get("type", "string"),
+            "group": meta.get("group", "general"),
             "min": meta.get("min"),
             "max": meta.get("max"),
             "updated_at": s.updated_at.isoformat() if s.updated_at else None,
@@ -1769,6 +1806,10 @@ async def update_system_setting(
         if "max" in meta and int_val > meta["max"]:
             raise HTTPException(status_code=400, detail=f"Setting '{key}' must be <= {meta['max']}")
         value = str(int_val)
+    elif meta.get("type") == "bool":
+        if body.value.strip().lower() not in ("true", "false"):
+            raise HTTPException(status_code=400, detail=f"Setting '{key}' must be 'true' or 'false'")
+        value = body.value.strip().lower()
     else:
         value = body.value.strip()
 
@@ -1784,6 +1825,9 @@ async def update_system_setting(
         db.add(SystemSetting(key=key, value=value, description=description, updated_by_id=authority_id))
 
     await db.commit()
+    # Invalidate cached value so the change takes effect immediately
+    from src.utils.settings_resolver import invalidate as invalidate_settings_cache
+    invalidate_settings_cache(key)
     logger.info(f"Admin {authority_id} updated system setting '{key}' = '{value}'")
     return {"success": True, "key": key, "value": value}
 
@@ -1807,6 +1851,441 @@ async def get_admin_notifications_unread_count(
         recipient_type="Authority"
     )
     return {"unread_count": unread_count}
+
+
+# ==================== AUDIT LOGS ====================
+
+
+@router.get(
+    "/audit-logs",
+    summary="Get admin audit logs",
+    description="Returns paginated admin audit log entries. Admin only.",
+)
+async def get_audit_logs(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    action: Optional[str] = Query(None, description="Filter by action type"),
+    date_from: Optional[str] = Query(None, description="ISO date start filter"),
+    date_to: Optional[str] = Query(None, description="ISO date end filter"),
+    current_admin_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from src.database.models import AdminAuditLog, Authority
+
+    conditions = []
+    if action:
+        conditions.append(AdminAuditLog.action.ilike(f"%{action}%"))
+    if date_from:
+        try:
+            dt_from = datetime.fromisoformat(date_from)
+            conditions.append(AdminAuditLog.action_at >= dt_from)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            dt_to = datetime.fromisoformat(date_to)
+            conditions.append(AdminAuditLog.action_at <= dt_to)
+        except ValueError:
+            pass
+
+    from sqlalchemy import and_
+    query = (
+        select(AdminAuditLog)
+        .options(selectinload(AdminAuditLog.admin))
+        .order_by(AdminAuditLog.action_at.desc())
+    )
+    if conditions:
+        query = query.where(and_(*conditions))
+    query = query.offset(skip).limit(limit)
+
+    result = await db.execute(query)
+    logs = result.scalars().all()
+
+    # Count total
+    count_q = select(func.count(AdminAuditLog.id))
+    if conditions:
+        count_q = count_q.where(and_(*conditions))
+    total = (await db.execute(count_q)).scalar() or 0
+
+    return {
+        "logs": [
+            {
+                "id": log.id,
+                "admin_id": log.admin_id,
+                "admin_name": log.admin.name if log.admin else "Unknown",
+                "action": log.action,
+                "target_type": log.target_type,
+                "target_id": log.target_id,
+                "changes": log.changes,
+                "action_at": log.action_at.isoformat() if log.action_at else None,
+            }
+            for log in logs
+        ],
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+    }
+
+
+# ==================== AUTHORITY TRANSFER ====================
+
+
+class AuthorityTransferBody(BaseModel):
+    source_authority_id: int
+    target_authority_id: int
+
+
+@router.post(
+    "/authority-transfer",
+    summary="Transfer authority responsibilities",
+    description="Reassign all complaints from one authority to another. Admin only.",
+)
+async def transfer_authority(
+    body: AuthorityTransferBody,
+    current_admin_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from src.database.models import Authority, Complaint, AdminAuditLog
+
+    if body.source_authority_id == body.target_authority_id:
+        raise HTTPException(400, "Source and target authority must be different")
+
+    # Validate both exist
+    src_result = await db.execute(select(Authority).where(Authority.id == body.source_authority_id))
+    src = src_result.scalar_one_or_none()
+    if not src:
+        raise HTTPException(404, "Source authority not found")
+
+    tgt_result = await db.execute(select(Authority).where(Authority.id == body.target_authority_id))
+    tgt = tgt_result.scalar_one_or_none()
+    if not tgt:
+        raise HTTPException(404, "Target authority not found")
+
+    # Reassign all complaints
+    from sqlalchemy import update
+    result = await db.execute(
+        update(Complaint)
+        .where(Complaint.assigned_authority_id == body.source_authority_id)
+        .values(assigned_authority_id=body.target_authority_id, updated_at=datetime.now(timezone.utc))
+    )
+    count = result.rowcount
+
+    # Audit log
+    db.add(AdminAuditLog(
+        admin_id=current_admin_id,
+        action="authority_transfer",
+        target_type="Authority",
+        target_id=str(body.source_authority_id),
+        changes={
+            "source_id": body.source_authority_id,
+            "source_name": src.name,
+            "target_id": body.target_authority_id,
+            "target_name": tgt.name,
+            "complaints_transferred": count,
+        },
+    ))
+    await db.commit()
+    logger.info(f"Admin {current_admin_id} transferred {count} complaints from authority {body.source_authority_id} to {body.target_authority_id}")
+    return {"success": True, "complaints_transferred": count, "from": src.name, "to": tgt.name}
+
+
+# ==================== ADMIN OWNERSHIP TRANSFER ====================
+
+
+class AdminTransferBody(BaseModel):
+    new_admin_authority_id: int
+    confirmation_phrase: str
+
+
+@router.post(
+    "/admin-transfer",
+    summary="Transfer admin ownership",
+    description="Transfer admin role to another authority. Current admin is demoted. Admin only.",
+)
+async def transfer_admin_ownership(
+    body: AdminTransferBody,
+    current_admin_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from src.database.models import Authority, AdminAuditLog
+
+    if body.confirmation_phrase != "TRANSFER ADMIN ROLE":
+        raise HTTPException(400, "Incorrect confirmation phrase. Type exactly: TRANSFER ADMIN ROLE")
+
+    if body.new_admin_authority_id == current_admin_id:
+        raise HTTPException(400, "Cannot transfer admin role to yourself")
+
+    # Validate target
+    tgt_result = await db.execute(select(Authority).where(Authority.id == body.new_admin_authority_id))
+    new_admin = tgt_result.scalar_one_or_none()
+    if not new_admin:
+        raise HTTPException(404, "Target authority not found")
+    if not new_admin.is_active:
+        raise HTTPException(400, "Target authority is deactivated")
+
+    # Get current admin
+    cur_result = await db.execute(select(Authority).where(Authority.id == current_admin_id))
+    current_admin = cur_result.scalar_one_or_none()
+    if not current_admin:
+        raise HTTPException(404, "Current admin not found")
+
+    # Swap roles
+    old_target_level = new_admin.authority_level
+    old_target_type = new_admin.authority_type
+
+    new_admin.authority_level = 100
+    new_admin.authority_type = "Admin"
+
+    current_admin.authority_level = old_target_level
+    current_admin.authority_type = old_target_type
+
+    # Audit log
+    db.add(AdminAuditLog(
+        admin_id=current_admin_id,
+        action="admin_ownership_transfer",
+        target_type="Authority",
+        target_id=str(body.new_admin_authority_id),
+        changes={
+            "previous_admin_id": current_admin_id,
+            "previous_admin_name": current_admin.name,
+            "new_admin_id": body.new_admin_authority_id,
+            "new_admin_name": new_admin.name,
+            "previous_admin_demoted_to": old_target_type,
+        },
+    ))
+    await db.commit()
+    logger.info(f"Admin ownership transferred from {current_admin_id} to {body.new_admin_authority_id}")
+    return {
+        "success": True,
+        "message": f"Admin role transferred to {new_admin.name}. You are now {old_target_type}.",
+        "new_admin": new_admin.name,
+        "your_new_role": old_target_type,
+    }
+
+
+# ==================== DATABASE RESET ====================
+
+
+class DatabaseResetBody(BaseModel):
+    confirmation_phrase: str
+
+
+@router.post(
+    "/database-reset",
+    summary="Reset entire database",
+    description="Drops all data and re-seeds defaults. EXTREMELY DANGEROUS. Admin only.",
+)
+async def reset_database(
+    body: DatabaseResetBody,
+    current_admin_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if body.confirmation_phrase != "RESET CAMPUS VOICE DATABASE":
+        raise HTTPException(400, "Incorrect confirmation phrase. Type exactly: RESET CAMPUS VOICE DATABASE")
+
+    from src.database.models import Authority, AdminAuditLog
+    # Log BEFORE reset
+    cur_result = await db.execute(select(Authority).where(Authority.id == current_admin_id))
+    current_admin = cur_result.scalar_one_or_none()
+    admin_name = current_admin.name if current_admin else "Unknown"
+    logger.warning(f"🚨 DATABASE RESET initiated by Admin {current_admin_id} ({admin_name})")
+
+    db.add(AdminAuditLog(
+        admin_id=current_admin_id,
+        action="database_reset",
+        target_type="System",
+        target_id="all_tables",
+        changes={"initiated_by": admin_name, "timestamp": datetime.now(timezone.utc).isoformat()},
+    ))
+    await db.commit()
+
+    # Perform reset
+    from src.database.connection import engine, init_db
+    from src.database.models import Base
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    logger.warning("🚨 All tables dropped and recreated")
+
+    # Re-run init_db to seed departments, categories, settings, etc.
+    await init_db()
+    logger.warning("🚨 Database re-seeded with default data")
+
+    return {"success": True, "message": "Database has been completely reset and re-seeded with defaults."}
+
+
+# ==================== SERVER-SIDE EXPORT ====================
+
+
+@router.get(
+    "/export",
+    summary="Export data as CSV or JSON",
+    description="Export selected data entities in CSV or JSON format. Admin only.",
+)
+async def export_data(
+    entities: str = Query(..., description="Comma-separated: complaints,students,authorities,petitions,audit_logs,department_stats"),
+    format: str = Query("csv", description="Export format: csv or json"),
+    date_from: Optional[str] = Query(None, description="ISO date start filter"),
+    date_to: Optional[str] = Query(None, description="ISO date end filter"),
+    current_admin_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+
+    entity_list = [e.strip() for e in entities.split(",") if e.strip()]
+    valid_entities = {"complaints", "students", "authorities", "petitions", "audit_logs", "department_stats"}
+    invalid = set(entity_list) - valid_entities
+    if invalid:
+        raise HTTPException(400, f"Invalid entities: {invalid}. Valid: {valid_entities}")
+
+    # Parse date filters
+    dt_from = dt_to = None
+    if date_from:
+        try:
+            dt_from = datetime.fromisoformat(date_from)
+        except ValueError:
+            raise HTTPException(400, "Invalid date_from format")
+    if date_to:
+        try:
+            dt_to = datetime.fromisoformat(date_to)
+        except ValueError:
+            raise HTTPException(400, "Invalid date_to format")
+
+    from src.database.models import Complaint, Student, Authority, AdminAuditLog
+    from src.database.models import Petition, Department
+
+    export_data = {}
+
+    if "complaints" in entity_list:
+        q = select(Complaint).order_by(Complaint.submitted_at.desc())
+        if dt_from:
+            q = q.where(Complaint.submitted_at >= dt_from)
+        if dt_to:
+            q = q.where(Complaint.submitted_at <= dt_to)
+        q = q.limit(10000)
+        rows = (await db.execute(q)).scalars().all()
+        export_data["complaints"] = [
+            {
+                "id": str(c.id), "student_roll_no": c.student_roll_no, "status": c.status,
+                "priority": c.priority, "category_id": c.category_id, "visibility": c.visibility,
+                "original_text": c.original_text, "rephrased_text": c.rephrased_text,
+                "upvotes": c.upvotes, "downvotes": c.downvotes, "priority_score": c.priority_score,
+                "assigned_authority_id": c.assigned_authority_id, "is_anonymous": c.is_anonymous,
+                "is_marked_as_spam": c.is_marked_as_spam, "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None,
+                "resolved_at": c.resolved_at.isoformat() if c.resolved_at else None,
+            }
+            for c in rows
+        ]
+
+    if "students" in entity_list:
+        q = select(Student).order_by(Student.created_at.desc()).limit(10000)
+        rows = (await db.execute(q)).scalars().all()
+        export_data["students"] = [
+            {
+                "roll_no": s.roll_no, "name": s.name, "email": s.email,
+                "department_id": s.department_id, "year": s.year,
+                "stay_type": s.stay_type, "gender": s.gender,
+                "is_active": s.is_active, "campus_reputation": s.campus_reputation,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s in rows
+        ]
+
+    if "authorities" in entity_list:
+        q = select(Authority).order_by(Authority.id).limit(1000)
+        rows = (await db.execute(q)).scalars().all()
+        export_data["authorities"] = [
+            {
+                "id": a.id, "name": a.name, "email": a.email,
+                "authority_type": a.authority_type, "department_id": a.department_id,
+                "authority_level": a.authority_level, "designation": a.designation,
+                "is_active": a.is_active,
+            }
+            for a in rows
+        ]
+
+    if "petitions" in entity_list:
+        q = select(Petition).order_by(Petition.submitted_at.desc()).limit(5000)
+        if dt_from:
+            q = q.where(Petition.submitted_at >= dt_from)
+        if dt_to:
+            q = q.where(Petition.submitted_at <= dt_to)
+        rows = (await db.execute(q)).scalars().all()
+        export_data["petitions"] = [
+            {
+                "id": str(p.id), "title": p.title, "description": p.description,
+                "status": p.status, "signature_count": p.signature_count,
+                "petition_scope": p.petition_scope, "is_published": p.is_published,
+                "submitted_at": p.submitted_at.isoformat() if p.submitted_at else None,
+            }
+            for p in rows
+        ]
+
+    if "audit_logs" in entity_list:
+        q = select(AdminAuditLog).order_by(AdminAuditLog.action_at.desc()).limit(5000)
+        if dt_from:
+            q = q.where(AdminAuditLog.action_at >= dt_from)
+        if dt_to:
+            q = q.where(AdminAuditLog.action_at <= dt_to)
+        rows = (await db.execute(q)).scalars().all()
+        export_data["audit_logs"] = [
+            {
+                "id": log.id, "admin_id": log.admin_id, "action": log.action,
+                "target_type": log.target_type, "target_id": log.target_id,
+                "changes": str(log.changes) if log.changes else None,
+                "action_at": log.action_at.isoformat() if log.action_at else None,
+            }
+            for log in rows
+        ]
+
+    if "department_stats" in entity_list:
+        dept_q = select(Department).order_by(Department.id)
+        depts = (await db.execute(dept_q)).scalars().all()
+        dept_stats = []
+        for d in depts:
+            total = (await db.execute(
+                select(func.count(Complaint.id)).where(Complaint.complaint_department_id == d.id)
+            )).scalar() or 0
+            resolved = (await db.execute(
+                select(func.count(Complaint.id)).where(
+                    Complaint.complaint_department_id == d.id,
+                    Complaint.status == "Resolved",
+                )
+            )).scalar() or 0
+            dept_stats.append({
+                "department_id": d.id, "department_code": d.code, "department_name": d.name,
+                "total_complaints": total, "resolved_complaints": resolved,
+                "resolution_rate": round(resolved / total * 100, 1) if total > 0 else 0,
+            })
+        export_data["department_stats"] = dept_stats
+
+    # Return as JSON or CSV
+    if format == "json":
+        return export_data
+
+    # CSV: flatten all entities into one file with section headers
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    for entity_name, rows in export_data.items():
+        if not rows:
+            continue
+        writer.writerow([])
+        writer.writerow([f"=== {entity_name.upper()} ==="])
+        headers = list(rows[0].keys())
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow([row.get(h, "") for h in headers])
+
+    output.seek(0)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="campusvoice_export_{timestamp}.csv"'},
+    )
 
 
 __all__ = ["router"]
