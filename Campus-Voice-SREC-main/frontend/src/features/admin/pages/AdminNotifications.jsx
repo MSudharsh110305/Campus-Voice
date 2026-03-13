@@ -1,138 +1,177 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import authorityService from '../../../services/authority.service';
-import { EliteButton } from '../../../components/UI';
-import { Bell, Check, Trash2, AlertCircle, MessageSquare, CheckCircle, ArrowUpCircle } from 'lucide-react';
+import {
+  Bell, AlertCircle, MessageSquare, CheckCircle, Trash2,
+  ArrowUpCircle, FileText, Megaphone,
+} from 'lucide-react';
 
-export default function AdminNotifications() {
-    const [notifications, setNotifications] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [unreadOnly, setUnreadOnly] = useState(false);
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function timeAgo(dateStr) {
+  const s = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  if (s < 604800) return `${Math.floor(s / 86400)}d`;
+  return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
 
-    useEffect(() => {
-        fetchNotifications();
-    }, [unreadOnly]);
+const TYPE_META = {
+  escalation:         { Icon: ArrowUpCircle,  bg: 'bg-amber-100',   color: 'text-amber-500' },
+  complaint_resolved: { Icon: CheckCircle,    bg: 'bg-emerald-100', color: 'text-emerald-500' },
+  complaint_assigned: { Icon: Bell,           bg: 'bg-blue-100',    color: 'text-blue-500' },
+  complaint_update:   { Icon: MessageSquare,  bg: 'bg-indigo-100',  color: 'text-indigo-500' },
+  complaint_spam:     { Icon: AlertCircle,    bg: 'bg-red-100',     color: 'text-red-500' },
+  petition_approved:  { Icon: FileText,       bg: 'bg-purple-100',  color: 'text-purple-500' },
+  petition_milestone: { Icon: Megaphone,      bg: 'bg-violet-100',  color: 'text-violet-500' },
+  default:            { Icon: Bell,           bg: 'bg-gray-100',    color: 'text-gray-400' },
+};
 
-    const fetchNotifications = async () => {
-        try {
-            setLoading(true);
-            const data = await authorityService.getNotifications({ unread_only: unreadOnly, limit: 50 });
-            setNotifications(data.notifications || []);
-        } catch (err) {
-            console.error("Failed to load admin notifications", err);
-        } finally {
-            setLoading(false);
-        }
-    };
+function getTypeMeta(type) {
+  return TYPE_META[type] || TYPE_META.default;
+}
 
-    const handleMarkRead = async (id) => {
-        try {
-            await authorityService.markNotificationRead(id);
-            setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-        } catch (e) { console.error(e); }
-    };
+function NotifRow({ n, onDelete }) {
+  const { Icon, bg, color } = getTypeMeta(n.notification_type);
+  return (
+    <div className={`group flex items-center gap-3 px-5 py-4 border-b border-gray-100 last:border-0 transition-colors ${
+      n.is_read ? 'bg-white' : 'bg-srec-primary/[0.03]'
+    }`}>
+      <div className={`w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center ${bg}`}>
+        <Icon size={18} className={color} />
+      </div>
 
-    const handleMarkAllRead = async () => {
-        try {
-            await authorityService.markAllNotificationsRead();
-            setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-        } catch (e) { console.error(e); }
-    };
-
-    const handleDelete = async (id) => {
-        try {
-            await authorityService.deleteNotification(id);
-            setNotifications(prev => prev.filter(n => n.id !== id));
-        } catch (e) { console.error(e); }
-    };
-
-    const getIcon = (type) => {
-        switch (type) {
-            case 'escalation': return <ArrowUpCircle className="text-amber-500" size={20} />;
-            case 'complaint_resolved': return <CheckCircle className="text-green-500" size={20} />;
-            case 'complaint_assigned': return <Bell className="text-srec-primary" size={20} />;
-            case 'complaint_update': return <MessageSquare className="text-blue-500" size={20} />;
-            default: return <Bell className="text-srec-primary" size={20} />;
-        }
-    };
-
-    const unreadCount = notifications.filter(n => !n.is_read).length;
-
-    return (
-        <div className="max-w-4xl mx-auto space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
-                    {unreadCount > 0 && (
-                        <p className="text-sm text-srec-primary mt-0.5">{unreadCount} unread</p>
-                    )}
-                </div>
-                <div className="flex gap-2">
-                    <EliteButton variant="outline" size="sm" onClick={() => setUnreadOnly(!unreadOnly)}>
-                        {unreadOnly ? 'Show All' : 'Unread Only'}
-                    </EliteButton>
-                    {unreadCount > 0 && (
-                        <EliteButton variant="primary" size="sm" onClick={handleMarkAllRead}>
-                            Mark All Read
-                        </EliteButton>
-                    )}
-                    <EliteButton variant="ghost" size="sm" onClick={fetchNotifications}>Refresh</EliteButton>
-                </div>
-            </div>
-
-            <div className="space-y-3">
-                {loading ? (
-                    <div className="text-center py-12">
-                        <div className="w-8 h-8 border-2 border-srec-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
-                    </div>
-                ) : notifications.length === 0 ? (
-                    <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
-                        <Bell className="mx-auto text-gray-300 mb-3" size={32} />
-                        <p className="text-gray-500 font-medium">No notifications</p>
-                        <p className="text-xs text-gray-400 mt-1">Complaint assignments and escalations will appear here</p>
-                    </div>
-                ) : (
-                    notifications.map(n => (
-                        <div
-                            key={n.id}
-                            className={`bg-white p-4 rounded-xl border flex items-start gap-4 transition-all ${n.is_read ? 'border-gray-100' : 'border-srec-primary/20 shadow-sm'}`}
-                        >
-                            <div className={`p-2 rounded-lg shrink-0 ${n.is_read ? 'bg-gray-100' : 'bg-srec-primary/10'}`}>
-                                {getIcon(n.notification_type)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-xs font-bold uppercase tracking-wider text-srec-primary">
-                                        {n.notification_type?.replace(/_/g, ' ')}
-                                    </span>
-                                    {!n.is_read && (
-                                        <span className="w-2 h-2 rounded-full bg-srec-primary inline-block"></span>
-                                    )}
-                                </div>
-                                <p className={`text-sm ${n.is_read ? 'text-gray-600' : 'text-gray-900 font-medium'}`}>{n.message}</p>
-                                <span className="text-xs text-gray-400 mt-1 block">{new Date(n.created_at).toLocaleString()}</span>
-                            </div>
-                            <div className="flex gap-1 shrink-0">
-                                {!n.is_read && (
-                                    <button
-                                        onClick={() => handleMarkRead(n.id)}
-                                        className="p-1.5 text-srec-primary hover:bg-srec-primary/10 rounded-lg transition-colors"
-                                        title="Mark as read"
-                                    >
-                                        <Check size={16} />
-                                    </button>
-                                )}
-                                <button
-                                    onClick={() => handleDelete(n.id)}
-                                    className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
-                                    title="Delete"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </div>
-                        </div>
-                    ))
-                )}
-            </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+            {(n.notification_type || 'notification').replace(/_/g, ' ')}
+          </span>
         </div>
-    );
+        <p className={`text-sm leading-snug ${n.is_read ? 'text-gray-600' : 'font-semibold text-gray-900'}`}>
+          {n.message}
+        </p>
+        {n.complaint_title && (
+          <p className="text-[11px] text-gray-400 mt-1 pl-2 border-l-2 border-gray-200 truncate">
+            {n.complaint_title}
+          </p>
+        )}
+        <span className="text-[11px] text-gray-400 mt-0.5 block">{timeAgo(n.created_at)}</span>
+      </div>
+
+      {!n.is_read && <div className="w-2.5 h-2.5 rounded-full bg-srec-primary flex-shrink-0" />}
+
+      <button
+        onClick={() => onDelete(n.id)}
+        className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-300 hover:text-red-400 transition-all rounded-lg flex-shrink-0"
+        title="Delete"
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
+  );
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+export default function AdminNotifications() {
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [skip, setSkip] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const markedRef = useRef(false);
+  const LIMIT = 30;
+
+  const fetchNotifications = useCallback(async (reset = false) => {
+    try {
+      setLoading(true);
+      const currentSkip = reset ? 0 : skip;
+      const data = await authorityService.getNotifications({ skip: currentSkip, limit: LIMIT });
+      if (data && Array.isArray(data.notifications)) {
+        if (reset) {
+          setNotifications(data.notifications);
+          setSkip(LIMIT);
+        } else {
+          setNotifications(prev => [...prev, ...data.notifications]);
+          setSkip(prev => prev + LIMIT);
+        }
+        setHasMore(data.notifications.length >= LIMIT);
+      }
+    } catch (err) {
+      console.error('Failed to load notifications', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [skip]);
+
+  useEffect(() => {
+    fetchNotifications(true);
+    if (!markedRef.current) {
+      markedRef.current = true;
+      authorityService.markAllNotificationsRead().catch(() => {});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleDelete = async (id) => {
+    try {
+      await authorityService.deleteNotification(id);
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    } catch (e) { console.error(e); }
+  };
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
+          {unreadCount > 0 && (
+            <p className="text-sm text-srec-primary mt-0.5">{unreadCount} new</p>
+          )}
+        </div>
+        <button
+          onClick={() => fetchNotifications(true)}
+          className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {/* List */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {loading && notifications.length === 0 ? (
+          <div className="py-12 text-center">
+            <div className="w-8 h-8 border-2 border-srec-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="py-16 text-center">
+            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4 mx-auto text-gray-300">
+              <Bell size={28} />
+            </div>
+            <p className="text-lg font-bold text-gray-900">All caught up!</p>
+            <p className="text-gray-400 text-sm mt-1">No notifications to show.</p>
+          </div>
+        ) : (
+          <>
+            {notifications.map(n => (
+              <NotifRow key={n.id} n={n} onDelete={handleDelete} />
+            ))}
+            {loading && (
+              <div className="py-4 text-center">
+                <div className="w-6 h-6 border-2 border-srec-primary border-t-transparent rounded-full animate-spin mx-auto" />
+              </div>
+            )}
+            {!loading && hasMore && (
+              <button
+                onClick={() => fetchNotifications(false)}
+                className="w-full py-3.5 text-sm text-srec-primary font-medium hover:bg-gray-50 transition-colors"
+              >
+                Load more
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
 }

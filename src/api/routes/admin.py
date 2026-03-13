@@ -2114,6 +2114,77 @@ async def reset_database(
     return {"success": True, "message": "Database has been completely reset and re-seeded with defaults."}
 
 
+# ==================== SOFT DATA RESET ====================
+
+
+class SoftResetBody(BaseModel):
+    confirmation_phrase: str
+
+
+@router.post(
+    "/soft-reset",
+    summary="Clear complaints and petitions, keep user accounts",
+    description="Deletes all complaints, petitions, votes, and notifications. Students and authorities are preserved.",
+)
+async def soft_reset_data(
+    body: SoftResetBody,
+    current_admin_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if body.confirmation_phrase != "CLEAR ALL COMPLAINTS":
+        raise HTTPException(400, "Incorrect confirmation phrase. Type exactly: CLEAR ALL COMPLAINTS")
+
+    from sqlalchemy import delete as sql_delete
+    from src.database.models import (
+        Authority, AdminAuditLog, Notification, Petition,
+        Vote, Complaint, StatusUpdate,
+    )
+
+    cur_result = await db.execute(select(Authority).where(Authority.id == current_admin_id))
+    current_admin = cur_result.scalar_one_or_none()
+    admin_name = current_admin.name if current_admin else "Unknown"
+    logger.warning(f"🗑️ SOFT RESET initiated by Admin {current_admin_id} ({admin_name})")
+
+    # Count before deletion for audit
+    c_count = (await db.execute(select(func.count()).select_from(Complaint))).scalar() or 0
+
+    # Delete in FK-safe order (explicit even if CASCADE is set)
+    await db.execute(sql_delete(Notification))
+    await db.execute(sql_delete(StatusUpdate))
+    await db.execute(sql_delete(Vote))
+
+    # Petitions — check if table exists to avoid errors on older schemas
+    try:
+        from src.database.models import Petition as PetitionModel, PetitionSignature
+        await db.execute(sql_delete(PetitionSignature))
+        await db.execute(sql_delete(PetitionModel))
+    except Exception:
+        pass
+
+    await db.execute(sql_delete(Complaint))
+    await db.commit()
+
+    db.add(AdminAuditLog(
+        admin_id=current_admin_id,
+        action="soft_reset",
+        target_type="System",
+        target_id="complaints+petitions",
+        changes={
+            "initiated_by": admin_name,
+            "complaints_deleted": c_count,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    ))
+    await db.commit()
+
+    logger.warning(f"🗑️ SOFT RESET complete — {c_count} complaints deleted, user accounts preserved")
+    return {
+        "success": True,
+        "message": f"Cleared {c_count} complaints and all related data. Student and authority accounts are intact.",
+        "complaints_deleted": c_count,
+    }
+
+
 # ==================== SERVER-SIDE EXPORT ====================
 
 

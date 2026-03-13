@@ -1,34 +1,89 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TopNav } from '../../../components/Navbars';
 import BottomNav from '../../../components/BottomNav';
-import { Card, EliteButton, Badge } from '../../../components/UI';
 import { useAuth } from '../../../context/AuthContext';
+import { useNotifications } from '../../../context/NotificationContext';
 import studentService from '../../../services/student.service';
-import { Bell, AlertCircle, MessageSquare, CheckCircle, Trash2 } from 'lucide-react';
+import {
+  Bell, AlertCircle, MessageSquare, CheckCircle, Trash2,
+  ArrowUpCircle, FileText, Megaphone,
+} from 'lucide-react';
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function timeAgo(dateStr) {
+  const s = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  if (s < 604800) return `${Math.floor(s / 86400)}d`;
+  return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+const TYPE_META = {
+  escalation:         { Icon: ArrowUpCircle,  bg: 'bg-amber-100',   color: 'text-amber-500' },
+  complaint_resolved: { Icon: CheckCircle,    bg: 'bg-emerald-100', color: 'text-emerald-500' },
+  comment_added:      { Icon: MessageSquare,  bg: 'bg-blue-100',    color: 'text-blue-500' },
+  complaint_spam:     { Icon: AlertCircle,    bg: 'bg-red-100',     color: 'text-red-500' },
+  petition_approved:  { Icon: FileText,       bg: 'bg-purple-100',  color: 'text-purple-500' },
+  petition_milestone: { Icon: Megaphone,      bg: 'bg-violet-100',  color: 'text-violet-500' },
+  default:            { Icon: Bell,           bg: 'bg-gray-100',    color: 'text-gray-500' },
+};
+
+function getTypeMeta(type) {
+  return TYPE_META[type] || TYPE_META.default;
+}
+
+// ── Notification Row ─────────────────────────────────────────────────────────
+function NotifRow({ n, onDelete }) {
+  const { Icon, bg, color } = getTypeMeta(n.notification_type);
+  return (
+    <div className={`group flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 last:border-0 transition-colors ${
+      n.is_read ? 'bg-white' : 'bg-srec-primary/[0.03]'
+    }`}>
+      {/* Icon circle */}
+      <div className={`w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center ${bg}`}>
+        <Icon size={18} className={color} />
+      </div>
+
+      {/* Message + time */}
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm leading-snug ${n.is_read ? 'text-gray-600' : 'font-semibold text-gray-900'}`}>
+          {n.message}
+        </p>
+        <span className="text-[11px] text-gray-400">{timeAgo(n.created_at)}</span>
+      </div>
+
+      {/* Unread dot */}
+      {!n.is_read && <div className="w-2.5 h-2.5 rounded-full bg-srec-primary flex-shrink-0" />}
+
+      {/* Delete */}
+      <button
+        onClick={() => onDelete(n.id)}
+        className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-300 hover:text-red-400 transition-all rounded-lg flex-shrink-0"
+        title="Delete"
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
+  );
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
 export default function Notifications() {
   const { user } = useAuth();
+  const { markAllRead } = useNotifications();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [unreadOnly, setUnreadOnly] = useState(false);
   const [skip, setSkip] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const markedRef = useRef(false);
   const LIMIT = 20;
 
-  useEffect(() => {
-    fetchNotifications(true);
-  }, [unreadOnly]);
-
-  const fetchNotifications = async (reset = false) => {
+  const fetchNotifications = useCallback(async (reset = false) => {
     try {
       setLoading(true);
       const currentSkip = reset ? 0 : skip;
-      const data = await studentService.getNotifications({
-        skip: currentSkip,
-        limit: LIMIT,
-        unread_only: unreadOnly
-      });
-
+      const data = await studentService.getNotifications({ skip: currentSkip, limit: LIMIT });
       if (data && Array.isArray(data.notifications)) {
         if (reset) {
           setNotifications(data.notifications);
@@ -39,155 +94,79 @@ export default function Notifications() {
         }
         setHasMore(data.notifications.length >= LIMIT);
       }
-    } catch (error) {
-      console.error("Failed to fetch notifications", error);
+    } catch (err) {
+      console.error('Failed to fetch notifications', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [skip]);
 
-  const handleMarkRead = async (id) => {
-    try {
-      await studentService.markNotificationRead(id);
-      setNotifications(prev => prev.map(n =>
-        n.id === id ? { ...n, is_read: true } : n
-      ));
-    } catch (error) {
-      console.error("Failed to mark read", error);
+  // On mount: fetch + auto-mark all as read (like Instagram)
+  useEffect(() => {
+    fetchNotifications(true);
+    if (!markedRef.current) {
+      markedRef.current = true;
+      markAllRead().catch(() => {});
     }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleDelete = async (id) => {
     try {
       await studentService.deleteNotification(id);
       setNotifications(prev => prev.filter(n => n.id !== id));
-    } catch (error) {
-      console.error("Failed to delete", error);
-    }
-  };
-
-  const handleMarkAllRead = async () => {
-    try {
-      await studentService.markAllNotificationsRead();
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-    } catch (error) {
-      console.error("Failed to mark all read", error);
-    }
-  };
-
-  const getIcon = (type) => {
-    switch (type) {
-      case 'escalation': return <AlertCircle className="text-amber-500" size={18} />;
-      case 'complaint_resolved': return <CheckCircle className="text-green-500" size={18} />;
-      case 'comment_added': return <MessageSquare className="text-blue-500" size={18} />;
-      default: return <Bell className="text-srec-primary" size={18} />;
-    }
-  };
-
-  // Left accent bar color by type
-  const getAccentColor = (type) => {
-    switch (type) {
-      case 'escalation': return 'bg-amber-400';
-      case 'complaint_resolved': return 'bg-green-400';
-      case 'comment_added': return 'bg-blue-400';
-      default: return 'bg-srec-primary';
+    } catch (err) {
+      console.error('Failed to delete', err);
     }
   };
 
   return (
     <div className="min-h-screen bg-srec-background">
       <TopNav />
-      <div className="animate-fadeIn max-w-3xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
+      <div className="animate-fadeIn max-w-2xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
 
         {/* Header */}
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 tracking-tight">Notifications</h1>
-            <p className="text-sm text-gray-400 mt-0.5">Updates on your complaints</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
-              onClick={() => setUnreadOnly(!unreadOnly)}
-            >
-              {unreadOnly ? 'Show All' : 'Unread only'}
-            </button>
-            <button
-              className="text-sm text-srec-primary hover:underline font-medium transition-colors"
-              onClick={handleMarkAllRead}
-            >
-              Mark all read
-            </button>
-          </div>
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-xl font-bold text-gray-900 tracking-tight">Notifications</h1>
+          <button
+            onClick={() => fetchNotifications(true)}
+            className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            Refresh
+          </button>
         </div>
 
-        <div className="space-y-2">
-          {notifications.length === 0 && !loading ? (
-            <div className="py-16 bg-white rounded-2xl border border-gray-100 shadow-sm text-center">
-              <div className="w-14 h-14 bg-gray-50 rounded-full flex items-center justify-center mb-3 mx-auto text-gray-400">
+        {/* List */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          {loading && notifications.length === 0 ? (
+            <div className="py-12 text-center text-gray-400 text-sm">Loading…</div>
+          ) : notifications.length === 0 ? (
+            <div className="py-16 text-center">
+              <div className="w-14 h-14 bg-gray-50 rounded-full flex items-center justify-center mb-3 mx-auto text-gray-300">
                 <Bell size={28} />
               </div>
-              <h3 className="text-base font-semibold text-gray-900">All caught up!</h3>
-              <p className="text-gray-400 text-sm mt-1">No new notifications.</p>
+              <p className="text-base font-semibold text-gray-900">All caught up!</p>
+              <p className="text-gray-400 text-sm mt-1">No notifications yet.</p>
             </div>
           ) : (
-            notifications.map((n) => (
-              <div
-                key={n.id}
-                className={`flex items-start gap-0 rounded-xl border overflow-hidden transition-all duration-200 ${
-                  n.is_read
-                    ? 'bg-white border-gray-100'
-                    : 'bg-srec-primary/[0.04] border-srec-primary/15'
-                }`}
-              >
-                {/* Left accent bar */}
-                <div className={`w-1 self-stretch flex-shrink-0 ${getAccentColor(n.notification_type)}`} />
+            <>
+              {notifications.map(n => (
+                <NotifRow key={n.id} n={n} onDelete={handleDelete} />
+              ))}
 
-                <div
-                  className={`flex-1 flex items-start gap-3 p-3 min-w-0 ${!n.is_read ? 'cursor-pointer' : ''}`}
-                  onClick={() => !n.is_read && handleMarkRead(n.id)}
-                >
-                  <div className={`p-1.5 rounded-full shrink-0 mt-0.5 ${n.is_read ? 'bg-gray-100' : 'bg-white shadow-sm'}`}>
-                    {getIcon(n.notification_type)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm leading-snug ${n.is_read ? 'text-gray-600' : 'text-gray-900 font-medium'}`}>
-                      {n.message}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[11px] text-gray-400">
-                        {new Date(n.created_at).toLocaleDateString()}
-                      </span>
-                      {!n.is_read && (
-                        <span className="text-[10px] text-srec-primary font-semibold">• Tap to mark read</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
+              {loading && (
+                <div className="py-4 text-center text-gray-400 text-sm">Loading…</div>
+              )}
 
-                {/* Delete button */}
+              {!loading && hasMore && (
                 <button
-                  onClick={() => handleDelete(n.id)}
-                  className="p-3 text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors self-stretch flex items-center"
-                  title="Delete"
+                  onClick={() => fetchNotifications(false)}
+                  className="w-full py-3 text-sm text-srec-primary font-medium hover:bg-gray-50 transition-colors"
                 >
-                  <Trash2 size={14} />
+                  Load more
                 </button>
-              </div>
-            ))
-          )}
-
-          {loading && (
-            <div className="py-4 text-center text-gray-400 text-sm">Loading notifications...</div>
-          )}
-
-          {!loading && hasMore && notifications.length > 0 && (
-            <button
-              className="w-full py-2.5 text-sm text-srec-primary font-medium hover:underline transition-colors"
-              onClick={() => fetchNotifications(false)}
-            >
-              Load More
-            </button>
+              )}
+            </>
           )}
         </div>
 

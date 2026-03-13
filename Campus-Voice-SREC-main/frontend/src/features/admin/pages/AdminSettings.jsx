@@ -2,9 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import adminService from '../../../services/admin.service';
 import { Skeleton } from '../../../components/UI';
 import {
-  Settings, ToggleLeft, ToggleRight, Save, ArrowRightLeft,
-  ShieldAlert, Trash2, Download, Clock, ChevronDown, ChevronUp,
-  AlertTriangle, Check, X, FileDown, RefreshCw,
+  Settings, ToggleRight, Save, ArrowRightLeft,
+  ShieldAlert, Trash2, Clock, ChevronDown, ChevronUp,
+  AlertTriangle, Check, X,
 } from 'lucide-react';
 
 // ─── Toggle Switch ───────────────────────────────────────────────────────────
@@ -121,13 +121,7 @@ export default function AdminSettings() {
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
-
-  // Export state
-  const [exportEntities, setExportEntities] = useState([]);
-  const [exportFormat, setExportFormat] = useState('csv');
-  const [exportDateFrom, setExportDateFrom] = useState('');
-  const [exportDateTo, setExportDateTo] = useState('');
-  const [exporting, setExporting] = useState(false);
+  const [showSoftResetModal, setShowSoftResetModal] = useState(false);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -225,41 +219,15 @@ export default function AdminSettings() {
     }
   };
 
-  const handleExport = async () => {
-    if (exportEntities.length === 0) { showToast('Select at least one entity', 'error'); return; }
-    setExporting(true);
+  const handleSoftReset = async () => {
     try {
-      const data = await adminService.exportData(exportEntities, exportFormat, exportDateFrom || null, exportDateTo || null);
-      if (exportFormat === 'csv') {
-        // data should be text/csv — if it came as JSON, it's an error
-        const blob = new Blob([typeof data === 'string' ? data : JSON.stringify(data, null, 2)], {
-          type: exportFormat === 'csv' ? 'text/csv' : 'application/json',
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `campusvoice_export.${exportFormat}`;
-        a.click();
-        URL.revokeObjectURL(url);
-      } else {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'campusvoice_export.json';
-        a.click();
-        URL.revokeObjectURL(url);
-      }
-      showToast('Export downloaded');
+      const res = await adminService.softReset('CLEAR ALL COMPLAINTS');
+      showToast(res.message || 'Complaints cleared');
+      setShowSoftResetModal(false);
+      loadAuditLogs();
     } catch (err) {
-      showToast(err?.detail || 'Export failed', 'error');
-    } finally {
-      setExporting(false);
+      showToast(err?.detail || err?.error || 'Reset failed', 'error');
     }
-  };
-
-  const toggleExportEntity = (entity) => {
-    setExportEntities(prev => prev.includes(entity) ? prev.filter(e => e !== entity) : [...prev, entity]);
   };
 
   if (loading) {
@@ -302,55 +270,59 @@ export default function AdminSettings() {
       </div>
 
       {/* ── Feature Toggles ─────────────────────────────────────────────────── */}
-      <SectionCard title="Feature Toggles" icon={ToggleRight}>
-        <div className="space-y-3">
-          {featureSettings.map(s => (
-            <div key={s.key} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
-              <div>
-                <p className="text-sm font-medium text-gray-900">
-                  {s.key.replace(/^enable_/, '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                </p>
-                <p className="text-xs text-gray-500">{s.description}</p>
+      {featureSettings.length > 0 && (
+        <SectionCard title="Feature Toggles" icon={ToggleRight}>
+          <div className="space-y-3">
+            {featureSettings.map(s => (
+              <div key={s.key} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">
+                    {s.key.replace(/^enable_/, '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                  </p>
+                  <p className="text-xs text-gray-500">{s.description}</p>
+                </div>
+                <Toggle
+                  checked={localValues[s.key] === 'true'}
+                  onChange={() => toggleBool(s.key)}
+                  disabled={saving === s.key}
+                />
               </div>
-              <Toggle
-                checked={localValues[s.key] === 'true'}
-                onChange={() => toggleBool(s.key)}
-                disabled={saving === s.key}
-              />
-            </div>
-          ))}
-        </div>
-      </SectionCard>
+            ))}
+          </div>
+        </SectionCard>
+      )}
 
       {/* ── Rate Limits ─────────────────────────────────────────────────────── */}
-      <SectionCard title="Rate Limits" icon={Clock}>
-        <div className="space-y-4">
-          {rateLimitSettings.map(s => (
-            <div key={s.key} className="flex items-center gap-4">
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-900">
-                  {s.key.replace(/^rate_limit_/, '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                </p>
-                <p className="text-xs text-gray-500">{s.description} (min: {s.min}, max: {s.max})</p>
+      {rateLimitSettings.length > 0 && (
+        <SectionCard title="Rate Limits" icon={Clock}>
+          <div className="space-y-4">
+            {rateLimitSettings.map(s => (
+              <div key={s.key} className="flex items-center gap-4">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-900">
+                    {s.key.replace(/^rate_limit_/, '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                  </p>
+                  <p className="text-xs text-gray-500">{s.description} (min: {s.min}, max: {s.max})</p>
+                </div>
+                <input
+                  type="number"
+                  min={s.min} max={s.max}
+                  value={localValues[s.key] || ''}
+                  onChange={(e) => setLocalValues(v => ({ ...v, [s.key]: e.target.value }))}
+                  className="w-20 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-center focus:ring-2 focus:ring-srec-primary/30 focus:border-srec-primary outline-none"
+                />
+                <button
+                  onClick={() => updateSetting(s.key, localValues[s.key])}
+                  disabled={saving === s.key}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-srec-primary text-white text-xs font-semibold rounded-lg hover:bg-srec-primaryHover transition-colors disabled:opacity-50"
+                >
+                  <Save size={12} /> {saving === s.key ? '...' : 'Save'}
+                </button>
               </div>
-              <input
-                type="number"
-                min={s.min} max={s.max}
-                value={localValues[s.key] || ''}
-                onChange={(e) => setLocalValues(v => ({ ...v, [s.key]: e.target.value }))}
-                className="w-20 border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-center focus:ring-2 focus:ring-srec-primary/30 focus:border-srec-primary outline-none"
-              />
-              <button
-                onClick={() => updateSetting(s.key, localValues[s.key])}
-                disabled={saving === s.key}
-                className="flex items-center gap-1 px-3 py-1.5 bg-srec-primary text-white text-xs font-semibold rounded-lg hover:bg-srec-primaryHover transition-colors disabled:opacity-50"
-              >
-                <Save size={12} /> {saving === s.key ? '...' : 'Save'}
-              </button>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
+            ))}
+          </div>
+        </SectionCard>
+      )}
 
       {/* ── Petition Settings ───────────────────────────────────────────────── */}
       {petitionSettings.length > 0 && (
@@ -487,57 +459,6 @@ export default function AdminSettings() {
         </div>
       </SectionCard>
 
-      {/* ── Export Data ─────────────────────────────────────────────────────── */}
-      <SectionCard title="Export Data" icon={Download}>
-        <div className="space-y-3">
-          <p className="text-xs text-gray-500">Select data to export. Large datasets may take a moment.</p>
-          <div className="flex flex-wrap gap-2">
-            {['complaints', 'students', 'authorities', 'petitions', 'audit_logs', 'department_stats'].map(entity => (
-              <label key={entity} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer border transition-colors ${
-                exportEntities.includes(entity)
-                  ? 'bg-srec-primarySoft border-srec-primaryMuted text-srec-primary'
-                  : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
-              }`}>
-                <input
-                  type="checkbox"
-                  checked={exportEntities.includes(entity)}
-                  onChange={() => toggleExportEntity(entity)}
-                  className="sr-only"
-                />
-                {entity.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-              </label>
-            ))}
-          </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">From</label>
-              <input type="date" value={exportDateFrom} onChange={(e) => setExportDateFrom(e.target.value)}
-                className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-srec-primary/30 outline-none" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">To</label>
-              <input type="date" value={exportDateTo} onChange={(e) => setExportDateTo(e.target.value)}
-                className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-srec-primary/30 outline-none" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700 mb-1 block">Format</label>
-              <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-srec-primary/30 outline-none">
-                <option value="csv">CSV</option>
-                <option value="json">JSON</option>
-              </select>
-            </div>
-            <button
-              onClick={handleExport}
-              disabled={exporting || exportEntities.length === 0}
-              className="flex items-center gap-1.5 px-4 py-2 bg-srec-primary text-white text-sm font-semibold rounded-lg hover:bg-srec-primaryHover transition-colors disabled:opacity-40"
-            >
-              <FileDown size={14} /> {exporting ? 'Exporting...' : 'Export'}
-            </button>
-          </div>
-        </div>
-      </SectionCard>
-
       {/* ── Audit Log ───────────────────────────────────────────────────────── */}
       <SectionCard title={`Audit Log (${auditTotal})`} icon={Clock} collapsible defaultOpen={false}>
         <div className="overflow-x-auto">
@@ -575,23 +496,46 @@ export default function AdminSettings() {
         )}
       </SectionCard>
 
-      {/* ── Danger Zone: Database Reset ──────────────────────────────────────── */}
+      {/* ── Danger Zone ──────────────────────────────────────────────────────── */}
       <SectionCard title="Danger Zone" icon={Trash2} danger>
-        <div className="rounded-xl border-2 border-dashed border-red-200 bg-red-50/50 p-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle size={20} className="text-red-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <h4 className="text-sm font-bold text-red-800">Reset Entire Database</h4>
-              <p className="text-xs text-red-600 mt-1">
-                This will permanently delete ALL data — complaints, students, authorities, votes, petitions, notifications — and re-seed with default departments and categories only.
-                <strong className="block mt-1">This action is irreversible.</strong>
-              </p>
-              <button
-                onClick={() => setShowResetModal(true)}
-                className="mt-3 flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-colors"
-              >
-                <Trash2 size={14} /> Reset Database
-              </button>
+        <div className="space-y-4">
+          {/* Soft Reset */}
+          <div className="rounded-xl border-2 border-dashed border-amber-200 bg-amber-50/50 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={20} className="text-amber-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-bold text-amber-800">Clear Complaints & Petitions</h4>
+                <p className="text-xs text-amber-700 mt-1">
+                  Permanently deletes all complaints, petitions, votes, and notifications. Student and authority accounts are preserved.
+                  <strong className="block mt-1">This action is irreversible.</strong>
+                </p>
+                <button
+                  onClick={() => setShowSoftResetModal(true)}
+                  className="mt-3 flex items-center gap-1.5 px-4 py-2 bg-amber-600 text-white text-sm font-semibold rounded-lg hover:bg-amber-700 transition-colors"
+                >
+                  <Trash2 size={14} /> Clear All Complaints
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Full Database Reset */}
+          <div className="rounded-xl border-2 border-dashed border-red-200 bg-red-50/50 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={20} className="text-red-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-bold text-red-800">Reset Entire Database</h4>
+                <p className="text-xs text-red-600 mt-1">
+                  Permanently deletes ALL data — complaints, students, authorities, votes, petitions, notifications — and re-seeds with default departments and categories only.
+                  <strong className="block mt-1">This action is irreversible.</strong>
+                </p>
+                <button
+                  onClick={() => setShowResetModal(true)}
+                  className="mt-3 flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  <Trash2 size={14} /> Reset Database
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -614,6 +558,15 @@ export default function AdminSettings() {
         dangerPhrase="TRANSFER ADMIN ROLE"
         onConfirm={handleAdminTransfer}
         onCancel={() => setShowAdminModal(false)}
+      />
+      <ConfirmModal
+        open={showSoftResetModal}
+        title="Clear All Complaints & Petitions"
+        message="All complaints, petitions, votes, and notifications will be permanently deleted. Student and authority accounts will be preserved. This cannot be undone."
+        confirmText="Clear All Complaints"
+        dangerPhrase="CLEAR ALL COMPLAINTS"
+        onConfirm={handleSoftReset}
+        onCancel={() => setShowSoftResetModal(false)}
       />
       <ConfirmModal
         open={showResetModal}

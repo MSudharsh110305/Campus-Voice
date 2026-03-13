@@ -219,6 +219,14 @@ const resetDatabase = async (confirmationPhrase) => {
     });
 };
 
+// Soft Reset (clear complaints/petitions, keep users)
+const softReset = async (confirmationPhrase) => {
+    return await api('/admin/soft-reset', {
+        method: 'POST',
+        body: JSON.stringify({ confirmation_phrase: confirmationPhrase }),
+    });
+};
+
 // Server-side Export
 const exportData = async (entities, format = 'csv', dateFrom = null, dateTo = null) => {
     const params = new URLSearchParams({ entities: entities.join(','), format });
@@ -259,6 +267,7 @@ const adminService = {
     transferAuthority,
     transferAdmin,
     resetDatabase,
+    softReset,
     exportData,
 };
 

@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
-import ExportModal from '../../../components/ExportModal';
 import adminService from '../../../services/admin.service';
 import complaintService from '../../../services/complaint.service';
 import { Card, Skeleton, EliteButton, STATUS_COLORS } from '../../../components/UI';
@@ -12,8 +11,147 @@ import {
 } from 'recharts';
 import {
   AlertTriangle, CheckCircle, Users, FileText, Activity,
-  Download, Star, TrendingUp, Clock,
+  Download, Star, TrendingUp, Clock, X, FileDown,
 } from 'lucide-react';
+
+// ── Export entities available ─────────────────────────────────────────────────
+const EXPORT_ENTITIES = [
+  { id: 'complaints', label: 'Complaints', desc: 'All complaints with status, priority, category' },
+  { id: 'students', label: 'Students', desc: 'All registered students' },
+  { id: 'authorities', label: 'Authorities', desc: 'All authority accounts' },
+  { id: 'petitions', label: 'Petitions', desc: 'All petitions and signature counts' },
+  { id: 'audit_logs', label: 'Audit Logs', desc: 'Admin action history' },
+  { id: 'department_stats', label: 'Department Stats', desc: 'Complaints per department' },
+];
+
+// ── Export Panel ──────────────────────────────────────────────────────────────
+function ExportPanel({ onClose }) {
+  const [entities, setEntities] = useState(['complaints']);
+  const [format, setFormat] = useState('csv');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState('');
+
+  const toggle = (id) => setEntities(p => p.includes(id) ? p.filter(e => e !== id) : [...p, id]);
+
+  const handleExport = async () => {
+    if (entities.length === 0) { setError('Select at least one entity'); return; }
+    setError('');
+    setExporting(true);
+    try {
+      const data = await adminService.exportData(entities, format, dateFrom || null, dateTo || null);
+      const isStr = typeof data === 'string';
+      const content = isStr ? data : JSON.stringify(data, null, 2);
+      const mime = format === 'csv' ? 'text/csv' : 'application/json';
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const ts = new Date().toISOString().slice(0, 10);
+      a.download = `campusvoice_${entities.join('_')}_${ts}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      onClose();
+    } catch (err) {
+      setError(err?.detail || err?.error || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Download size={18} className="text-srec-primary" />
+            <h2 className="text-base font-bold text-gray-900">Export Data</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Entities */}
+          <div>
+            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">What to export</p>
+            <div className="grid grid-cols-2 gap-2">
+              {EXPORT_ENTITIES.map(e => (
+                <label key={e.id} className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                  entities.includes(e.id)
+                    ? 'bg-srec-primarySoft border-srec-primary/40'
+                    : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                }`}>
+                  <input type="checkbox" className="mt-0.5 accent-srec-primary" checked={entities.includes(e.id)} onChange={() => toggle(e.id)} />
+                  <div>
+                    <p className={`text-xs font-semibold ${entities.includes(e.id) ? 'text-srec-primary' : 'text-gray-700'}`}>{e.label}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{e.desc}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Date Range */}
+          <div>
+            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Date Range <span className="text-gray-400 font-normal normal-case">(optional)</span></p>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="text-xs text-gray-500 mb-1 block">From</label>
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-srec-primary/30 focus:border-srec-primary outline-none" />
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-gray-500 mb-1 block">To</label>
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-srec-primary/30 focus:border-srec-primary outline-none" />
+              </div>
+            </div>
+          </div>
+
+          {/* Format */}
+          <div>
+            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Format</p>
+            <div className="flex gap-2">
+              {['csv', 'json'].map(f => (
+                <button key={f} onClick={() => setFormat(f)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-all ${
+                    format === f
+                      ? 'bg-srec-primary text-white border-srec-primary'
+                      : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                  }`}>
+                  {f.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-1">
+            <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
+              Cancel
+            </button>
+            <button
+              onClick={handleExport}
+              disabled={exporting || entities.length === 0}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-srec-primary hover:bg-srec-primaryHover transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <FileDown size={15} />
+              {exporting ? 'Exporting…' : `Export ${format.toUpperCase()}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Expanded color palette for charts ──────────────────────────────────────
 const PIE_COLORS = [
@@ -186,39 +324,6 @@ export default function AdminDashboard() {
     .sort((a, b) => b.value - a.value)
     .slice(0, 8);
 
-  const exportSections = [
-    {
-      id: 'overview', label: 'System Overview',
-      stats: [
-        { label: 'Total Complaints', value: totalComplaints },
-        { label: 'Total Students', value: totalStudents },
-        { label: 'Total Authorities', value: totalAuthorities },
-        { label: 'Recent (7 days)', value: recent7d },
-        { label: 'Resolved', value: resolved },
-        { label: 'Resolution Rate', value: `${resolutionRate}%` },
-        { label: 'Critical Issues', value: criticalCount },
-      ],
-    },
-    {
-      id: 'by_status', label: 'Complaints by Status',
-      tableHeaders: ['Status', 'Count'],
-      tableRows: Object.entries(byStatus).map(([s, c]) => [s, c]),
-    },
-    {
-      id: 'by_priority', label: 'Complaints by Priority',
-      tableHeaders: ['Priority', 'Count'],
-      tableRows: ['Critical', 'High', 'Medium', 'Low'].map(p => [p, byPriority[p] || 0]),
-    },
-    ...(analytics ? [{
-      id: 'analytics', label: `Analytics (Last ${analyticsDays} Days)`,
-      stats: [
-        { label: 'Total Submitted', value: analytics.total_complaints },
-        { label: 'Resolved', value: analytics.resolved_complaints },
-        { label: 'Resolution Rate', value: analytics.resolution_rate_percent != null ? `${Math.round(analytics.resolution_rate_percent)}%` : '—' },
-        { label: 'Avg Resolution Time', value: analytics.avg_resolution_time_hours != null ? `${Math.round(analytics.avg_resolution_time_hours)}h` : '—' },
-      ],
-    }] : []),
-  ];
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto">
@@ -444,12 +549,7 @@ export default function AdminDashboard() {
         </Card>
       </div>
 
-      <ExportModal
-        isOpen={showExport}
-        onClose={() => setShowExport(false)}
-        title="Admin Executive Report"
-        sections={exportSections}
-      />
+      {showExport && <ExportPanel onClose={() => setShowExport(false)} />}
     </div>
   );
 }
