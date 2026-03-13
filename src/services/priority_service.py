@@ -9,7 +9,10 @@ Signal breakdown (max possible = 90 deterministic + 10 LLM = 100):
   Signal 2: Urgency/safety keywords (max 25)
   Signal 3: Scope/affected pop.     (max 20)
   Signal 4: Recurrence/duration     (max 15)
-  Signal 5: LLM contextual adj.     (max +/-10, optional)
+  Signal 5: LLM semantic reasoning  (-10 to +10, optional)
+             LLM has full SREC college context and examples.
+             Adjusts up for missed safety/harassment/mass-impact issues.
+             Adjusts down for trivially-low complaints misflagged by keywords.
 
 Final score -> priority:
   >= 50  : Critical
@@ -302,20 +305,64 @@ async def calculate_initial_priority(
 
     if groq_client is not None:
         try:
-            prompt = (
-                f"Given this complaint text and calculated deterministic score of {det_total}, "
-                f"should priority be adjusted? "
-                f"Complaint text: \"{text[:500]}\"\n"
-                f'Reply ONLY with JSON: {{"adjustment": <one of: -5, 0, 5, 10>, "reason": "<one sentence>"}}'
+            det_priority = signals["deterministic_priority"]
+            system_msg = (
+                "You are the priority arbiter for CampusVoice, a complaint management system at SREC "
+                "(Sri Ramakrishna Engineering College), an engineering college in India. "
+                "Your job is to apply a semantic sanity-check on top of a rule-based score and adjust "
+                "priority when the rules miss the real-world severity.\n\n"
+                "PRIORITY LEVELS (final score thresholds):\n"
+                "  Critical (score ≥ 50): Life-safety threat, harassment/ragging, complete loss of "
+                "essential service affecting many, disciplinary violation in progress.\n"
+                "  High    (score ≥ 35): Significant disruption, health risk, major infrastructure "
+                "failure, exam-day disruption, repeated unresolved issues.\n"
+                "  Medium  (score ≥ 20): Noticeable inconvenience, partial service disruption, "
+                "single-room issue, administrative problem.\n"
+                "  Low     (score  < 20): Minor suggestion, cosmetic issue, personal preference, "
+                "easy one-time fix.\n\n"
+                "ADJUST UP examples (under-scored by rules):\n"
+                "  • Any mention of ragging, bullying, eve-teasing, sexual harassment → Critical\n"
+                "  • Sewage overflow / flooding inside building → High\n"
+                "  • Power failure in examination hall or lab during exam → Critical\n"
+                "  • Food poisoning / contaminated food → Critical\n"
+                "  • Drinking water unavailable for hours → High\n"
+                "  • Structural damage, ceiling falling, exposed live wire → Critical\n"
+                "  • Student threatening self-harm or expressing distress → Critical\n"
+                "  • Mass illness or epidemic-like symptom → Critical\n\n"
+                "ADJUST DOWN examples (over-scored by rules):\n"
+                "  • Slow WiFi, minor classroom furniture request → Low\n"
+                "  • Projector remote missing (not broken) → Low\n"
+                "  • 'Urgent' used casually for a suggestion (e.g. 'urgently add a vending machine') → Low\n"
+                "  • Single student complaining about personal schedule preference → Low\n"
+                "  • Cosmetic issue (paint peeling, small crack in wall) → Low or Medium\n\n"
+                "RULES:\n"
+                "  1. If the text is unambiguously trivial, adjust DOWN (negative adjustment).\n"
+                "  2. If the text describes a safety, harassment, or mass-impact issue that rules missed, "
+                "adjust UP (positive adjustment).\n"
+                "  3. If the deterministic priority already matches the true severity, return 0.\n"
+                "  4. Your adjustment must keep the final score within 0–100.\n"
+                "  5. Never adjust more than ±10 points; the rules handle the base signal.\n"
+            )
+
+            user_msg = (
+                f"Complaint category: {category_name}\n"
+                f"Deterministic score: {det_total} → rule-based priority: {det_priority}\n"
+                f"Complaint text: \"{text[:600]}\"\n\n"
+                f"Based on the actual meaning of this complaint, should the priority score be adjusted?\n"
+                f'Reply ONLY with valid JSON (no markdown): '
+                f'{{"adjustment": <integer from -10 to 10, multiples of 5 preferred>, "reason": "<one concise sentence>"}}'
             )
 
             response = await asyncio.to_thread(
                 groq_client.chat.completions.create,
                 model="llama-3.1-8b-instant",
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ],
                 temperature=0.1,
-                max_tokens=100,
-                timeout=10,
+                max_tokens=120,
+                timeout=12,
             )
 
             content = response.choices[0].message.content.strip()
@@ -325,9 +372,10 @@ async def calculate_initial_priority(
             json_end = content.rfind("}") + 1
             if json_start != -1 and json_end > json_start:
                 parsed = json.loads(content[json_start:json_end])
-                raw_adj = int(parsed.get("adjustment", 0))
-                # Cap to allowed range: -10 to +10
-                llm_adjustment = max(-10, min(10, raw_adj))
+                raw_adj = int(float(parsed.get("adjustment", 0)))
+                # Cap to allowed range: -10 to +10, snap to nearest 5
+                raw_adj = max(-10, min(10, raw_adj))
+                llm_adjustment = round(raw_adj / 5) * 5  # snap to -10,-5,0,5,10
                 llm_reason = str(parsed.get("reason", "LLM adjustment applied"))[:200]
             else:
                 llm_adjustment = 0
