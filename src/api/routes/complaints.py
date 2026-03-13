@@ -2529,4 +2529,56 @@ async def download_authority_attachment(
     )
 
 
+@router.delete(
+    "/{complaint_id}/self-delete",
+    summary="Student deletes own complaint",
+    description=(
+        "Soft-deletes a complaint. Only the submitting student may call this. "
+        "The complaint record is preserved in the DB (is_deleted=True) so "
+        "authorities and admins retain the audit trail."
+    )
+)
+async def student_delete_complaint(
+    complaint_id: UUID,
+    roll_no: str = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import select as _sel
+    from src.database.models import Complaint as _C
+    from src.services.notification_service import notification_service as _ns
+
+    result = await db.execute(_sel(_C).where(_C.id == complaint_id, _C.is_deleted == False))
+    complaint = result.scalar_one_or_none()
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    if complaint.student_roll_no != roll_no:
+        raise HTTPException(status_code=403, detail="You can only delete your own complaints")
+
+    if complaint.status in ("Resolved", "Closed"):
+        raise HTTPException(status_code=400, detail="Cannot delete a resolved or closed complaint")
+
+    complaint.is_deleted = True
+    complaint.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    # Notify authority that the complaint was withdrawn by the student
+    if complaint.assigned_authority_id:
+        try:
+            preview = (complaint.rephrased_text or complaint.original_text or "")[:80]
+            await _ns.create_notification(
+                db,
+                recipient_type="Authority",
+                recipient_id=str(complaint.assigned_authority_id),
+                complaint_id=complaint_id,
+                notification_type="complaint_withdrawn",
+                message=f"A student withdrew their complaint: \"{preview}…\""
+            )
+        except Exception as _e:
+            logger.warning(f"Failed to notify authority of withdrawn complaint: {_e}")
+
+    logger.info(f"Complaint {complaint_id} soft-deleted by student {roll_no}")
+    return {"success": True, "message": "Complaint deleted successfully"}
+
+
 __all__ = ["router"]

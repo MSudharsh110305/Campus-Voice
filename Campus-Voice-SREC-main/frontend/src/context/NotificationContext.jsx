@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { useAuth } from './AuthContext';
 import studentService from '../services/student.service';
 
-const NotificationContext = createContext({ unreadCount: 0, unreadNoticeCount: 0, refresh: () => {}, markNoticesSeen: () => {} });
+const NotificationContext = createContext({ unreadCount: 0, unreadNoticeCount: 0, refresh: () => {}, markNoticesSeen: () => {}, markAllRead: async () => {} });
 
 export function NotificationProvider({ children }) {
   const { user } = useAuth();
@@ -57,6 +57,16 @@ export function NotificationProvider({ children }) {
   const markNoticesSeen = useCallback(() => {
     localStorage.setItem('cv_notices_seen_at', new Date().toISOString());
     setUnreadNoticeCount(0);
+  }, []);
+
+  const markAllRead = useCallback(async () => {
+    try {
+      await studentService.markAllNotificationsRead();
+      setUnreadCount(0);
+      if ('clearAppBadge' in navigator) navigator.clearAppBadge().catch(() => {});
+    } catch {
+      // Non-fatal — badge just won't clear until next poll
+    }
   }, []);
 
   const startPolling = useCallback(() => {
@@ -125,7 +135,7 @@ export function NotificationProvider({ children }) {
   }, [user?.role, fetchCount, fetchNoticeCount, startPolling, stopPolling]);
 
   return (
-    <NotificationContext.Provider value={{ unreadCount, unreadNoticeCount, refresh: fetchCount, markNoticesSeen }}>
+    <NotificationContext.Provider value={{ unreadCount, unreadNoticeCount, refresh: fetchCount, markNoticesSeen, markAllRead }}>
       {children}
     </NotificationContext.Provider>
   );

@@ -6,7 +6,7 @@ import { useNotifications } from '../context/NotificationContext';
 
 export function TopNav() {
   const { user, logout } = useAuth();
-  const { unreadCount } = useNotifications();
+  const { unreadCount, markAllRead } = useNotifications();
   const location = useLocation();
   const navigate = useNavigate();
   const isAdmin = user?.role === 'Admin';
@@ -30,7 +30,7 @@ export function TopNav() {
             <>
               {/* Notification Bell */}
               <button
-                onClick={() => navigate('/notifications')}
+                onClick={() => { if (unreadCount > 0) markAllRead(); navigate('/notifications'); }}
                 className="relative p-2 rounded-full hover:bg-srec-primarySoft transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-srec-primary"
                 aria-label="Notifications"
               >

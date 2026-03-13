@@ -466,6 +466,22 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                         VALUES ('petition_weekly_limit', '1', 'Number of petitions a representative can create per week (0 = unlimited)')
                         ON CONFLICT (key) DO NOTHING
                     """))
+                    # Seed feature toggle / rate limit / data management settings
+                    for k, v, d in [
+                        ('enable_spam_detection', 'true', 'Enable LLM-based spam detection on complaint submission'),
+                        ('enable_image_verification', 'true', 'Enable LLM-based image verification for complaint images'),
+                        ('enable_auto_escalation', 'true', 'Automatically escalate unresolved complaints after threshold hours'),
+                        ('enable_push_notifications', 'true', 'Enable Web Push notifications to student/authority devices'),
+                        ('enable_email_verification', 'false', 'Require email verification on student registration'),
+                        ('rate_limit_student_complaints_per_day', '5', 'Maximum complaints a student can submit per day'),
+                        ('rate_limit_global_per_minute', '60', 'Global API rate limit per minute for unauthenticated requests'),
+                        ('data_retention_months', '6', 'Months to retain resolved/closed complaints before eligible for cleanup'),
+                        ('auto_delete_old_complaints', 'false', 'Automatically delete complaints older than retention period'),
+                    ]:
+                        await conn.execute(text(
+                            "INSERT INTO system_settings (key, value, description) "
+                            "VALUES (:k, :v, :d) ON CONFLICT (key) DO NOTHING"
+                        ), {"k": k, "v": v, "d": d})
                     logger.info("✅ Migration: system_settings table ensured")
                 except Exception as me:
                     logger.debug(f"Migration note (system_settings): {me}")

@@ -184,6 +184,49 @@ const resolveDispute = async (complaintId, action, reason) => {
     });
 };
 
+// Audit Logs
+const getAuditLogs = async (params = {}) => {
+    const qs = new URLSearchParams();
+    if (params.skip) qs.append('skip', params.skip);
+    if (params.limit) qs.append('limit', params.limit);
+    if (params.action) qs.append('action', params.action);
+    if (params.date_from) qs.append('date_from', params.date_from);
+    if (params.date_to) qs.append('date_to', params.date_to);
+    return await api(`/admin/audit-logs?${qs}`);
+};
+
+// Authority Transfer
+const transferAuthority = async (sourceId, targetId) => {
+    return await api('/admin/authority-transfer', {
+        method: 'POST',
+        body: JSON.stringify({ source_authority_id: sourceId, target_authority_id: targetId }),
+    });
+};
+
+// Admin Ownership Transfer
+const transferAdmin = async (newAdminId, confirmationPhrase) => {
+    return await api('/admin/admin-transfer', {
+        method: 'POST',
+        body: JSON.stringify({ new_admin_authority_id: newAdminId, confirmation_phrase: confirmationPhrase }),
+    });
+};
+
+// Database Reset
+const resetDatabase = async (confirmationPhrase) => {
+    return await api('/admin/database-reset', {
+        method: 'POST',
+        body: JSON.stringify({ confirmation_phrase: confirmationPhrase }),
+    });
+};
+
+// Server-side Export
+const exportData = async (entities, format = 'csv', dateFrom = null, dateTo = null) => {
+    const params = new URLSearchParams({ entities: entities.join(','), format });
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+    return await api(`/admin/export?${params}`);
+};
+
 const adminService = {
     createAuthority,
     getAllAuthorities,
@@ -212,6 +255,11 @@ const adminService = {
     updateSystemSetting,
     getPendingDisputes,
     resolveDispute,
+    getAuditLogs,
+    transferAuthority,
+    transferAdmin,
+    resetDatabase,
+    exportData,
 };
 
 export default adminService;

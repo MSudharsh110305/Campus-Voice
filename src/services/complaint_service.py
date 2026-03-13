@@ -25,6 +25,7 @@ from src.services.image_verification import image_verification_service
 from src.utils.file_upload import file_upload_handler
 from src.utils.exceptions import InvalidFileTypeError, FileTooLargeError, FileUploadError
 from src.config.constants import PRIORITY_SCORES  # kept for external callers
+from src.utils.settings_resolver import get_bool as _get_bool_setting
 
 logger = logging.getLogger(__name__)
 
@@ -514,11 +515,14 @@ class ComplaintService:
                 # Replaces 4 separate calls: spam + categorize + rephrase + image_req
                 categorization = await llm_service.process_complaint(normalized_text, context)
 
-                # Extract spam result from combined response
-                if categorization.get("is_spam"):
+                # Extract spam result from combined response (gated by enable_spam_detection setting)
+                _spam_enabled = await _get_bool_setting("enable_spam_detection", self.db)
+                if categorization.get("is_spam") and _spam_enabled:
                     is_spam_complaint = True
                     spam_complaint_reason = categorization.get("spam_reason", "Content flagged as spam")
                     logger.warning(f"Spam detected by combined LLM for {student_roll_no}: {spam_complaint_reason}")
+                elif categorization.get("is_spam") and not _spam_enabled:
+                    logger.info(f"Spam detection disabled — allowing complaint from {student_roll_no} despite spam flag")
 
             if not is_spam_complaint:
                 # Apply deterministic overrides (catches LLM mistakes)
@@ -533,12 +537,19 @@ class ComplaintService:
                 # Validate hostel category against student profile
                 if ai_category in ("Men's Hostel", "Women's Hostel"):
                     if student.stay_type == "Day Scholar":
-                        raise ValueError("Day scholars cannot submit hostel complaints")
-                    if ai_category == "Men's Hostel" and student.gender != "Male":
+                        # Day scholars don't live in hostels — LLM categorized wrongly.
+                        # Re-route to General instead of hard-rejecting the student.
+                        logger.warning(
+                            f"Day scholar complaint wrongly categorized as hostel by LLM — "
+                            f"overriding to General. text: {original_text[:80]}"
+                        )
+                        categorization["category"] = "General"
+                        ai_category = "General"
+                    elif ai_category == "Men's Hostel" and student.gender != "Male":
                         raise ValueError(
                             "HOSTEL_GENDER_MISMATCH: You cannot submit a complaint for the opposite hostel"
                         )
-                    if ai_category == "Women's Hostel" and student.gender != "Female":
+                    elif ai_category == "Women's Hostel" and student.gender != "Female":
                         raise ValueError(
                             "HOSTEL_GENDER_MISMATCH: You cannot submit a complaint for the opposite hostel"
                         )
@@ -755,8 +766,11 @@ class ComplaintService:
                 f"deadline: {complaint.image_required_deadline.isoformat()}"
             )
 
-        # ✅ NEW: Verify image if provided
-        if image_bytes:
+        # ✅ NEW: Verify image if provided (respects enable_image_verification setting)
+        _img_verification_enabled = await _get_bool_setting("enable_image_verification", self.db)
+        if not _img_verification_enabled and image_bytes:
+            logger.info("Image verification disabled via settings — skipping")
+        if _img_verification_enabled and image_bytes:
             try:
                 verification_result = await image_verification_service.verify_image_from_bytes(
                     db=self.db,
@@ -1019,7 +1033,7 @@ class ComplaintService:
 
         return {
             "id": str(complaint.id),
-            "status": "Submitted" if not is_spam_complaint else "Spam",
+            "status": "Raised" if not is_spam_complaint else "Spam",
             "rephrased_text": rephrased_text,
             "original_text": original_text,
             "priority": priority,

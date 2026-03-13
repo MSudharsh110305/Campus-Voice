@@ -171,6 +171,10 @@ const uploadAuthorityAttachment = async (complaintId, file) => {
     return await response.json();
 };
 
+const deleteComplaint = async (complaintId) => {
+    return await api(`/complaints/${complaintId}/self-delete`, { method: 'DELETE' });
+};
+
 const complaintService = {
     submitComplaint,
     getMyComplaints,
@@ -194,6 +198,7 @@ const complaintService = {
     getChangelog,
     getPublicAnalytics,
     uploadAuthorityAttachment,
+    deleteComplaint,
 };
 
 export default complaintService;

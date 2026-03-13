@@ -198,8 +198,17 @@ export const api = async (endpoint, options = {}, _isRetry = false) => {
                 return;
             }
 
-            // Surface the most useful error message from backend
-            const message = data.error || data.detail || data.message || `Request failed with status ${response.status}`;
+            // Surface the most useful error message from backend.
+            // data.error or data.detail may be an object (e.g. {"error": "..."}) when
+            // the error handler wraps detail={"error": "..."} into {"error": {...}}.
+            // Normalize to a string so `new Error(message)` and .toLowerCase() work.
+            const _extractStr = (v) =>
+                typeof v === 'string' ? v : (v?.error || v?.message || null);
+            const message =
+                _extractStr(data.error) ||
+                _extractStr(data.detail) ||
+                data.message ||
+                `Request failed with status ${response.status}`;
             const err = new Error(message);
             err.status = response.status;
             err.data = data;

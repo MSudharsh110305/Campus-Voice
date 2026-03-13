@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from src.database.models import PushSubscription
 from src.config.settings import settings
+from src.utils.settings_resolver import get_bool as _get_bool_setting
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ async def send_push_to_user(
     Returns:
         Number of subscriptions successfully sent to
     """
-    if not settings.ENABLE_PUSH_NOTIFICATIONS:
+    if not await _get_bool_setting("enable_push_notifications", db):
         return 0
     if not settings.VAPID_PRIVATE_KEY:
         logger.debug("VAPID_PRIVATE_KEY not configured — skipping push notification")

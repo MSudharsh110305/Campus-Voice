@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from src.utils.rate_limiter import rate_limiter
 from src.config.settings import settings
+from src.utils.settings_resolver import get_cached_int as _get_cached_int
 
 logger = logging.getLogger(__name__)
 
@@ -197,10 +198,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # Only rate limit complaint submission (not voting or viewing)
             if request.url.path == "/api/complaints/submit" and request.method == "POST":
                 # 5 complaints per day
-                return (
-                    settings.RATE_LIMIT_STUDENT_COMPLAINTS_PER_DAY,
-                    86400  # 24 hours
+                # Prefer DB-overridden value (via settings_resolver cache), fall back to env
+                daily_limit = _get_cached_int(
+                    "rate_limit_student_complaints_per_day",
+                    settings.RATE_LIMIT_STUDENT_COMPLAINTS_PER_DAY
                 )
+                return (daily_limit, 86400)  # 24 hours
 
             # Students can freely view, vote, and interact without rate limits
             return None

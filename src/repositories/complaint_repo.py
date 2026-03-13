@@ -172,7 +172,10 @@ class ComplaintRepository(BaseRepository[Complaint]):
 
         query = (
             select(Complaint)
-            .options(selectinload(Complaint.category), selectinload(Complaint.assigned_authority))
+            .options(
+                selectinload(Complaint.category),
+                selectinload(Complaint.assigned_authority).selectinload(Authority.department),
+            )
             .where(and_(*conditions))
             .order_by(desc(Complaint.submitted_at))
             .offset(skip)
@@ -456,7 +459,10 @@ class ComplaintRepository(BaseRepository[Complaint]):
         # Fetch up to 1000 matching complaints; sort in Python for flexibility.
         query = (
             select(Complaint)
-            .options(selectinload(Complaint.category), selectinload(Complaint.assigned_authority))
+            .options(
+                selectinload(Complaint.category),
+                selectinload(Complaint.assigned_authority).selectinload(Authority.department),
+            )
             .where(and_(*conditions))
             .order_by(desc(Complaint.submitted_at))  # Pre-sort newest so we cap at 1000 sensibly
             .limit(1000)
@@ -715,17 +721,10 @@ class ComplaintRepository(BaseRepository[Complaint]):
         complaint = await self.get(complaint_id)
         if complaint:
             complaint.priority_score = new_score
-            
-            # Update priority level based on score
-            if new_score >= 200:
-                complaint.priority = "Critical"
-            elif new_score >= 100:
-                complaint.priority = "High"
-            elif new_score >= 50:
-                complaint.priority = "Medium"
-            else:
-                complaint.priority = "Low"
-            
+            # NOTE: Do NOT update complaint.priority here.
+            # Priority level is managed exclusively by vote_service.recalculate_priority()
+            # using the blended formula (0-100 scale). The old thresholds (200/100/50)
+            # were from a legacy scoring system and would corrupt the blended priority.
             complaint.updated_at = datetime.now(timezone.utc)
             await self.session.commit()
             return True

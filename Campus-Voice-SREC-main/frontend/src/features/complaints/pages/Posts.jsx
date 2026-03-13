@@ -7,7 +7,7 @@ import ComplaintCard from '../components/ComplaintCard';
 import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import studentService from '../../../services/student.service';
-import { Upload, X, FileX, Inbox, AlertTriangle, ThumbsUp, Search, SlidersHorizontal, Camera, Image, WifiOff, Copy, Check } from 'lucide-react';
+import { Upload, X, FileX, Inbox, AlertTriangle, ThumbsUp, Search, SlidersHorizontal, Camera, Image, WifiOff, Copy, Check, Trash2 } from 'lucide-react';
 import { VISIBILITY, COMPLAINT_CATEGORIES, STATUSES, PRIORITIES } from '../../../utils/constants';
 
 export default function Posts() {
@@ -38,10 +38,12 @@ export default function Posts() {
   const galleryRef = useRef(null);
   const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
 
-  const [formData, setFormData] = useState({
-    original_text: '',
-    image: null,
-    visibility: 'Public',
+  const [formData, setFormData] = useState(() => {
+    try {
+      const draft = localStorage.getItem('cv_complaint_draft');
+      if (draft) return { original_text: draft, image: null, visibility: 'Public' };
+    } catch {}
+    return { original_text: '', image: null, visibility: 'Public' };
   });
   const [imagePreview, setImagePreview] = useState(null);
   const [myPosts, setMyPosts] = useState([]);
@@ -82,6 +84,23 @@ export default function Posts() {
   // Track votes cast in the dup modal: { [complaintId]: 'upvoted' | 'error' }
   const [dupVotes, setDupVotes] = useState({});
 
+  // Delete confirmation: null | complaintId
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteComplaint = async (id) => {
+    setIsDeleting(true);
+    try {
+      await complaintService.deleteComplaint(id);
+      setMyPosts(prev => prev.filter(p => (p.id || p.complaint_id) !== id));
+    } catch (err) {
+      console.error('Delete failed:', err);
+    } finally {
+      setIsDeleting(false);
+      setDeleteConfirmId(null);
+    }
+  };
+
   const copyComplaintId = async (id) => {
     try {
       await navigator.clipboard.writeText(id);
@@ -99,10 +118,11 @@ export default function Posts() {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData({
-      ...formData,
-      [name]: type === 'checkbox' ? checked : value,
-    });
+    const newVal = type === 'checkbox' ? checked : value;
+    setFormData({ ...formData, [name]: newVal });
+    if (name === 'original_text') {
+      try { newVal ? localStorage.setItem('cv_complaint_draft', newVal) : localStorage.removeItem('cv_complaint_draft'); } catch {}
+    }
   };
 
   const handleImageChange = (e) => {
@@ -266,11 +286,8 @@ export default function Posts() {
       };
       setMyPosts([newPost, ...myPosts]);
 
-      setFormData({
-        original_text: '',
-        image: null,
-        visibility: 'Public',
-      });
+      setFormData({ original_text: '', image: null, visibility: 'Public' });
+      try { localStorage.removeItem('cv_complaint_draft'); } catch {}
       setImagePreview(null);
       setDupCandidates([]);
 
@@ -749,26 +766,60 @@ export default function Posts() {
                   )}
                 </div>
               ) : (
-                filteredPosts.map((post) => (
-                  <ComplaintCard
-                    key={post.id || post.complaint_id}
-                    id={post.id || post.complaint_id}
-                    rephrased_text={post.rephrased_text}
-                    desc={post.rephrased_text || post.original_text}
-                    category={post.category_name || COMPLAINT_CATEGORIES[post.category_id]}
-                    has_image={post.has_image}
-                    author={post.is_anonymous ? 'Anonymous' : (post.author || post.student_roll_no)}
-                    status={post.status}
-                    priority={post.priority}
-                    upvotes={post.upvotes}
-                    timestamp={post.submitted_at || post.created_at}
-                    isOwner={true}
-                    assigned_authority_name={post.assigned_authority_name || null}
-                    image_required={post.image_required || false}
-                    image_pending={post.image_pending || false}
-                    image_required_deadline={post.image_required_deadline || null}
-                  />
-                ))
+                filteredPosts.map((post) => {
+                  const postId = post.id || post.complaint_id;
+                  const isDeletable = !['Resolved', 'Closed'].includes(post.status);
+                  return (
+                    <div key={postId} className="relative group">
+                      <ComplaintCard
+                        id={postId}
+                        rephrased_text={post.rephrased_text}
+                        desc={post.rephrased_text || post.original_text}
+                        category={post.category_name || COMPLAINT_CATEGORIES[post.category_id]}
+                        has_image={post.has_image}
+                        author={post.is_anonymous ? 'Anonymous' : (post.author || post.student_roll_no)}
+                        status={post.status}
+                        priority={post.priority}
+                        upvotes={post.upvotes}
+                        timestamp={post.submitted_at || post.created_at}
+                        isOwner={true}
+                        assigned_authority_name={post.assigned_authority_name || null}
+                        image_required={post.image_required || false}
+                        image_pending={post.image_pending || false}
+                        image_required_deadline={post.image_required_deadline || null}
+                      />
+                      {isDeletable && deleteConfirmId !== postId && (
+                        <button
+                          onClick={() => setDeleteConfirmId(postId)}
+                          className="absolute top-3 right-3 p-1.5 rounded-lg bg-white/80 text-gray-400 hover:text-srec-danger hover:bg-red-50 border border-gray-200 hover:border-red-200 opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                          title="Delete complaint"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                      {deleteConfirmId === postId && (
+                        <div className="mt-2 mx-1 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between gap-3">
+                          <p className="text-xs text-red-700 font-medium flex-1">Delete this complaint? Authorities can still see the record.</p>
+                          <div className="flex gap-2 shrink-0">
+                            <button
+                              onClick={() => setDeleteConfirmId(null)}
+                              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 font-semibold"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleDeleteComplaint(postId)}
+                              disabled={isDeleting}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-srec-danger text-white font-semibold hover:bg-srec-dangerDark disabled:opacity-50"
+                            >
+                              {isDeleting ? 'Deleting…' : 'Delete'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
           );

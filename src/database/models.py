@@ -344,10 +344,25 @@ class Complaint(Base):
 
     @property
     def assigned_authority_name(self) -> str | None:
-        """Return the name of the assigned authority if eagerly loaded.
+        """Return the designation of the assigned authority (e.g. 'CSE HOD', 'Hostel Warden').
+        Prefers the stored designation field, then builds from authority_type + department,
+        then falls back to the raw name.
         Uses __dict__ to avoid triggering lazy load in async context."""
         auth = self.__dict__.get('assigned_authority')
-        return auth.name if auth is not None else None
+        if auth is None:
+            return None
+        if auth.designation:
+            return auth.designation
+        dept = auth.__dict__.get('department')
+        dept_code = dept.code if dept is not None else None
+        atype = auth.authority_type or ""
+        if "HOD" in atype and dept_code:
+            return f"{dept_code} HOD"
+        if "Warden" in atype:
+            return f"Hostel {atype}"   # e.g. "Hostel Warden", "Hostel Deputy Warden"
+        if atype in ("Admin Officer", "Admin", "Disciplinary Committee"):
+            return atype
+        return auth.name
 
 
 class AuthorityUpdate(Base):

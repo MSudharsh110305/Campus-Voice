@@ -14,6 +14,7 @@ import {
   ScrollText,
   UserCheck,
   Megaphone,
+  Settings,
 } from "lucide-react";
 import { useAuth } from '../../../context/AuthContext';
 
@@ -134,6 +135,7 @@ export default function AdminSidebar({ className = "", onClose }) {
           )}
         </div>
 
+        <NavItem path="/admin/settings" icon={Settings} label="Settings" />
         <NavItem path="/admin/profile" icon={UserCog} label="Profile" />
       </nav>
 

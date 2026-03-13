@@ -420,16 +420,23 @@ class VoteService:
         if total_votes == 0:
             return complaint.priority_score or 0.0
 
-        # Floor reach at 30 so old complaints (reach=0 before migration) still
-        # respond to votes. 30 is conservative — actual reach is always higher.
-        reach = max(complaint.reach or 0, 30)
+        # Floor reach at 100 so old complaints (reach=0 before migration) still
+        # respond to votes, but not excessively. Actual dept reach is ~180/year,
+        # general complaints reach all 500+ students, so 100 is safely conservative.
+        reach = max(complaint.reach or 0, 100)
 
         # Always anchor from initial_priority (LLM assessment at creation time),
         # not current priority. This prevents vote drift: Low complaints cannot
         # ratchet to Critical through accumulated votes — they are always scored
         # relative to the original LLM baseline.
         old_priority = complaint.priority
-        anchor_priority = complaint.initial_priority or old_priority
+        if not complaint.initial_priority:
+            # One-time migration for pre-migration complaints: anchor to current priority.
+            # This prevents indefinite upward drift where each vote update ratchets
+            # the anchor higher (Low→Medium anchor, then Medium→High anchor, etc.).
+            complaint.initial_priority = old_priority
+            await self.db.commit()
+        anchor_priority = complaint.initial_priority
         blended_score, proposed_priority = self._blended_priority(
             upvotes, downvotes, reach, anchor_priority
         )

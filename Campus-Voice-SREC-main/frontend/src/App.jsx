@@ -34,6 +34,7 @@ import Changelog from './features/complaints/pages/Changelog';
 // AdminAnalytics removed — analytics merged into AdminDashboard
 import AdminPetitions from './features/admin/pages/AdminPetitions';
 import AdminRepresentatives from './features/admin/pages/AdminRepresentatives';
+import AdminSettings from './features/admin/pages/AdminSettings';
 import PetitionsPage from './features/complaints/pages/PetitionsPage';
 import PetitionDetail from './features/complaints/pages/PetitionDetail';
 import AuthorityPetitions from './features/admin/pages/AuthorityPetitions';
@@ -183,6 +184,7 @@ export default function App() {
           <Route path="students" element={<AdminStudents />} />
           <Route path="petitions" element={<AdminPetitions />} />
           <Route path="representatives" element={<AdminRepresentatives />} />
+          <Route path="settings" element={<AdminSettings />} />
           <Route path="analytics" element={<Navigate to="/admin" replace />} />
           <Route path="profile" element={<AuthorityProfile noLayout={true} />} />
         </Route>
