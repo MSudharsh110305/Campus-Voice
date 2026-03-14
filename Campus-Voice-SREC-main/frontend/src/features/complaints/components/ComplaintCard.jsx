@@ -4,11 +4,10 @@ import { useAuth } from '../../../context/AuthContext';
 import complaintService from '../../../services/complaint.service';
 import {
   ThumbsUp, ThumbsDown, FileX, ShieldCheck,
-  Clock, Building2, AlertCircle, Copy, Check, ImagePlus, Share2, MapPin
+  Clock, Building2, AlertCircle, Copy, Check, ImagePlus, MapPin
 } from 'lucide-react';
 import { Skeleton } from '../../../components/UI';
 import { VOTE_TYPES } from '../../../utils/constants';
-import InfoTooltip from '../../../components/help/InfoTooltip';
 
 // Status config: dot color, label, badge style
 const STATUS_CFG = {
@@ -101,26 +100,6 @@ export default function ComplaintCard({
 
   const haptic = (ms = 10) => { try { navigator.vibrate?.(ms); } catch {} };
 
-  const shareComplaint = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    haptic(15);
-    const text = summary || rephrased_text || desc || '';
-    const shareData = {
-      title: `CampusVoice — ${category || 'Complaint'}`,
-      text: text.length > 120 ? text.slice(0, 117) + '…' : text,
-      url: `${window.location.origin}/complaint/${id}`,
-    };
-    try {
-      if (navigator.canShare?.(shareData)) {
-        await navigator.share(shareData);
-      } else {
-        await navigator.clipboard.writeText(shareData.url);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }
-    } catch {}
-  };
 
   const showVoteError = (msg) => {
     setVoteError(msg);
@@ -373,9 +352,9 @@ export default function ComplaintCard({
           <div className="flex items-center mt-3 pt-2.5 border-t border-srec-borderLight">
             {/* Copy ID button — always visible, stops link navigation */}
             <button
-              onClick={(e) => copyId(e, id)}
+              onClick={(e) => copyId(e, id?.toString().slice(-6).toUpperCase())}
               className="flex items-center gap-1 text-[10px] text-srec-textMuted hover:text-srec-primary transition-colors"
-              title="Copy complaint ID"
+              title="Copy short code — paste in search to find this complaint"
             >
               {copied ? (
                 <><Check size={11} className="text-green-500" /><span className="text-green-500">Copied!</span></>
@@ -384,18 +363,8 @@ export default function ComplaintCard({
               )}
             </button>
 
-            {/* Share button */}
-            <button
-              onClick={shareComplaint}
-              className="flex items-center gap-1 text-[10px] text-srec-textMuted hover:text-srec-primary transition-colors ml-2.5"
-              title="Share complaint"
-            >
-              <Share2 size={11} />
-            </button>
-
             {!isOwner ? (
               <div className="flex items-center gap-1.5 ml-auto" onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
-                <InfoTooltip text="Votes increase complaint priority." />
                 <button
                   onClick={e => handleVote(e, VOTE_TYPES.UPVOTE)}
                   disabled={isVoting}

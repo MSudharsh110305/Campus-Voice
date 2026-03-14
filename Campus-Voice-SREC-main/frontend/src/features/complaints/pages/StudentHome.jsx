@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import { Card, Skeleton, RaiseButton, Button, Select } from '../../../components/UI';
@@ -21,17 +21,18 @@ const extractComplaints = (data) => {
   return [];
 };
 
+const SCROLL_KEY = 'cv_feed_scroll';
+const FEED_CACHE_KEY = 'cv_feed_cache';
+
 // ═══════════════════════ Main Component ═════════════════════════════════════
 export default function StudentHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const sentinelRef = useRef(null);
+  const observerRef = useRef(null);
 
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [feed, setFeed] = useState([]);
-  const [skip, setSkip] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState(() => {
     try {
@@ -41,11 +42,21 @@ export default function StudentHome() {
     return { status: 'All', priority: 'All', category_id: 'All', search: '', sortBy: 'hot' };
   });
 
+  // Feed state — try to restore from cache first
+  const [feed, setFeed] = useState([]);
+  const [skip, setSkip] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const firstName = user?.name?.split(' ')[0] || user?.roll_no || 'Student';
 
   // ── Pull-to-refresh ──────────────────────────────────────────────────────
   const { refreshing, pullProgress, pullDistance, handlers: pullHandlers } = usePullToRefresh(
-    async () => { await fetchFeed(); },
+    async () => {
+      sessionStorage.removeItem(FEED_CACHE_KEY);
+      sessionStorage.removeItem(SCROLL_KEY);
+      await fetchFeed();
+    },
     { threshold: 80 }
   );
 
@@ -83,7 +94,7 @@ export default function StudentHome() {
     }
   }, [filters]);
 
-  const loadMore = async () => {
+  const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;
     try {
       setLoadingMore(true);
@@ -97,12 +108,85 @@ export default function StudentHome() {
     } finally {
       setLoadingMore(false);
     }
-  };
+  }, [loadingMore, hasMore, skip, filters]);
 
+  // ── Mount: try to restore cached feed + scroll position ───────────────────
   useEffect(() => {
-    try { sessionStorage.setItem('cv_feed_filters', JSON.stringify({ sortBy: filters.sortBy, category_id: filters.category_id })); } catch {}
+    try {
+      const cache = sessionStorage.getItem(FEED_CACHE_KEY);
+      if (cache) {
+        const { feed: cachedFeed, skip: cachedSkip, hasMore: cachedHasMore, filterKey } = JSON.parse(cache);
+        const currentFilterKey = JSON.stringify({ sortBy: filters.sortBy, category_id: filters.category_id });
+        if (filterKey === currentFilterKey && cachedFeed?.length > 0) {
+          setFeed(cachedFeed);
+          setSkip(cachedSkip);
+          setHasMore(cachedHasMore);
+          setLoading(false);
+          // Restore scroll after paint
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              const savedY = parseInt(sessionStorage.getItem(SCROLL_KEY) || '0', 10);
+              if (savedY > 0) {
+                window.scrollTo({ top: savedY, behavior: 'instant' });
+                sessionStorage.removeItem(SCROLL_KEY);
+              }
+            });
+          });
+          return;
+        }
+      }
+    } catch {}
+    // No valid cache — normal fetch
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Fetch when filters change (skip on initial mount if cache restored) ───
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('cv_feed_filters', JSON.stringify({ sortBy: filters.sortBy, category_id: filters.category_id }));
+    } catch {}
+    // Clear cache on filter change
+    sessionStorage.removeItem(FEED_CACHE_KEY);
     fetchFeed();
-  }, [filters]);
+  }, [filters]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Save feed to cache whenever it changes ────────────────────────────────
+  useEffect(() => {
+    if (!loading && feed.length > 0) {
+      try {
+        const filterKey = JSON.stringify({ sortBy: filters.sortBy, category_id: filters.category_id });
+        sessionStorage.setItem(FEED_CACHE_KEY, JSON.stringify({ feed, skip, hasMore, filterKey }));
+      } catch {}
+    }
+  }, [feed, skip, hasMore]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Save scroll position on scroll ───────────────────────────────────────
+  useEffect(() => {
+    let ticking = false;
+    const onScroll = () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          try { sessionStorage.setItem(SCROLL_KEY, window.scrollY.toString()); } catch {}
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // ── IntersectionObserver for infinite scroll ──────────────────────────────
+  useEffect(() => {
+    if (observerRef.current) observerRef.current.disconnect();
+    if (!sentinelRef.current || !hasMore || loading) return;
+
+    observerRef.current = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadMore(); },
+      { rootMargin: '200px' }
+    );
+    observerRef.current.observe(sentinelRef.current);
+    return () => observerRef.current?.disconnect();
+  }, [hasMore, loading, loadMore]);
 
   return (
     <div className="min-h-screen bg-srec-background" {...pullHandlers}>
@@ -132,14 +216,7 @@ export default function StudentHome() {
 
         {/* Feed header + filter toggle */}
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-gray-900 font-heading">Campus Feed</h2>
-            {feed.length > 0 && !loading && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-srec-primarySoft text-srec-primary border border-srec-primaryMuted/30">
-                {feed.length}
-              </span>
-            )}
-          </div>
+          <h2 className="text-base font-bold text-gray-900 font-heading">Campus Feed</h2>
           <Button
             variant="ghost"
             onClick={() => setShowFilters(!showFilters)}
@@ -176,7 +253,7 @@ export default function StudentHome() {
                 <input
                   type="text"
                   className="w-full bg-white border border-gray-200 rounded-xl py-2 pl-9 pr-3 text-xs focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary outline-none transition-all"
-                  placeholder="Search keywords..."
+                  placeholder="Search or paste short code…"
                   value={filters.search}
                   onChange={(e) => setFilters({ ...filters, search: e.target.value })}
                 />
@@ -242,12 +319,18 @@ export default function StudentHome() {
                     location_verified={item.location_verified || false}
                   />
                 ))}
-                {hasMore && !loading && (
-                  <div className="flex justify-center pt-2">
-                    <button onClick={loadMore} disabled={loadingMore} className="flex items-center gap-2 border border-gray-200 bg-white text-gray-600 rounded-xl px-6 py-2 text-sm font-semibold hover:bg-srec-primarySoft hover:border-srec-primaryMuted hover:text-srec-primary transition-all disabled:opacity-50 shadow-sm">
-                      {loadingMore ? 'Loading...' : 'Load More'}
-                    </button>
+
+                {/* Infinite scroll sentinel */}
+                <div ref={sentinelRef} className="h-1" />
+
+                {loadingMore && (
+                  <div className="flex justify-center py-4">
+                    <div className="w-6 h-6 border-2 border-srec-primary border-t-transparent rounded-full animate-spin" />
                   </div>
+                )}
+
+                {!hasMore && feed.length > 0 && (
+                  <p className="text-center text-xs text-gray-400 py-4">You&apos;ve seen all complaints</p>
                 )}
               </>
             )}

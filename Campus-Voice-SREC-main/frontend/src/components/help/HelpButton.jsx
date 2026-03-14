@@ -1,16 +1,27 @@
 import React, { useState } from 'react';
 import { HelpCircle } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import HelpDrawer from './HelpDrawer';
+
+// Map current pathname to a page key used by HelpDrawer and HelpCenter
+export function getPageKey(pathname) {
+  if (pathname === '/' || pathname === '/home') return 'campus-feed';
+  if (pathname.startsWith('/posts')) return 'posts';
+  if (pathname.startsWith('/petitions')) return 'petitions';
+  if (pathname.startsWith('/wins')) return 'wins';
+  if (pathname.startsWith('/notices')) return 'notices';
+  if (pathname.startsWith('/complaint/')) return 'complaint-detail';
+  if (pathname.startsWith('/profile')) return 'privacy';
+  return null;
+}
 
 export default function HelpButton() {
   const [isOpen, setIsOpen] = useState(false);
+  const location = useLocation();
+  const pageKey = getPageKey(location.pathname);
 
   return (
     <>
-      {/*
-        Mobile: bottom-20 (80px) — clears the 64px BottomNav + margin
-        Desktop: md:bottom-5 (20px), md:right-5 (20px)
-      */}
       <button
         onClick={() => setIsOpen(true)}
         className="fixed bottom-20 right-4 md:bottom-5 md:right-5 z-40
@@ -24,7 +35,7 @@ export default function HelpButton() {
         <HelpCircle size={22} />
       </button>
 
-      <HelpDrawer isOpen={isOpen} onClose={() => setIsOpen(false)} />
+      <HelpDrawer isOpen={isOpen} onClose={() => setIsOpen(false)} pageKey={pageKey} />
     </>
   );
 }

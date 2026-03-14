@@ -83,7 +83,7 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing }) {
 
   const [shareToast, setShareToast] = React.useState(false);
 
-  const canShare = petition.is_published && status !== 'Closed';
+  const canShare = petition.is_published && status !== 'Closed' && !isExpired;
 
   const sharePetition = async (e) => {
     e.stopPropagation();

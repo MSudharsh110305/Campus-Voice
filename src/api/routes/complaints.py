@@ -1506,14 +1506,19 @@ async def filter_complaints(
     if filter_dict.get("is_verified") is not None:
         conditions.append(Complaint.image_verified == filter_dict["is_verified"])
     if filter_dict.get("search"):
-        kw = f"%{filter_dict['search']}%"
-        from sqlalchemy import or_
-        conditions.append(
-            or_(
-                Complaint.rephrased_text.ilike(kw),
-                Complaint.original_text.ilike(kw),
+        raw = filter_dict["search"].strip().lstrip("#")
+        kw = f"%{raw}%"
+        from sqlalchemy import or_, cast, String, func
+        search_conditions = [
+            Complaint.rephrased_text.ilike(kw),
+            Complaint.original_text.ilike(kw),
+        ]
+        # Short-code lookup: if input is 4-8 hex chars, match against last 6 chars of UUID
+        if len(raw) <= 8 and all(c in "0123456789abcdefABCDEF" for c in raw):
+            search_conditions.append(
+                func.right(cast(Complaint.id, String), 6).ilike(raw)
             )
-        )
+        conditions.append(or_(*search_conditions))
 
     # Query
     query = (

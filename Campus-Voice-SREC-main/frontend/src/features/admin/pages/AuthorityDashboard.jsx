@@ -54,6 +54,9 @@ export default function AuthorityDashboard() {
   const [detailedStats, setDetailedStats] = useState(null);
   const [complaints, setComplaints] = useState([]);
   const [statusFilter, setStatusFilter] = useState('All');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalComplaints, setTotalComplaints] = useState(0);
+  const PAGE_SIZE = 20;
   const [error, setError] = useState(null);
   const [showExport, setShowExport] = useState(false);
 
@@ -95,7 +98,10 @@ export default function AuthorityDashboard() {
   }, []);
 
   useEffect(() => {
-    if (dashboard) loadComplaints();
+    if (dashboard) {
+      setCurrentPage(1);
+      loadComplaints(1);
+    }
   }, [statusFilter]);
 
   const showFeedback = (type, message) => {
@@ -113,7 +119,7 @@ export default function AuthorityDashboard() {
       ]);
       setDashboard(data);
       setDetailedStats(detailed);
-      await loadComplaints();
+      await loadComplaints(1);
     } catch (err) {
       setError(err.message || 'Failed to load dashboard');
     } finally {
@@ -121,20 +127,31 @@ export default function AuthorityDashboard() {
     }
   };
 
-  const loadComplaints = async () => {
+  const loadComplaints = async (page = currentPage) => {
     try {
       // 'Disputed' is a client-side pseudo-filter: load Spam, then filter by has_disputed
       const apiFilter = statusFilter === 'Disputed' ? 'Spam' : (statusFilter === 'All' ? null : statusFilter);
-      const data = await authorityService.getMyComplaints(0, 50, apiFilter);
+      const skip = (page - 1) * PAGE_SIZE;
+      const data = await authorityService.getMyComplaints(skip, PAGE_SIZE, apiFilter);
       let list = [];
-      if (Array.isArray(data)) list = data;
-      else if (data?.complaints) list = data.complaints;
-      else if (data?.data) list = data.data;
+      let total = 0;
+      if (Array.isArray(data)) {
+        list = data;
+        total = data.length < PAGE_SIZE ? skip + data.length : skip + PAGE_SIZE + 1;
+      } else if (data?.complaints) {
+        list = data.complaints;
+        total = data.total ?? (list.length < PAGE_SIZE ? skip + list.length : skip + PAGE_SIZE + 1);
+      } else if (data?.data) {
+        list = data.data;
+        total = data.total ?? (list.length < PAGE_SIZE ? skip + list.length : skip + PAGE_SIZE + 1);
+      }
       if (statusFilter === 'Disputed') list = list.filter(c => c.has_disputed);
       setComplaints(list);
+      setTotalComplaints(total);
     } catch (err) {
       console.error('Failed to load complaints:', err);
       setComplaints([]);
+      setTotalComplaints(0);
     }
   };
 
@@ -162,7 +179,7 @@ export default function AuthorityDashboard() {
       );
       setStatusModal({ open: false, complaintId: null, currentStatus: null });
       showFeedback('success', `Status updated to "${newStatus}" successfully`);
-      await loadComplaints();
+      await loadComplaints(currentPage);
       await loadDashboard();
     } catch (err) {
       showFeedback('error', err.message || 'Failed to update status');
@@ -189,8 +206,7 @@ export default function AuthorityDashboard() {
       await authorityService.postUpdate(postUpdateModal.complaintId, updateTitle.trim(), updateContent.trim());
       setPostUpdateModal({ open: false, complaintId: null });
       showFeedback('success', 'Public update posted successfully');
-      // Reload complaint list so updated_at reflects new activity
-      await loadComplaints();
+      await loadComplaints(currentPage);
     } catch (err) {
       showFeedback('error', err.message || 'Failed to post update');
     } finally {
@@ -233,7 +249,7 @@ export default function AuthorityDashboard() {
       await authorityService.escalateComplaint(escalateModal.complaintId, escalateReason.trim());
       setEscalateModal({ open: false, complaintId: null });
       showFeedback('success', 'Complaint escalated successfully');
-      await loadComplaints();
+      await loadComplaints(currentPage);
     } catch (err) {
       showFeedback('error', err.message || 'Failed to escalate complaint');
     } finally {
@@ -483,19 +499,82 @@ export default function AuthorityDashboard() {
               </EliteButton>
             </div>
           ) : (
-            <div className="space-y-4">
-              {complaints.map(complaint => (
-                <AuthorityComplaintCard
-                  key={complaint.id}
-                  complaint={complaint}
-                  onStatusUpdate={openStatusModal}
-                  onPostUpdate={openPostUpdateModal}
-                  onEscalate={openEscalateModal}
-                  onAttach={(e, id) => { e.stopPropagation(); setAttachModal({ open: true, complaintId: id }); setAttachFile(null); }}
-                  token={tokenStorage.getAccessToken()}
-                />
-              ))}
-            </div>
+            <>
+              <div className="space-y-4">
+                {complaints.map(complaint => (
+                  <AuthorityComplaintCard
+                    key={complaint.id}
+                    complaint={complaint}
+                    onStatusUpdate={openStatusModal}
+                    onPostUpdate={openPostUpdateModal}
+                    onEscalate={openEscalateModal}
+                    onAttach={(e, id) => { e.stopPropagation(); setAttachModal({ open: true, complaintId: id }); setAttachFile(null); }}
+                    token={tokenStorage.getAccessToken()}
+                  />
+                ))}
+              </div>
+
+              {/* Google-style pagination */}
+              {(() => {
+                const totalPages = Math.ceil(totalComplaints / PAGE_SIZE);
+                if (totalPages <= 1) return null;
+                const getPages = () => {
+                  const pages = [];
+                  if (totalPages <= 7) {
+                    for (let i = 1; i <= totalPages; i++) pages.push(i);
+                  } else {
+                    pages.push(1);
+                    if (currentPage > 4) pages.push('…');
+                    const start = Math.max(2, currentPage - 2);
+                    const end = Math.min(totalPages - 1, currentPage + 2);
+                    for (let i = start; i <= end; i++) pages.push(i);
+                    if (currentPage < totalPages - 3) pages.push('…');
+                    pages.push(totalPages);
+                  }
+                  return pages;
+                };
+                const goTo = (p) => {
+                  setCurrentPage(p);
+                  loadComplaints(p);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                };
+                return (
+                  <div className="flex items-center justify-center gap-1 mt-8 flex-wrap">
+                    <button
+                      onClick={() => goTo(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      &lsaquo;
+                    </button>
+                    {getPages().map((p, i) =>
+                      p === '…' ? (
+                        <span key={`ellipsis-${i}`} className="px-2 py-1.5 text-gray-400 text-sm select-none">…</span>
+                      ) : (
+                        <button
+                          key={p}
+                          onClick={() => goTo(p)}
+                          className={`min-w-[36px] px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                            currentPage === p
+                              ? 'bg-srec-primary text-white border-srec-primary shadow-sm'
+                              : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 hover:border-srec-primary'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      )
+                    )}
+                    <button
+                      onClick={() => goTo(currentPage + 1)}
+                      disabled={currentPage >= totalPages}
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      &rsaquo;
+                    </button>
+                  </div>
+                );
+              })()}
+            </>
           )}
         </main>
       </div>
