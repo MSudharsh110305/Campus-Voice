@@ -1,6 +1,7 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { NotificationProvider } from './context/NotificationContext';
 import HelpButton from './components/help/HelpButton';
 import HelpCenter from './pages/HelpCenter';
@@ -82,6 +83,7 @@ function DashboardRedirect() {
 
 export default function App() {
   return (
+    <ThemeProvider>
     <AuthProvider>
       <NotificationProvider>
       <OfflineIndicator />
@@ -258,5 +260,6 @@ export default function App() {
       </Routes>
       </NotificationProvider>
     </AuthProvider>
+    </ThemeProvider>
   );
 }

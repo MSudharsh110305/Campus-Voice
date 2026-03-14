@@ -143,3 +143,168 @@ body {
   transform: translateY(0);
   transition: opacity 150ms ease-out, transform 150ms ease-out;
 }
+
+/* ═══════════════════════════════════════════════════════
+   NEON THEME — black + neon green cyberpunk
+   Applied via html[data-theme="neon"]
+   ═══════════════════════════════════════════════════════ */
+
+html[data-theme="neon"] {
+  color-scheme: dark;
+
+  /* Backgrounds */
+  --th-bg:           #020406;
+  --th-card:         #060d08;
+  --th-surface:      #040a06;
+  --th-surface2:     #081208;
+  /* Text */
+  --th-txt1:         #e0f8e0;
+  --th-txt2:         #90c890;
+  --th-txt3:         #4a8050;
+  --th-txt4:         #2e5232;
+  --th-txt5:         #1a3020;
+  /* Borders */
+  --th-border:       #0e220e;
+  --th-border-l:     #091608;
+  /* Inputs */
+  --th-input-bg:     #030806;
+  --th-input-border: #183018;
+  /* Nav */
+  --th-nav-bg:       rgba(2,4,6,0.96);
+  --th-overlay:      rgba(0,2,0,0.85);
+  /* Primary — neon green */
+  --th-primary:      #00ff88;
+  --th-primary-soft: rgba(0,255,136,0.1);
+  --th-primary-text: #00ff88;
+  --th-placeholder:  #2e5232;
+  --th-scrollbar:    #183018;
+}
+
+/* ── Body / root ── */
+html[data-theme="neon"] body {
+  background-color: var(--th-bg) !important;
+  color: var(--th-txt1);
+}
+html[data-theme="neon"] #root {
+  background-color: var(--th-bg);
+}
+
+/* ── Scrollbar ── */
+html[data-theme="neon"] ::-webkit-scrollbar-thumb { background: var(--th-scrollbar); }
+
+/* ── White / card backgrounds ── */
+html[data-theme="neon"] .bg-white {
+  background-color: var(--th-card) !important;
+}
+
+/* ── Translucent whites (nav bars) ── */
+html[data-theme="neon"] .bg-white\/80,
+html[data-theme="neon"] .bg-white\/90 {
+  background-color: var(--th-nav-bg) !important;
+}
+
+/* ── Gray scale backgrounds ── */
+html[data-theme="neon"] .bg-gray-50  { background-color: var(--th-surface)  !important; }
+html[data-theme="neon"] .bg-gray-100 { background-color: var(--th-surface2) !important; }
+html[data-theme="neon"] .bg-gray-200 { background-color: var(--th-surface2) !important; }
+
+/* ── Named page backgrounds ── */
+html[data-theme="neon"] .bg-srec-background,
+html[data-theme="neon"] .bg-background,
+html[data-theme="neon"] .min-h-screen {
+  background-color: var(--th-bg);
+}
+html[data-theme="neon"] .bg-srec-card         { background-color: var(--th-card)         !important; }
+html[data-theme="neon"] .bg-srec-backgroundAlt,
+html[data-theme="neon"] .bg-srec-primarySoft  { background-color: var(--th-primary-soft) !important; }
+html[data-theme="neon"] .bg-srec-cardHover    { background-color: var(--th-surface)      !important; }
+
+/* ── Text — gray scale ── */
+html[data-theme="neon"] .text-gray-900 { color: var(--th-txt1) !important; }
+html[data-theme="neon"] .text-gray-800 { color: var(--th-txt1) !important; }
+html[data-theme="neon"] .text-gray-700 { color: var(--th-txt2) !important; }
+html[data-theme="neon"] .text-gray-600 { color: var(--th-txt3) !important; }
+html[data-theme="neon"] .text-gray-500 { color: var(--th-txt4) !important; }
+html[data-theme="neon"] .text-gray-400 { color: var(--th-txt4) !important; }
+html[data-theme="neon"] .text-gray-300 { color: var(--th-txt5) !important; }
+
+/* ── Text — SREC tokens ── */
+html[data-theme="neon"] .text-srec-textPrimary   { color: var(--th-txt1)         !important; }
+html[data-theme="neon"] .text-srec-textSecondary { color: var(--th-txt2)         !important; }
+html[data-theme="neon"] .text-srec-textMuted     { color: var(--th-txt3)         !important; }
+html[data-theme="neon"] .text-srec-primary       { color: var(--th-primary-text) !important; }
+html[data-theme="neon"] .text-srec-primaryDark   { color: var(--th-primary-text) !important; }
+
+/* ── Background — SREC primary (buttons, badges) ── */
+html[data-theme="neon"] .bg-srec-primary {
+  background-color: var(--th-primary) !important;
+  box-shadow: 0 0 14px rgba(0,255,136,0.35) !important;
+}
+
+/* ── Border — SREC primary ── */
+html[data-theme="neon"] .border-srec-primary { border-color: var(--th-primary) !important; }
+
+/* ── Border — gray scale ── */
+html[data-theme="neon"] .border-gray-100         { border-color: var(--th-border-l) !important; }
+html[data-theme="neon"] .border-gray-200         { border-color: var(--th-border)   !important; }
+html[data-theme="neon"] .border-gray-300         { border-color: var(--th-border)   !important; }
+html[data-theme="neon"] .border-srec-borderLight { border-color: var(--th-border-l) !important; }
+html[data-theme="neon"] .border-srec-border      { border-color: var(--th-border)   !important; }
+
+/* ── Dividers ── */
+html[data-theme="neon"] .divide-gray-100 > * + * { border-color: var(--th-border-l) !important; }
+html[data-theme="neon"] .divide-gray-200 > * + * { border-color: var(--th-border)   !important; }
+
+/* ── Inputs / textareas / selects ── */
+html[data-theme="neon"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+html[data-theme="neon"] textarea,
+html[data-theme="neon"] select {
+  background-color: var(--th-input-bg)     !important;
+  border-color:     var(--th-input-border) !important;
+  color:            var(--th-txt1)         !important;
+}
+html[data-theme="neon"] input::placeholder,
+html[data-theme="neon"] textarea::placeholder {
+  color: var(--th-placeholder) !important;
+}
+
+/* ── Modal overlays ── */
+html[data-theme="neon"] .bg-black\/40,
+html[data-theme="neon"] .bg-black\/50,
+html[data-theme="neon"] .bg-black\/60 {
+  background-color: var(--th-overlay) !important;
+}
+
+/* ── Glass morphism ── */
+html[data-theme="neon"] .glass,
+html[data-theme="neon"] .card-glass {
+  background: rgba(6,13,8,0.92) !important;
+  border-color: var(--th-border) !important;
+}
+
+/* ── Colored tint backgrounds ── */
+html[data-theme="neon"] .bg-amber-50              { background-color: rgba(200,150,0,0.12)  !important; }
+html[data-theme="neon"] .bg-red-50                { background-color: rgba(200,30,30,0.12)  !important; }
+html[data-theme="neon"] .bg-green-50,
+html[data-theme="neon"] .bg-emerald-50            { background-color: rgba(0,200,80,0.10)   !important; }
+html[data-theme="neon"] .bg-blue-50               { background-color: rgba(0,180,100,0.10)  !important; }
+html[data-theme="neon"] .bg-purple-50             { background-color: rgba(60,200,80,0.10)  !important; }
+html[data-theme="neon"] .bg-sky-50                { background-color: rgba(0,200,120,0.10)  !important; }
+
+/* ── Colored text ── */
+html[data-theme="neon"] .text-amber-600,
+html[data-theme="neon"] .text-amber-700  { color: #e8c040 !important; }
+html[data-theme="neon"] .text-blue-600,
+html[data-theme="neon"] .text-blue-700   { color: #00e8aa !important; }
+html[data-theme="neon"] .text-emerald-600,
+html[data-theme="neon"] .text-green-600  { color: #00ff88 !important; }
+html[data-theme="neon"] .text-red-600,
+html[data-theme="neon"] .text-red-700    { color: #ff4466 !important; }
+html[data-theme="neon"] .text-purple-600 { color: #80ff60 !important; }
+html[data-theme="neon"] .text-sky-600    { color: #00e8aa !important; }
+
+/* ── Neon card subtle glow on hover ── */
+html[data-theme="neon"] .hover\:shadow-md:hover,
+html[data-theme="neon"] .hover\:shadow-card-hover:hover {
+  box-shadow: 0 0 16px rgba(0,255,136,0.12), 0 4px 12px rgba(0,0,0,0.5) !important;
+}

@@ -3,6 +3,7 @@ import { TopNav } from '../../../components/Navbars';
 import BottomNav from '../../../components/BottomNav';
 import { Card, Button } from '../../../components/UI';
 import { useAuth } from '../../../context/AuthContext';
+import { useTheme } from '../../../context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import studentService from '../../../services/student.service';
 import { LogOut, User, Mail, Hash, Building, BookOpen, Edit2, Lock, X, CheckCircle, Smartphone } from 'lucide-react';
@@ -36,6 +37,7 @@ function extractErrorMessage(err) {
 
 export default function Profile() {
   const { user, logout } = useAuth();
+  const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [stats, setStats] = useState(null);
@@ -324,6 +326,45 @@ export default function Profile() {
                     <Smartphone size={18} /> App Installed
                   </div>
                 )}
+                {/* Appearance */}
+                <div className="pt-4">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Appearance</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { id: 'light', label: 'Light', desc: 'Default', colors: ['#f5faf5', '#ffffff', '#14532D'] },
+                      { id: 'neon',  label: 'Neon',  desc: 'Cyber',   colors: ['#020406', '#060d08', '#00ff88'] },
+                    ].map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => setTheme(t.id)}
+                        className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${
+                          theme === t.id
+                            ? 'border-srec-primary bg-srec-primary/5'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        {/* Mini color preview */}
+                        <div className="flex gap-1">
+                          {t.colors.map((c, i) => (
+                            <div key={i} className="w-5 h-5 rounded-full border border-black/10" style={{ backgroundColor: c }} />
+                          ))}
+                        </div>
+                        <div className="text-center">
+                          <div className="text-sm font-semibold text-gray-900">{t.label}</div>
+                          <div className="text-xs text-gray-500">{t.desc}</div>
+                        </div>
+                        {theme === t.id && (
+                          <div className="absolute top-2 right-2 w-4 h-4 rounded-full bg-srec-primary flex items-center justify-center">
+                            <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                              <path d="M1.5 4L3 5.5L6.5 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <button
                   onClick={() => { logout(); navigate('/login'); }}
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-red-200 text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors font-medium mt-6"

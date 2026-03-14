@@ -4,10 +4,6 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './index.css';
 
-// Ensure app always uses light mode
-document.documentElement.classList.remove('dark');
-document.documentElement.style.colorScheme = 'light';
-
 // Capture the PWA install prompt as early as possible — fires before any
 // component mounts, so we must store it on window for Profile pages to read.
 window._deferredInstallPrompt = null;

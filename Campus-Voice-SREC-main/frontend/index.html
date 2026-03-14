@@ -71,6 +71,18 @@
       }
     </style>
   </div>
+  <!-- Apply saved theme before React mounts to prevent flash -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('cv_theme');
+        if (t === 'neon') {
+          document.documentElement.setAttribute('data-theme', 'neon');
+          document.documentElement.style.colorScheme = 'dark';
+        }
+      } catch (e) {}
+    })();
+  </script>
   <script type="module" src="/src/index.jsx"></script>
 </body>
 
