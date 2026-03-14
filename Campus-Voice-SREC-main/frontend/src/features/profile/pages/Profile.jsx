@@ -8,6 +8,32 @@ import studentService from '../../../services/student.service';
 import { LogOut, User, Mail, Hash, Building, BookOpen, Edit2, Lock, X, CheckCircle, Smartphone } from 'lucide-react';
 import { DEPARTMENT_BY_ID } from '../../../utils/constants';
 
+const FIELD_LABELS = {
+  old_password: 'Current password',
+  new_password: 'New password',
+  confirm_password: 'Confirm password',
+  name: 'Name',
+  email: 'Email',
+  year: 'Year',
+};
+
+function extractErrorMessage(err) {
+  const validationErrors = err?.data?.details?.validation_errors;
+  if (validationErrors?.length) {
+    return validationErrors
+      .map(e => {
+        const label = FIELD_LABELS[e.field] || e.field;
+        // Strip Pydantic prefixes like "Value error, " or "String should..."
+        const msg = e.message
+          .replace(/^Value error,\s*/i, '')
+          .replace(/^String should have at least (\d+) characters?/i, 'must be at least $1 characters');
+        return `${label}: ${msg}`;
+      })
+      .join(' · ');
+  }
+  return err?.message || null;
+}
+
 export default function Profile() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -90,7 +116,7 @@ export default function Profile() {
         setSuccess('');
       }, 1500);
     } catch (err) {
-      setError(err.message || 'Failed to update profile');
+      setError(extractErrorMessage(err) || 'Failed to update profile');
     } finally {
       setActionLoading(false);
     }
@@ -136,7 +162,7 @@ export default function Profile() {
         setSuccess('');
       }, 1500);
     } catch (err) {
-      setError(err.message || 'Failed to change password');
+      setError(extractErrorMessage(err) || 'Failed to change password');
     } finally {
       setActionLoading(false);
     }
