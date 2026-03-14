@@ -1,6 +1,6 @@
-const CACHE_STATIC = 'cv-static-v3';
-const CACHE_API = 'cv-api-v3';
-const STATIC_ASSETS = ['/', '/offline.html', '/manifest.webmanifest'];
+const CACHE_STATIC = 'cv-static-v4';
+const CACHE_API = 'cv-api-v4';
+const STATIC_ASSETS = ['/', '/offline.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/badge-72.png'];
 
 // --- INSTALL ---
 self.addEventListener('install', (event) => {
@@ -176,8 +176,8 @@ self.addEventListener('push', (event) => {
 
   const showAndNotify = self.registration.showNotification(data.title, {
     body: data.body,
-    icon: '/icons/icon-192.svg',
-    badge: '/icons/icon-192.svg',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/badge-72.png',
     data: { url: data.url },
     // Vibration is in SW (not React) — works even when app is closed
     vibrate: data.urgency === 'high' ? [200, 100, 200, 100, 200] : [150, 50, 150],

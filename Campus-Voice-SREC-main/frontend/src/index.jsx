@@ -105,11 +105,9 @@ async function setupPushNotifications(reg) {
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return;
 
-    // Reuse existing subscription if already subscribed
+    // Reuse existing subscription or create a new one
     const existing = await reg.pushManager.getSubscription();
-    if (existing) return;
-
-    const sub = await reg.pushManager.subscribe({
+    const sub = existing || await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(vapidKey),
     });

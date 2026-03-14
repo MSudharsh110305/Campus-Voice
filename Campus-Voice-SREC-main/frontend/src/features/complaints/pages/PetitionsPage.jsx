@@ -13,6 +13,27 @@ import {
 
 const MILESTONES = [50, 100, 250];
 
+// Department full-name → short code
+const DEPT_SHORT = {
+  'Computer Science & Engineering': 'CSE',
+  'Electronics & Communication Engineering': 'ECE',
+  'Robotics and Automation': 'R&A',
+  'Mechanical Engineering': 'MECH',
+  'Electrical & Electronics Engineering': 'EEE',
+  'Electronics & Instrumentation Engineering': 'EIE',
+  'Biomedical Engineering': 'BIOMED',
+  'Aeronautical Engineering': 'AERO',
+  'Civil Engineering': 'CIVIL',
+  'Information Technology': 'IT',
+  'Management Studies': 'MBA',
+  'Artificial Intelligence and Data Science': 'AIDS',
+  'M.Tech in Computer Science and Engineering': 'M.Tech CSE',
+  'English': 'ENG',
+  'Physics': 'PHY',
+  'Chemistry': 'CHEM',
+  'Mathematics': 'MATH',
+};
+
 const STATUS_ACCENT = {
   Open: 'bg-emerald-500',
   Acknowledged: 'bg-amber-400',
@@ -124,22 +145,26 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing, onOpenDetail
       <div className="p-4">
         <div className="flex items-start gap-2 mb-2">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap mb-1">
+            <div className="flex items-center gap-1.5 flex-wrap mb-1">
               <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${STATUS_BADGE[status] || STATUS_BADGE.Open}`}>
                 {status}
               </span>
-              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold border inline-flex items-center gap-1 ${SCOPE_COLORS[petition.petition_scope] || SCOPE_COLORS.General}`}>
-                <ScopeIcon size={8} />
-                {petition.petition_scope || 'General'}
-              </span>
+              {/* Show scope only if not Department (dept name already shown below) */}
+              {petition.petition_scope !== 'Department' && (
+                <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold border inline-flex items-center gap-1 ${SCOPE_COLORS[petition.petition_scope] || SCOPE_COLORS.General}`}>
+                  <ScopeIcon size={8} />
+                  {petition.petition_scope || 'General'}
+                </span>
+              )}
               {petition.department_name && (
-                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-purple-50 text-purple-600 border border-purple-200">
-                  {petition.department_name}
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-purple-50 text-purple-600 border border-purple-200 inline-flex items-center gap-1">
+                  <Building2 size={8} />
+                  {DEPT_SHORT[petition.department_name] || petition.department_name}
                 </span>
               )}
               {isExpired && !isClosed ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-50 text-red-600 border border-red-200">
-                  Closed
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-50 text-red-600 border border-red-200">
+                  Expired
                 </span>
               ) : (
                 <DeadlineChip daysRemaining={days_remaining} deadline={deadline} />
@@ -161,7 +186,7 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing, onOpenDetail
           </div>
         </div>
 
-        <div className="max-h-14 overflow-y-auto mb-3 pr-1 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
+        <div className="h-14 overflow-y-auto mb-3 pr-1 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
           <p className="text-xs text-gray-600 leading-relaxed">{petition.description}</p>
         </div>
 
@@ -308,16 +333,19 @@ function PetitionDetailSheet({ petition, onClose, onSign, currentUserRoll, signi
         {/* Header row */}
         <div className="px-5 pt-4 pb-3 flex-shrink-0 border-b border-gray-100">
           <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_BADGE[status] || STATUS_BADGE.Open}`}>
                 {status}
               </span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${SCOPE_COLORS[petition.petition_scope] || SCOPE_COLORS.General}`}>
-                <ScopeIcon size={9} />{petition.petition_scope || 'General'}
-              </span>
+              {petition.petition_scope !== 'Department' && (
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${SCOPE_COLORS[petition.petition_scope] || SCOPE_COLORS.General}`}>
+                  <ScopeIcon size={9} />{petition.petition_scope || 'General'}
+                </span>
+              )}
               {petition.department_name && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-600 border border-purple-200">
-                  {petition.department_name}
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-600 border border-purple-200 inline-flex items-center gap-1">
+                  <Building2 size={9} />
+                  {DEPT_SHORT[petition.department_name] || petition.department_name}
                 </span>
               )}
               <DeadlineChip daysRemaining={days_remaining} deadline={deadline} />
@@ -884,7 +912,7 @@ export default function PetitionsPage() {
                 </button>
                 {infoOpen && (
                   <div
-                    className="fixed inset-x-4 top-1/4 z-[60] w-auto max-w-sm mx-auto bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 animate-fadeIn sm:inset-x-auto sm:left-auto sm:top-36 sm:right-8 sm:w-72"
+                    className="fixed left-1/2 -translate-x-1/2 top-[20%] z-[60] w-[calc(100%-2rem)] max-w-sm bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 animate-fadeIn"
                     onClick={e => e.stopPropagation()}
                   >
                     <button
