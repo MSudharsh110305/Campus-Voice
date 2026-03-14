@@ -82,7 +82,7 @@ function NoticeDetailSheet({ notice, onClose, onOpenAttachment, attachLoading, f
             onClick={onClose}
         >
             <div
-                className="relative bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg max-h-[92vh] sm:max-h-[85vh] flex flex-col overflow-hidden border border-white/20"
+                className="relative bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg h-[85vh] sm:h-[75vh] flex flex-col overflow-hidden border border-white/20"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Drag handle */}
@@ -328,7 +328,7 @@ function NoticeCard({ notice, onClick, onOpenAttachment, attachLoading, formatDa
                             {notice.title}
                         </p>
 
-                        <p className="text-xs text-gray-500 mt-1 leading-relaxed line-clamp-2">
+                        <p className="text-xs text-gray-500 mt-1 leading-relaxed line-clamp-2 h-8 overflow-hidden">
                             {notice.content}
                         </p>
                     </div>
