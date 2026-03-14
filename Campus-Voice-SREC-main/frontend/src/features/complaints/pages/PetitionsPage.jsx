@@ -582,6 +582,14 @@ export default function PetitionsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [signing, setSigning] = useState(null);
   const [repStatus, setRepStatus] = useState(null);
+  const [showInfo, setShowInfo] = useState(() => {
+    try { return localStorage.getItem('cv_petitions_info_seen') !== '1'; } catch { return true; }
+  });
+
+  const dismissInfo = () => {
+    setShowInfo(false);
+    try { localStorage.setItem('cv_petitions_info_seen', '1'); } catch {}
+  };
 
   const LIMIT = 50;
   const isStudent = user?.role === 'Student';
@@ -721,17 +729,37 @@ export default function PetitionsPage() {
           </div>
         </div>
 
-        {/* Rep banner — students only */}
-        {isStudent && <RepresentativeBanner onTryCreate={() => setShowCreateModal(true)} />}
+        {/* Collapsible info section */}
+        <div className="mb-4">
+          <button
+            onClick={() => { setShowInfo(v => !v); if (!showInfo) try { localStorage.removeItem('cv_petitions_info_seen'); } catch {} }}
+            className="w-full flex items-center gap-2 px-3.5 py-2.5 bg-white/80 backdrop-blur-sm border border-white/60 rounded-xl shadow-sm hover:bg-white transition-all group"
+          >
+            <Info size={14} className="text-srec-primary flex-shrink-0" />
+            <span className="text-xs font-semibold text-gray-700 flex-1 text-left">How petitions work</span>
+            <ChevronDown
+              size={14}
+              className={`text-gray-400 transition-transform duration-300 ${showInfo ? 'rotate-180' : ''}`}
+            />
+          </button>
 
-        {/* Info banner */}
-        <div className="mb-4 p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-2">
-          <Flame size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-800">
-            When a petition hits <strong>50, 100, or 250</strong> signatures, authorities are notified.
-            Reaching your custom goal notifies all signers, the creator, and relevant admin.
-            Petitions expire after their deadline (max 15 days).
-          </p>
+          {showInfo && (
+            <div className="mt-1.5 space-y-2 animate-fadeIn">
+              {isStudent && (
+                <div className="px-1">
+                  <RepresentativeBanner onTryCreate={() => setShowCreateModal(true)} />
+                </div>
+              )}
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-2">
+                <Flame size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800">
+                  When a petition hits <strong>50, 100, or 250</strong> signatures, authorities are notified.
+                  Reaching your custom goal notifies all signers, the creator, and relevant admin.
+                  Petitions expire after their deadline (max 15 days).
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Ongoing | Closed tab bar */}

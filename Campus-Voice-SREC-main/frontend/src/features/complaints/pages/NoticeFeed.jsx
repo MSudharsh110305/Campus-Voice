@@ -29,6 +29,33 @@ const PRIORITY_CONFIG = {
     Low:    { dot: 'bg-gray-300',   text: 'text-gray-400',   label: 'Low'    },
 };
 
+// ─── URL link parser ─────────────────────────────────────────────────────────
+function LinkifiedText({ text, className = '' }) {
+    if (!text) return null;
+    const URL_REGEX = /(https?:\/\/[^\s\n]+)/g;
+    const parts = text.split(URL_REGEX);
+    return (
+        <span className={className}>
+            {parts.map((part, i) =>
+                URL_REGEX.test(part) ? (
+                    <a
+                        key={i}
+                        href={part}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 underline underline-offset-1 hover:text-blue-800 break-all"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {part}
+                    </a>
+                ) : (
+                    <span key={i}>{part}</span>
+                )
+            )}
+        </span>
+    );
+}
+
 // ─── Notice Detail Sheet ──────────────────────────────────────────────────────
 function NoticeDetailSheet({ notice, onClose, onOpenAttachment, attachLoading, formatDate, formatExpiry, formatAudience }) {
     useEffect(() => {
@@ -55,7 +82,7 @@ function NoticeDetailSheet({ notice, onClose, onOpenAttachment, attachLoading, f
             onClick={onClose}
         >
             <div
-                className="relative bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg max-h-[92vh] sm:max-h-[85vh] flex flex-col overflow-hidden"
+                className="relative bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg max-h-[92vh] sm:max-h-[85vh] flex flex-col overflow-hidden border border-white/20"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Drag handle */}
@@ -64,47 +91,61 @@ function NoticeDetailSheet({ notice, onClose, onOpenAttachment, attachLoading, f
                 </div>
 
                 {/* Coloured header */}
-                <div className={`bg-gradient-to-br ${cfg.headerBg} px-5 pt-4 pb-5 flex-shrink-0`}>
-                    <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/20 text-white text-xs font-semibold">
-                                <Icon size={11} /> {notice.category}
-                            </span>
-                            <span className={`flex items-center gap-1 text-xs font-medium text-white/80`}>
-                                <span className={`w-2 h-2 rounded-full ${pri.dot} inline-block`} />
-                                {notice.priority}
-                            </span>
+                <div className={`bg-gradient-to-br ${cfg.headerBg} px-5 pt-4 pb-6 flex-shrink-0 relative overflow-hidden`}>
+                    {/* Decorative circles */}
+                    <div className="absolute -top-8 -right-8 w-28 h-28 rounded-full bg-white/5 pointer-events-none" />
+                    <div className="absolute -bottom-6 -left-4 w-20 h-20 rounded-full bg-white/5 pointer-events-none" />
+                    <div className="relative">
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/20 text-white text-xs font-semibold backdrop-blur-sm">
+                                    <Icon size={11} /> {notice.category}
+                                </span>
+                                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/15 text-white/90 text-xs font-medium">
+                                    <span className={`w-2 h-2 rounded-full ${pri.dot} inline-block ring-1 ring-white/30`} />
+                                    {notice.priority}
+                                </span>
+                            </div>
+                            <button
+                                onClick={onClose}
+                                className="p-1.5 rounded-full bg-white/20 hover:bg-white/35 text-white transition-colors flex-shrink-0 backdrop-blur-sm"
+                            >
+                                <X size={16} />
+                            </button>
                         </div>
-                        <button
-                            onClick={onClose}
-                            className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors flex-shrink-0"
-                        >
-                            <X size={16} />
-                        </button>
-                    </div>
-                    <h2 className="text-base font-bold text-white mt-3 leading-snug">{notice.title}</h2>
-                    <div className="flex items-center gap-2 mt-2 text-xs text-white/70">
-                        <span className="font-semibold text-white/90">{notice.authority_name || 'Authority'}</span>
-                        {notice.authority_type && <span>· {notice.authority_type}</span>}
-                        <span className="ml-auto">{formatDate(notice.created_at)}</span>
+                        <h2 className="text-lg font-bold text-white leading-snug pr-2">{notice.title}</h2>
+                        <div className="flex items-center gap-2 mt-2.5">
+                            <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                                <Icon size={11} className="text-white" />
+                            </div>
+                            <span className="text-xs font-semibold text-white/90">{notice.authority_name || 'Authority'}</span>
+                            {notice.authority_type && <span className="text-xs text-white/60">· {notice.authority_type}</span>}
+                            <span className="ml-auto text-xs text-white/60">{formatDate(notice.created_at)}</span>
+                        </div>
                     </div>
                 </div>
 
                 {/* Scrollable body */}
                 <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4 min-h-0">
-                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{notice.content}</p>
+                    {/* Content */}
+                    <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                            <LinkifiedText text={notice.content} />
+                        </p>
+                    </div>
 
                     {expiryLabel && (
-                        <div className={`p-3 rounded-xl text-xs font-medium flex items-center gap-2 ${
-                            isEmergency ? 'bg-red-50 border border-red-100 text-red-700' : 'bg-amber-50 border border-amber-100 text-amber-700'
+                        <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 border ${
+                            isEmergency ? 'bg-red-50 border-red-200 text-red-700' : 'bg-amber-50 border-amber-200 text-amber-700'
                         }`}>
-                            {isEmergency ? '⚠️' : '⏰'} {expiryLabel}
+                            <span className="text-base">{isEmergency ? '⚠️' : '⏰'}</span>
+                            <span>{expiryLabel}</span>
                         </div>
                     )}
 
-                    <div className="flex items-center gap-2 py-3 border-t border-gray-100 text-xs text-gray-400">
-                        <Users size={12} className="flex-shrink-0" />
-                        <span>{formatAudience(notice)}</span>
+                    <div className="flex items-center gap-2 py-2.5 px-3 bg-gray-50 rounded-xl border border-gray-100 text-xs text-gray-500">
+                        <Users size={12} className="flex-shrink-0 text-gray-400" />
+                        <span className="font-medium">{formatAudience(notice)}</span>
                     </div>
 
                     {/* Attachments */}

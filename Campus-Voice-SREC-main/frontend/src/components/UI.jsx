@@ -68,23 +68,23 @@ export function Badge({ children, type = 'default', variant = 'status' }) {
   );
 }
 
-// New Raise Issue Button with coral gradient and 3D press effect
+// Raise Issue Button — SREC green, matches brand, stays prominent as CTA
 export function RaiseButton({ children, className = '', ...props }) {
   return (
     <button
       className={`
         inline-flex items-center justify-center gap-2
         px-6 py-3.5
-        bg-gradient-to-b from-raise-light via-raise to-raise-dark
+        bg-gradient-to-b from-[#1f7a4a] via-srec-primary to-[#155e32]
         text-white font-semibold
         rounded-xl
-        shadow-raise-btn
-        border-t border-raise-light/50
+        shadow-[0_4px_14px_-2px_rgba(22,101,52,0.45),0_1px_3px_rgba(0,0,0,0.12),inset_0_1px_0_rgba(255,255,255,0.1)]
+        border border-[#1a6b3c]/60
         transition-all duration-200
         will-change-transform
-        hover:shadow-raise-btn-hover hover:-translate-y-0.5
-        active:shadow-raise-pressed active:translate-y-0 active:scale-[0.98]
-        focus:outline-none focus:ring-2 focus:ring-raise/50 focus:ring-offset-2
+        hover:shadow-[0_6px_20px_-2px_rgba(22,101,52,0.55),0_2px_6px_rgba(0,0,0,0.1)] hover:-translate-y-0.5
+        active:translate-y-0 active:scale-[0.98] active:shadow-none
+        focus:outline-none focus:ring-2 focus:ring-srec-primary/50 focus:ring-offset-2
         ${className}
       `}
       {...props}

@@ -775,42 +775,46 @@ export default function Posts() {
             <div className="space-y-3">
               {/* Filter bar */}
               {myPosts.length > 0 && (
-                <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-[0_2px_12px_-2px_rgba(0,0,0,0.06)] p-3 flex flex-wrap gap-2 items-center">
-                  <SlidersHorizontal size={14} className="text-gray-400 flex-shrink-0" />
-                  <div className="relative flex-1 min-w-[140px]">
+                <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-[0_2px_12px_-2px_rgba(0,0,0,0.06)] p-3 space-y-2">
+                  {/* Row 1: search */}
+                  <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={12} />
                     <input
                       type="text"
-                      placeholder="Search..."
+                      placeholder="Search my posts..."
                       value={mineFilters.search}
                       onChange={e => setMineFilters(f => ({ ...f, search: e.target.value }))}
-                      className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary outline-none transition-all"
+                      className="w-full pl-7 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary outline-none transition-all bg-gray-50 focus:bg-white"
                     />
                   </div>
-                  <select
-                    value={mineFilters.status}
-                    onChange={e => updateMineFilter('status', e.target.value)}
-                    className="py-1.5 px-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary outline-none"
-                  >
-                    <option value="All">All Status</option>
-                    {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <select
-                    value={mineFilters.priority}
-                    onChange={e => updateMineFilter('priority', e.target.value)}
-                    className="py-1.5 px-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary outline-none"
-                  >
-                    <option value="All">All Priority</option>
-                    {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                  {(mineFilters.status !== 'All' || mineFilters.priority !== 'All' || mineFilters.search) && (
-                    <button
-                      onClick={clearMineFilters}
-                      className="text-xs text-gray-400 hover:text-srec-danger flex items-center gap-1"
+                  {/* Row 2: icon + selects + reset */}
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal size={13} className="text-gray-400 flex-shrink-0" />
+                    <select
+                      value={mineFilters.status}
+                      onChange={e => updateMineFilter('status', e.target.value)}
+                      className="flex-1 py-1.5 px-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary outline-none bg-white"
                     >
-                      <X size={11} /> Reset
-                    </button>
-                  )}
+                      <option value="All">All Status</option>
+                      {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <select
+                      value={mineFilters.priority}
+                      onChange={e => updateMineFilter('priority', e.target.value)}
+                      className="flex-1 py-1.5 px-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-srec-primary/20 focus:border-srec-primary outline-none bg-white"
+                    >
+                      <option value="All">All Priority</option>
+                      {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                    {(mineFilters.status !== 'All' || mineFilters.priority !== 'All' || mineFilters.search) && (
+                      <button
+                        onClick={clearMineFilters}
+                        className="text-xs text-gray-400 hover:text-srec-danger flex items-center gap-1 flex-shrink-0"
+                      >
+                        <X size={11} /> Reset
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -861,10 +865,10 @@ export default function Posts() {
                       {isDeletable && deleteConfirmId !== postId && (
                         <button
                           onClick={() => setDeleteConfirmId(postId)}
-                          className="absolute top-3 right-3 p-1.5 rounded-lg bg-white/80 text-gray-400 hover:text-srec-danger hover:bg-red-50 border border-gray-200 hover:border-red-200 opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                          className="absolute -top-2 -right-2 z-20 w-7 h-7 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-srec-danger hover:bg-red-50 hover:border-red-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-md"
                           title="Delete complaint"
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={12} />
                         </button>
                       )}
                       {deleteConfirmId === postId && (

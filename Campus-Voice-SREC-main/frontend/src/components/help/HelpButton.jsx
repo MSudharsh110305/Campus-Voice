@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { HelpCircle } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import HelpDrawer from './HelpDrawer';
@@ -19,20 +19,45 @@ export default function HelpButton() {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
   const pageKey = getPageKey(location.pathname);
+  const [visible, setVisible] = useState(true);
+  const lastScrollY = useRef(0);
+  const ticking = useRef(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!ticking.current) {
+        window.requestAnimationFrame(() => {
+          const currentY = window.scrollY;
+          if (currentY < 60) {
+            setVisible(true);
+          } else {
+            setVisible(currentY < lastScrollY.current);
+          }
+          lastScrollY.current = currentY;
+          ticking.current = false;
+        });
+        ticking.current = true;
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   return (
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-20 right-4 md:bottom-5 md:right-5 z-40
-          w-12 h-12 md:w-[52px] md:h-[52px]
+        className={`fixed bottom-20 right-4 md:bottom-5 md:right-5 z-40
+          w-11 h-11 md:w-12 md:h-12
           rounded-full shadow-lg
           bg-[#14532D] hover:bg-[#166534]
           text-white flex items-center justify-center
-          transition-all duration-200 hover:scale-110 active:scale-95"
+          transition-all duration-300
+          hover:scale-110 active:scale-95
+          ${visible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-4 pointer-events-none'}`}
         aria-label="Open help"
       >
-        <HelpCircle size={22} />
+        <HelpCircle size={20} />
       </button>
 
       <HelpDrawer isOpen={isOpen} onClose={() => setIsOpen(false)} pageKey={pageKey} />
