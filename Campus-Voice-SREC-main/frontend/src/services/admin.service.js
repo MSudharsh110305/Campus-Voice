@@ -27,6 +27,17 @@ const deleteAuthority = async (authorityId) => {
     });
 };
 
+const updateAuthority = async (authorityId, { name, email, password }) => {
+    const body = {};
+    if (name !== undefined && name !== null) body.name = name;
+    if (email !== undefined && email !== null) body.email = email;
+    if (password !== undefined && password !== null && password !== '') body.password = password;
+    return await api(`/admin/authorities/${authorityId}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+    });
+};
+
 // Student Management
 const getAllStudents = async (skip = 0, limit = 50, is_active = null, department_id = null) => {
     const params = new URLSearchParams({ skip, limit });
@@ -237,6 +248,7 @@ const exportData = async (entities, format = 'csv', dateFrom = null, dateTo = nu
 
 const adminService = {
     createAuthority,
+    updateAuthority,
     getAllAuthorities,
     toggleAuthorityActive,
     deleteAuthority,

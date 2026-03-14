@@ -16,7 +16,7 @@ System administration, user management, analytics, bulk operations.
 import logging
 from typing import Optional
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -249,11 +249,76 @@ async def delete_authority(
     await db.commit()
     
     logger.info(f"Authority {authority_id} deleted by admin {current_authority_id}")
-    
+
     return SuccessResponse(
         success=True,
         message="Authority deleted successfully"
     )
+
+
+@router.put(
+    "/authorities/{authority_id}",
+    response_model=SuccessResponse,
+    summary="Update authority account",
+    description="Update authority name, email, and/or password (admin only)"
+)
+async def update_authority(
+    authority_id: int,
+    name: Optional[str] = Body(None, min_length=2, max_length=255),
+    email: Optional[str] = Body(None),
+    password: Optional[str] = Body(None, min_length=8),
+    current_authority_id: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update authority name, email, and/or password.
+
+    Only fields provided (non-null) are updated.
+    Cannot change your own email if you are the only admin.
+    """
+    from sqlalchemy import select
+    from src.database.models import Authority
+    from src.services.auth_service import AuthService
+
+    auth_service = AuthService()
+
+    authority_query = select(Authority).where(Authority.id == authority_id)
+    authority_result = await db.execute(authority_query)
+    authority = authority_result.scalar_one_or_none()
+
+    if not authority:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Authority not found")
+
+    if name is not None:
+        authority.name = name.strip()
+
+    if email is not None:
+        email = email.strip().lower()
+        if not email.endswith("@srec.ac.in"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Authority email must end with @srec.ac.in"
+            )
+        # Check uniqueness (skip self)
+        conflict_query = select(Authority).where(
+            Authority.email == email, Authority.id != authority_id
+        )
+        conflict_result = await db.execute(conflict_query)
+        if conflict_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already in use by another authority"
+            )
+        authority.email = email
+
+    if password is not None:
+        authority.password_hash = auth_service.hash_password(password)
+
+    authority.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    logger.info(f"Authority {authority_id} updated by admin {current_authority_id}")
+    return SuccessResponse(success=True, message="Authority updated successfully")
 
 
 # ==================== STUDENT MANAGEMENT ====================
@@ -1730,6 +1795,10 @@ _KNOWN_SETTINGS = {
     "rate_limit_student_complaints_per_day": {
         "description": "Maximum complaints a student can submit per day",
         "type": "int", "min": 1, "max": 50, "group": "rate_limits",
+    },
+    "rate_limit_complaint_window_hours": {
+        "description": "Rolling time window (hours) for the per-student complaint limit (e.g. 24 = daily, 168 = weekly)",
+        "type": "int", "min": 1, "max": 168, "group": "rate_limits",
     },
     "rate_limit_global_per_minute": {
         "description": "Global API rate limit per minute for unauthenticated requests",

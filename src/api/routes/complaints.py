@@ -1505,7 +1505,16 @@ async def filter_complaints(
             conditions.append(Complaint.image_data.is_(None))
     if filter_dict.get("is_verified") is not None:
         conditions.append(Complaint.image_verified == filter_dict["is_verified"])
-    
+    if filter_dict.get("search"):
+        kw = f"%{filter_dict['search']}%"
+        from sqlalchemy import or_
+        conditions.append(
+            or_(
+                Complaint.rephrased_text.ilike(kw),
+                Complaint.original_text.ilike(kw),
+            )
+        )
+
     # Query
     query = (
         select(Complaint)

@@ -4,7 +4,7 @@ import { Skeleton } from '../../../components/UI';
 import {
   Settings, ToggleRight, Save, ArrowRightLeft,
   ShieldAlert, Trash2, Clock, ChevronDown, ChevronUp,
-  AlertTriangle, Check, X,
+  AlertTriangle, Check, X, UserCog, UserPlus,
 } from 'lucide-react';
 
 // ─── Toggle Switch ───────────────────────────────────────────────────────────
@@ -122,6 +122,54 @@ export default function AdminSettings() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [showSoftResetModal, setShowSoftResetModal] = useState(false);
+
+  // Authority management state
+  const [authMode, setAuthMode] = useState('edit'); // 'create' | 'edit'
+  const [selectedAuthId, setSelectedAuthId] = useState('');
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [authSaving, setAuthSaving] = useState(false);
+
+  // Populate edit form when authority is selected
+  const handleSelectAuth = (id) => {
+    setSelectedAuthId(id);
+    const a = authorities.find(x => String(x.id) === id);
+    if (a) setAuthForm({ name: a.name || '', email: a.email || '', password: '' });
+    else setAuthForm({ name: '', email: '', password: '' });
+  };
+
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setAuthSaving(true);
+    try {
+      if (authMode === 'create') {
+        await adminService.createAuthority({
+          name: authForm.name,
+          email: authForm.email,
+          password: authForm.password,
+          authority_type: authForm.authority_type || 'Warden',
+          authority_level: Number(authForm.authority_level) || 5,
+          department_id: authForm.department_id ? Number(authForm.department_id) : null,
+          designation: authForm.designation || null,
+        });
+        showToast('Authority created successfully');
+      } else {
+        if (!selectedAuthId) { showToast('Select an authority to edit', 'error'); return; }
+        await adminService.updateAuthority(Number(selectedAuthId), {
+          name: authForm.name || undefined,
+          email: authForm.email || undefined,
+          password: authForm.password || undefined,
+        });
+        showToast('Authority updated successfully');
+      }
+      setAuthForm({ name: '', email: '', password: '' });
+      setSelectedAuthId('');
+      loadAuthorities();
+    } catch (err) {
+      showToast(err?.detail || err?.error || 'Operation failed', 'error');
+    } finally {
+      setAuthSaving(false);
+    }
+  };
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -392,6 +440,146 @@ export default function AdminSettings() {
           </div>
         </SectionCard>
       )}
+
+      {/* ── Manage Authorities ──────────────────────────────────────────────── */}
+      <SectionCard title="Manage Authorities" icon={UserCog}>
+        {/* Mode toggle */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => { setAuthMode('edit'); setAuthForm({ name: '', email: '', password: '' }); setSelectedAuthId(''); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+              authMode === 'edit' ? 'bg-srec-primary text-white border-srec-primary' : 'bg-white text-gray-600 border-gray-300 hover:border-srec-primary'
+            }`}
+          >
+            <UserCog size={13} /> Edit Authority
+          </button>
+          <button
+            onClick={() => { setAuthMode('create'); setAuthForm({ name: '', email: '', password: '', authority_type: 'Warden', authority_level: 5 }); setSelectedAuthId(''); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+              authMode === 'create' ? 'bg-srec-primary text-white border-srec-primary' : 'bg-white text-gray-600 border-gray-300 hover:border-srec-primary'
+            }`}
+          >
+            <UserPlus size={13} /> Create New
+          </button>
+        </div>
+
+        <form onSubmit={handleAuthSubmit} className="space-y-3">
+          {/* Select authority (edit mode only) */}
+          {authMode === 'edit' && (
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">Select Authority to Edit</label>
+              <select
+                value={selectedAuthId}
+                onChange={(e) => handleSelectAuth(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-srec-primary/30 focus:border-srec-primary outline-none"
+              >
+                <option value="">Choose authority...</option>
+                {authorities.map(a => (
+                  <option key={a.id} value={a.id}>{a.name} — {a.authority_type} {a.email ? `(${a.email})` : ''}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">Name</label>
+              <input
+                type="text"
+                value={authForm.name}
+                onChange={(e) => setAuthForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="Full name"
+                required={authMode === 'create'}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-srec-primary/30 focus:border-srec-primary outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">Email (@srec.ac.in)</label>
+              <input
+                type="email"
+                value={authForm.email}
+                onChange={(e) => setAuthForm(f => ({ ...f, email: e.target.value }))}
+                placeholder="name@srec.ac.in"
+                required={authMode === 'create'}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-srec-primary/30 focus:border-srec-primary outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">
+                Password {authMode === 'edit' && <span className="font-normal text-gray-400">(leave blank to keep current)</span>}
+              </label>
+              <input
+                type="password"
+                value={authForm.password}
+                onChange={(e) => setAuthForm(f => ({ ...f, password: e.target.value }))}
+                placeholder={authMode === 'edit' ? 'New password (optional)' : 'Min 8 characters'}
+                required={authMode === 'create'}
+                minLength={authMode === 'create' ? 8 : 0}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-srec-primary/30 focus:border-srec-primary outline-none"
+              />
+            </div>
+            {/* Extra fields for create mode */}
+            {authMode === 'create' && (
+              <>
+                <div>
+                  <label className="text-xs font-medium text-gray-700 mb-1 block">Authority Type</label>
+                  <select
+                    value={authForm.authority_type || 'Warden'}
+                    onChange={(e) => setAuthForm(f => ({ ...f, authority_type: e.target.value }))}
+                    required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-srec-primary/30 focus:border-srec-primary outline-none"
+                  >
+                    {['Warden', 'Deputy Warden', 'Senior Deputy Warden', 'HOD', 'Admin Officer', 'Disciplinary Committee', 'Admin'].map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-700 mb-1 block">Authority Level (1–100)</label>
+                  <input
+                    type="number"
+                    min={1} max={100}
+                    value={authForm.authority_level || 5}
+                    onChange={(e) => setAuthForm(f => ({ ...f, authority_level: e.target.value }))}
+                    required
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-srec-primary/30 focus:border-srec-primary outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-700 mb-1 block">Designation <span className="font-normal text-gray-400">(optional)</span></label>
+                  <input
+                    type="text"
+                    value={authForm.designation || ''}
+                    onChange={(e) => setAuthForm(f => ({ ...f, designation: e.target.value }))}
+                    placeholder="e.g. Chief Warden"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-srec-primary/30 focus:border-srec-primary outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-700 mb-1 block">Department ID <span className="font-normal text-gray-400">(optional, for HOD)</span></label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={authForm.department_id || ''}
+                    onChange={(e) => setAuthForm(f => ({ ...f, department_id: e.target.value }))}
+                    placeholder="e.g. 1 for CSE"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-srec-primary/30 focus:border-srec-primary outline-none"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={authSaving || (authMode === 'edit' && !selectedAuthId)}
+            className="flex items-center gap-2 px-4 py-2 bg-srec-primary text-white text-sm font-semibold rounded-xl hover:bg-srec-primaryHover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Save size={14} />
+            {authSaving ? 'Saving...' : (authMode === 'create' ? 'Create Authority' : 'Save Changes')}
+          </button>
+        </form>
+      </SectionCard>
 
       {/* ── Authority Transfer ──────────────────────────────────────────────── */}
       <SectionCard title="Authority Transfer" icon={ArrowRightLeft}>

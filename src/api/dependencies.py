@@ -346,7 +346,8 @@ class ComplaintFilters:
         date_from: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
         date_to: Optional[str] = Query(None, description="Filter to date (YYYY-MM-DD)"),
         has_image: Optional[bool] = Query(None, description="Filter by image presence"),
-        is_verified: Optional[bool] = Query(None, description="Filter by image verification status")
+        is_verified: Optional[bool] = Query(None, description="Filter by image verification status"),
+        search: Optional[str] = Query(None, max_length=200, description="Full-text keyword search on complaint text"),
     ):
         self.status = status
         self.priority = priority
@@ -356,7 +357,8 @@ class ComplaintFilters:
         self.date_to = date_to
         self.has_image = has_image
         self.is_verified = is_verified
-    
+        self.search = search
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary, excluding None values."""
         return {
@@ -368,7 +370,8 @@ class ComplaintFilters:
                 "date_from": self.date_from,
                 "date_to": self.date_to,
                 "has_image": self.has_image,
-                "is_verified": self.is_verified
+                "is_verified": self.is_verified,
+                "search": self.search,
             }.items() if v is not None
         }
 

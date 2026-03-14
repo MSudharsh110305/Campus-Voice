@@ -197,13 +197,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if role == "Student":
             # Only rate limit complaint submission (not voting or viewing)
             if request.url.path == "/api/complaints/submit" and request.method == "POST":
-                # 5 complaints per day
-                # Prefer DB-overridden value (via settings_resolver cache), fall back to env
+                # Prefer DB-overridden values (via settings_resolver cache), fall back to env
                 daily_limit = _get_cached_int(
                     "rate_limit_student_complaints_per_day",
                     settings.RATE_LIMIT_STUDENT_COMPLAINTS_PER_DAY
                 )
-                return (daily_limit, 86400)  # 24 hours
+                window_hours = _get_cached_int(
+                    "rate_limit_complaint_window_hours",
+                    24  # default: 24-hour window
+                )
+                return (daily_limit, window_hours * 3600)
 
             # Students can freely view, vote, and interact without rate limits
             return None

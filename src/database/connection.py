@@ -474,6 +474,7 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                         ('enable_push_notifications', 'true', 'Enable Web Push notifications to student/authority devices'),
                         ('enable_email_verification', 'false', 'Require email verification on student registration'),
                         ('rate_limit_student_complaints_per_day', '5', 'Maximum complaints a student can submit per day'),
+                        ('rate_limit_complaint_window_hours', '24', 'Rolling time window (hours) for the per-student complaint limit'),
                         ('rate_limit_global_per_minute', '60', 'Global API rate limit per minute for unauthenticated requests'),
                         ('data_retention_months', '6', 'Months to retain resolved/closed complaints before eligible for cleanup'),
                         ('auto_delete_old_complaints', 'false', 'Automatically delete complaints older than retention period'),
