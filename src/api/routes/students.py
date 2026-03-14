@@ -774,6 +774,7 @@ async def get_student_notices(
             target_years=n.target_years,
             is_active=n.is_active,
             created_at=n.created_at,
+            updated_at=n.updated_at,
             expires_at=n.expires_at,
             attachment_filename=n.attachment_filename,
             attachment_mimetype=n.attachment_mimetype if hasattr(n, 'attachment_mimetype') else None,

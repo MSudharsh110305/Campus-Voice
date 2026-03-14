@@ -84,6 +84,14 @@ const deactivateNotice = async (noticeId) => {
     return await api(`/authorities/notices/${noticeId}`, { method: 'DELETE' });
 };
 
+// Update notice title/content/category/priority/expires_at
+const updateNotice = async (noticeId, data) => {
+    return await api(`/authorities/notices/${noticeId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+    });
+};
+
 // Upload attachment to a notice
 const uploadNoticeAttachment = async (noticeId, file) => {
     const token = tokenStorage.getAccessToken();
@@ -158,6 +166,7 @@ const authorityService = {
     createNotice,
     getMyNotices,
     deactivateNotice,
+    updateNotice,
     uploadNoticeAttachment,
     getNoticeAttachmentUrl,
     addNoticeAttachment,

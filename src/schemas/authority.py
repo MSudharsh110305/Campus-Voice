@@ -642,6 +642,7 @@ class NoticeResponse(BaseModel):
     target_years: Optional[List[str]] = None
     is_active: bool
     created_at: datetime
+    updated_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
     attachment_filename: Optional[str] = None
     attachment_mimetype: Optional[str] = None

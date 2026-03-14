@@ -2428,4 +2428,78 @@ async def export_data(
     )
 
 
+# ==================== ADMIN NOTICE MONITORING ====================
+
+@router.get(
+    "/notices",
+    summary="Get all notices from all authorities (admin monitoring)",
+    description="Returns all notices posted by any authority, with optional filter by authority_id. Admin only.",
+)
+async def get_all_notices_admin(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    authority_id: Optional[int] = Query(None, description="Filter by specific authority"),
+    _: int = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from src.database.models import AuthorityUpdate, Authority
+    from sqlalchemy import select, func, and_
+
+    conditions = []
+    if authority_id is not None:
+        conditions.append(AuthorityUpdate.authority_id == authority_id)
+
+    base = and_(*conditions) if conditions else True
+
+    total_r = await db.execute(select(func.count(AuthorityUpdate.id)).where(base))
+    total = total_r.scalar() or 0
+
+    notices_q = (
+        select(AuthorityUpdate, Authority.name.label("auth_name"), Authority.authority_type.label("auth_type"))
+        .join(Authority, AuthorityUpdate.authority_id == Authority.id)
+        .where(base)
+        .order_by(AuthorityUpdate.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    rows = (await db.execute(notices_q)).all()
+
+    from src.schemas.authority import NoticeResponse, NoticeListResponse, NoticeAttachmentItem
+
+    items = []
+    for n, auth_name, auth_type in rows:
+        att_items = [
+            NoticeAttachmentItem(id=a.id, filename=a.filename, mimetype=a.mimetype, size=a.size)
+            for a in (n.attachments or [])
+        ]
+        items.append(NoticeResponse(
+            id=n.id,
+            authority_id=n.authority_id,
+            authority_name=auth_name,
+            authority_type=auth_type,
+            title=n.title,
+            content=n.content,
+            category=n.category,
+            priority=n.priority,
+            target_gender=n.target_gender,
+            target_stay_types=n.target_stay_types,
+            target_departments=n.target_departments,
+            target_years=n.target_years,
+            is_active=n.is_active,
+            created_at=n.created_at,
+            updated_at=n.updated_at,
+            expires_at=n.expires_at,
+            attachment_filename=n.attachment_filename,
+            attachment_mimetype=n.attachment_mimetype,
+            attachments=att_items,
+        ))
+
+    return NoticeListResponse(
+        notices=items,
+        total=total,
+        page=skip // limit + 1,
+        page_size=limit,
+        total_pages=(total + limit - 1) // limit if total else 0,
+    )
+
 __all__ = ["router"]

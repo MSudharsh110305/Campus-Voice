@@ -1040,6 +1040,7 @@ async def get_my_notices(
             target_years=n.target_years,
             is_active=n.is_active,
             created_at=n.created_at,
+            updated_at=n.updated_at,
             expires_at=n.expires_at,
             attachment_filename=n.attachment_filename,
             attachment_mimetype=n.attachment_mimetype,
@@ -1091,6 +1092,58 @@ async def deactivate_notice(
 
     logger.info(f"Notice {notice_id} deactivated by authority {authority_id}")
     return {"success": True, "message": "Notice deactivated"}
+
+
+@router.patch(
+    "/notices/{notice_id}",
+    summary="Update a notice",
+    description="Authority updates title/content/category/priority/expires_at of their own notice"
+)
+async def update_notice(
+    notice_id: int,
+    body: dict,
+    authority_id: int = Depends(get_current_authority),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update a notice (only the creator or Admin can do this)."""
+    from src.database.models import AuthorityUpdate
+    from sqlalchemy import select
+
+    result = await db.execute(
+        select(AuthorityUpdate).where(AuthorityUpdate.id == notice_id)
+    )
+    notice = result.scalar_one_or_none()
+
+    if not notice:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Notice not found")
+
+    authority_repo = AuthorityRepository(db)
+    authority = await authority_repo.get(authority_id)
+    is_admin = authority and authority.authority_type == "Admin"
+
+    if not is_admin and notice.authority_id != authority_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            detail="You can only update your own notices")
+
+    allowed = {"title", "content", "category", "priority", "expires_at"}
+    for key, val in body.items():
+        if key in allowed:
+            if key == "expires_at":
+                if val:
+                    from datetime import datetime
+                    try:
+                        setattr(notice, key, datetime.fromisoformat(val.replace("Z", "+00:00")))
+                    except Exception:
+                        pass
+                else:
+                    notice.expires_at = None
+            else:
+                setattr(notice, key, val)
+
+    await db.commit()
+    await db.refresh(notice)
+    logger.info(f"Notice {notice_id} updated by authority {authority_id}")
+    return {"success": True, "message": "Notice updated", "updated_at": notice.updated_at.isoformat()}
 
 
 @router.post(

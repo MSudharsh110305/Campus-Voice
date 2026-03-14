@@ -9,7 +9,7 @@ import { tokenStorage } from '../../../utils/api';
 import {
     Megaphone, Calendar, AlertTriangle, Info, Wrench,
     Users, Paperclip, X, Download, FileText, ChevronRight,
-    Bell, Inbox,
+    Bell, Inbox, Pin, Pencil,
 } from 'lucide-react';
 
 // ─── Category config ──────────────────────────────────────────────────────────
@@ -247,52 +247,84 @@ function AttachmentModal({ filename, mimeType, blobUrl, onClose }) {
 }
 
 // ─── Notice Card ─────────────────────────────────────────────────────────────
-function NoticeCard({ notice, onClick, onOpenAttachment, attachLoading, formatDate, formatExpiry, formatAudience }) {
+function NoticeCard({ notice, onClick, onOpenAttachment, attachLoading, formatDate, formatExpiry, formatAudience, cardRef }) {
     const cfg = CATEGORY_CONFIG[notice.category] || CATEGORY_CONFIG['Announcement'];
     const pri = PRIORITY_CONFIG[notice.priority] || PRIORITY_CONFIG['Low'];
     const Icon = cfg.icon;
     const isEmergency = notice.category === 'Emergency';
+    const isAdminNotice = notice.authority_type === 'Admin';
     const expiryLabel = formatExpiry(notice.expires_at, notice.category);
+    const isEdited = notice.updated_at && notice.created_at &&
+        new Date(notice.updated_at) - new Date(notice.created_at) > 5000;
 
     return (
         <div
+            ref={cardRef}
             onClick={onClick}
-            className={`group bg-white rounded-2xl border overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-0.5 ${
-                isEmergency ? 'border-red-200' : 'border-gray-100'
+            className={`group bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-0.5 relative ${
+                isAdminNotice
+                    ? 'border-2 border-srec-primary/30 shadow-green-100'
+                    : isEmergency ? 'border border-red-200' : 'border border-gray-100'
             }`}
         >
+            {/* Admin pinned bar — gradient with shimmer feel */}
+            {isAdminNotice && (
+                <div className="px-4 py-1.5 bg-gradient-to-r from-srec-primary via-green-700 to-emerald-600 flex items-center gap-2">
+                    <Pin size={10} className="text-white flex-shrink-0" />
+                    <span className="text-[10px] font-bold text-white tracking-widest uppercase flex-1">Pinned · Admin Notice</span>
+                    {isEdited && (
+                        <span className="flex items-center gap-0.5 text-[9px] text-white/70 italic">
+                            <Pencil size={8} /> edited
+                        </span>
+                    )}
+                </div>
+            )}
+
             {/* Emergency top bar */}
-            {isEmergency && (
+            {!isAdminNotice && isEmergency && (
                 <div className="px-4 py-1.5 bg-red-600 flex items-center gap-2">
                     <AlertTriangle size={11} className="text-white flex-shrink-0" />
                     <span className="text-[10px] font-bold text-white tracking-widest uppercase">Emergency Notice</span>
                 </div>
             )}
 
-            <div className="p-4">
+            {/* Left accent bar for admin notices */}
+            {isAdminNotice && (
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-srec-primary to-emerald-500 rounded-l-2xl pointer-events-none" />
+            )}
+
+            <div className={`p-4 ${isAdminNotice ? 'pl-5' : ''}`}>
                 {/* Top row */}
                 <div className="flex items-start gap-3">
                     {/* Category icon */}
-                    <div className={`w-10 h-10 rounded-xl ${cfg.iconBg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
-                        <Icon size={18} className={cfg.color} />
+                    <div className={`w-10 h-10 rounded-xl ${isAdminNotice ? 'bg-srec-primarySoft' : cfg.iconBg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                        <Icon size={18} className={isAdminNotice ? 'text-srec-primary' : cfg.color} />
                     </div>
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${cfg.badge}`}>
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${isAdminNotice ? 'bg-srec-primarySoft text-srec-primary' : cfg.badge}`}>
                                     {notice.category}
                                 </span>
                                 <span className={`flex items-center gap-1 text-[10px] font-medium ${pri.text}`}>
                                     <span className={`w-1.5 h-1.5 rounded-full ${pri.dot} inline-block`} />
                                     {notice.priority}
                                 </span>
+                                {!isAdminNotice && isEdited && (
+                                    <span className="flex items-center gap-0.5 text-[9px] text-gray-400 italic">
+                                        <Pencil size={8} /> edited
+                                    </span>
+                                )}
                             </div>
                             <span className="text-[10px] text-gray-400 flex-shrink-0">{formatDate(notice.created_at)}</span>
                         </div>
 
-                        <p className={`text-sm font-semibold leading-snug ${isEmergency ? 'text-red-700' : 'text-gray-900'}`}>
+                        <p className={`text-sm font-semibold leading-snug ${
+                            isAdminNotice ? 'text-srec-primaryDark' :
+                            isEmergency ? 'text-red-700' : 'text-gray-900'
+                        }`}>
                             {notice.title}
                         </p>
 
@@ -331,9 +363,9 @@ function NoticeCard({ notice, onClick, onOpenAttachment, attachLoading, formatDa
                 )}
 
                 {/* Footer */}
-                <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-50">
+                <div className={`flex items-center justify-between mt-3 pt-3 border-t ${isAdminNotice ? 'border-srec-primary/10' : 'border-gray-50'}`}>
                     <span className="text-[10px] text-gray-500">
-                        <span className="font-semibold text-gray-700">{notice.authority_name || 'Authority'}</span>
+                        <span className={`font-semibold ${isAdminNotice ? 'text-srec-primary' : 'text-gray-700'}`}>{notice.authority_name || 'Authority'}</span>
                         {notice.authority_type && <span className="text-gray-400"> · {notice.authority_type}</span>}
                     </span>
                     <span className="flex items-center gap-1 text-[10px] text-gray-400">
@@ -346,9 +378,9 @@ function NoticeCard({ notice, onClick, onOpenAttachment, attachLoading, formatDa
             {/* Expiry strip */}
             {expiryLabel && (
                 <div className={`px-4 py-1.5 border-t text-[10px] font-medium flex items-center gap-1.5 ${
-                    isEmergency ? 'bg-red-50 border-red-100 text-red-700' : 'bg-amber-50 border-amber-100 text-amber-700'
+                    isEmergency && !isAdminNotice ? 'bg-red-50 border-red-100 text-red-700' : 'bg-amber-50 border-amber-100 text-amber-700'
                 }`}>
-                    <span>{isEmergency ? '⚠️' : '⏰'}</span> {expiryLabel}
+                    <span>{isEmergency && !isAdminNotice ? '⚠️' : '⏰'}</span> {expiryLabel}
                 </div>
             )}
         </div>
@@ -368,8 +400,11 @@ export default function NoticeFeed() {
     const [attachment, setAttachment] = useState(null);
     const [attachLoading, setAttachLoading] = useState(null);
     const [selectedNotice, setSelectedNotice] = useState(null);
+    const [showPinnedBar, setShowPinnedBar] = useState(false);
     const sentinelRef = useRef(null);
     const observerRef = useRef(null);
+    const pinnedCardRef = useRef(null);
+    const contentRef = useRef(null);
     const LIMIT = 20;
 
     const openAttachment = useCallback(async (noticeIdOrPath, filename, mimeType) => {
@@ -403,7 +438,13 @@ export default function NoticeFeed() {
             setError(null);
             const currentSkip = reset ? 0 : skip;
             const data = await studentService.getNotices({ skip: currentSkip, limit: LIMIT });
-            const list = data?.notices || [];
+            const raw = data?.notices || [];
+            // Admin notices always pinned to top
+            const list = [...raw].sort((a, b) => {
+                const aPin = a.authority_type === 'Admin' ? 0 : 1;
+                const bPin = b.authority_type === 'Admin' ? 0 : 1;
+                return aPin - bPin;
+            });
             if (reset) {
                 setNotices(list);
                 setSkip(LIMIT);
@@ -435,6 +476,18 @@ export default function NoticeFeed() {
             navigator.vibrate && navigator.vibrate([200, 100, 200]);
             sessionStorage.setItem('cv_emergency_vibrated', '1');
         }
+    }, [notices]);
+
+    // Show sticky pinned bar when pinned card is scrolled out of view
+    useEffect(() => {
+        const pinnedNotice = notices.find(n => n.authority_type === 'Admin');
+        if (!pinnedNotice || !pinnedCardRef.current) return;
+        const obs = new IntersectionObserver(
+            ([entry]) => setShowPinnedBar(!entry.isIntersecting),
+            { threshold: 0 }
+        );
+        obs.observe(pinnedCardRef.current);
+        return () => obs.disconnect();
     }, [notices]);
 
     // Infinite scroll
@@ -490,10 +543,30 @@ export default function NoticeFeed() {
         return null;
     };
 
+    const pinnedNotice = notices.find(n => n.authority_type === 'Admin');
+    let firstAdminSeen = false;
+
     return (
         <div className="min-h-screen bg-srec-background">
             <TopNav />
-            <div className="max-w-2xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
+
+            {/* WhatsApp-style sticky pinned indicator */}
+            {pinnedNotice && showPinnedBar && (
+                <div
+                    className="fixed top-14 left-0 right-0 z-40 flex justify-center pointer-events-none md:pl-20"
+                >
+                    <button
+                        onClick={() => pinnedCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                        className="pointer-events-auto flex items-center gap-2 px-4 py-2 bg-srec-primary/95 backdrop-blur-sm text-white rounded-full shadow-lg shadow-green-900/20 text-xs font-semibold hover:bg-srec-primaryDark transition-colors animate-fadeIn"
+                    >
+                        <Pin size={11} className="flex-shrink-0" />
+                        <span className="max-w-[200px] truncate">{pinnedNotice.title}</span>
+                        <span className="text-white/60">↑</span>
+                    </button>
+                </div>
+            )}
+
+            <div ref={contentRef} className="max-w-2xl mx-auto px-4 pt-4 pb-24 md:pl-24 transition-all duration-300">
 
                 {/* Header banner */}
                 <div className="mb-5 rounded-2xl bg-gradient-to-br from-srec-primary via-green-800 to-emerald-700 px-5 py-5 shadow-md shadow-green-900/10 relative overflow-hidden">
@@ -527,18 +600,23 @@ export default function NoticeFeed() {
                             <p className="text-xs text-gray-400 mt-1">Check back later for campus announcements.</p>
                         </div>
                     ) : (
-                        notices.map((notice) => (
-                            <NoticeCard
-                                key={notice.id}
-                                notice={notice}
-                                onClick={() => setSelectedNotice(notice)}
-                                onOpenAttachment={openAttachment}
-                                attachLoading={attachLoading}
-                                formatDate={formatDate}
-                                formatExpiry={formatExpiry}
-                                formatAudience={formatAudience}
-                            />
-                        ))
+                        notices.map((notice) => {
+                            const isFirstAdmin = notice.authority_type === 'Admin' && !firstAdminSeen;
+                            if (isFirstAdmin) firstAdminSeen = true;
+                            return (
+                                <NoticeCard
+                                    key={notice.id}
+                                    notice={notice}
+                                    onClick={() => setSelectedNotice(notice)}
+                                    onOpenAttachment={openAttachment}
+                                    attachLoading={attachLoading}
+                                    formatDate={formatDate}
+                                    formatExpiry={formatExpiry}
+                                    formatAudience={formatAudience}
+                                    cardRef={isFirstAdmin ? pinnedCardRef : undefined}
+                                />
+                            );
+                        })
                     )}
 
                     {/* Infinite scroll sentinel */}

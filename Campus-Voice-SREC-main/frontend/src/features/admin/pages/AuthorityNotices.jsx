@@ -4,7 +4,7 @@ import { useAuth } from '../../../context/AuthContext';
 import authorityService from '../../../services/authority.service';
 import AuthoritySidebar from '../components/AuthoritySidebar';
 import AuthorityHeader from '../components/AuthorityHeader';
-import { Megaphone, Plus, Trash2, X, CheckCircle, AlertCircle, Paperclip, Download } from 'lucide-react';
+import { Megaphone, Plus, Trash2, X, CheckCircle, AlertCircle, Paperclip, Download, Pencil, Check } from 'lucide-react';
 import { NOTICE_CATEGORIES, NOTICE_PRIORITIES, GENDER, STAY_TYPE, DEPARTMENT_LIST } from '../../../utils/constants';
 
 const PRIORITY_STYLES = {
@@ -53,6 +53,8 @@ export default function AuthorityNotices() {
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [editingId, setEditingId] = useState(null);
+    const [editForm, setEditForm] = useState({ title: '', content: '', category: 'Announcement', priority: 'Medium', expires_at: '' });
 
     useEffect(() => {
         loadNotices();
@@ -143,6 +145,47 @@ export default function AuthorityNotices() {
         } catch (err) {
             setError(err.message || 'Failed to deactivate notice');
             setTimeout(() => setError(''), 3000);
+        }
+    };
+
+    const handleStartEdit = (notice) => {
+        setEditingId(notice.id);
+        setEditForm({
+            title: notice.title,
+            content: notice.content,
+            category: notice.category,
+            priority: notice.priority,
+            expires_at: notice.expires_at ? new Date(notice.expires_at).toISOString().slice(0, 16) : '',
+        });
+    };
+
+    const handleSaveEdit = async (noticeId) => {
+        setError(''); setSuccess('');
+        if (!editForm.title.trim() || editForm.title.length < 5) { setError('Title must be at least 5 characters'); return; }
+        if (!editForm.content.trim() || editForm.content.length < 10) { setError('Content must be at least 10 characters'); return; }
+        try {
+            await authorityService.updateNotice(noticeId, {
+                title: editForm.title.trim(),
+                content: editForm.content.trim(),
+                category: editForm.category,
+                priority: editForm.priority,
+                expires_at: editForm.expires_at || null,
+            });
+            setNotices(prev => prev.map(n => n.id === noticeId ? {
+                ...n,
+                title: editForm.title.trim(),
+                content: editForm.content.trim(),
+                category: editForm.category,
+                priority: editForm.priority,
+                expires_at: editForm.expires_at || null,
+                updated_at: new Date().toISOString(),
+            } : n));
+            setEditingId(null);
+            setSuccess('Notice updated');
+            setTimeout(() => setSuccess(''), 3000);
+        } catch (err) {
+            setError(err.message || 'Failed to update notice');
+            setTimeout(() => setError(''), 4000);
         }
     };
 
@@ -402,65 +445,109 @@ export default function AuthorityNotices() {
                                     </EliteButton>
                                 </Card>
                             ) : (
-                                notices.map(notice => (
-                                    <div key={notice.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 transition-all duration-200 hover:shadow-md">
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${PRIORITY_STYLES[notice.priority] || 'bg-gray-100 text-gray-600'}`}>
-                                                        {notice.priority}
-                                                    </span>
-                                                    <span className="text-xs text-gray-400">{notice.category}</span>
-                                                    <span className="text-xs text-gray-300 ml-auto">
-                                                        {new Date(notice.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
-                                                    </span>
-                                                </div>
-                                                <h3 className="font-semibold text-gray-900 mb-1.5 text-sm">{notice.title}</h3>
-                                                <p className="text-sm text-gray-500 line-clamp-2 leading-relaxed">{notice.content}</p>
-                                                {notice.expires_at && (
-                                                    <p className="mt-2 text-xs text-amber-600">
-                                                        Expires: {new Date(notice.expires_at).toLocaleDateString()}
-                                                    </p>
-                                                )}
-                                                {(notice.attachments?.length > 0) && (
-                                                    <div className="mt-2 flex flex-wrap gap-2">
-                                                        {notice.attachments.map(att => (
-                                                            <a
-                                                                key={att.id}
-                                                                href={authorityService.getNoticeAttachmentByIdUrl(notice.id, att.id)}
-                                                                target="_blank"
-                                                                rel="noreferrer"
-                                                                className="inline-flex items-center gap-1.5 text-xs text-srec-primary hover:underline"
-                                                                onClick={e => e.stopPropagation()}
-                                                            >
-                                                                <Paperclip size={11} />
-                                                                {att.filename}
-                                                            </a>
-                                                        ))}
+                                notices.map(notice => {
+                                    const isEdited = notice.updated_at && notice.created_at &&
+                                        new Date(notice.updated_at) - new Date(notice.created_at) > 5000;
+                                    const isEditing = editingId === notice.id;
+                                    return (
+                                        <div key={notice.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm transition-all duration-200 hover:shadow-md overflow-hidden">
+                                            {isEditing ? (
+                                                /* Inline edit form */
+                                                <div className="p-5 space-y-3">
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Edit Notice</span>
+                                                        <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
                                                     </div>
-                                                )}
-                                                {(!notice.attachments?.length && notice.attachment_filename) && (
-                                                    <a
-                                                        href={authorityService.getNoticeAttachmentUrl(notice.id)}
-                                                        download={notice.attachment_filename}
-                                                        className="mt-2 inline-flex items-center gap-1.5 text-xs text-srec-primary hover:underline"
-                                                        onClick={e => e.stopPropagation()}
-                                                    >
-                                                        <Download size={11} />
-                                                        {notice.attachment_filename}
-                                                    </a>
-                                                )}
-                                            </div>
-                                            <button
-                                                onClick={() => handleDeactivate(notice.id)}
-                                                className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all duration-200 flex-shrink-0"
-                                                title="Deactivate notice"
-                                            >
-                                                <Trash2 size={15} />
-                                            </button>
+                                                    <input
+                                                        type="text"
+                                                        className={inputClass}
+                                                        value={editForm.title}
+                                                        onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))}
+                                                        placeholder="Title"
+                                                        maxLength={255}
+                                                    />
+                                                    <textarea
+                                                        className={inputClass}
+                                                        rows={3}
+                                                        value={editForm.content}
+                                                        onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))}
+                                                        placeholder="Content"
+                                                        maxLength={5000}
+                                                    />
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <select className={inputClass} value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))}>
+                                                            {['Announcement','Policy Change','Event','Maintenance','Emergency','General'].map(c => <option key={c} value={c}>{c}</option>)}
+                                                        </select>
+                                                        <select className={inputClass} value={editForm.priority} onChange={e => setEditForm(f => ({ ...f, priority: e.target.value }))}>
+                                                            {['Low','Medium','High','Urgent'].map(p => <option key={p} value={p}>{p}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <input type="datetime-local" className={inputClass} value={editForm.expires_at}
+                                                        onChange={e => setEditForm(f => ({ ...f, expires_at: e.target.value }))} />
+                                                    <div className="flex justify-end gap-2">
+                                                        <EliteButton variant="outline" type="button" onClick={() => setEditingId(null)}>Cancel</EliteButton>
+                                                        <EliteButton variant="primary" type="button" onClick={() => handleSaveEdit(notice.id)}>
+                                                            <Check size={14} className="mr-1.5" /> Save Changes
+                                                        </EliteButton>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="p-5">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                                                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${PRIORITY_STYLES[notice.priority] || 'bg-gray-100 text-gray-600'}`}>
+                                                                    {notice.priority}
+                                                                </span>
+                                                                <span className="text-xs text-gray-500 font-medium">{notice.category}</span>
+                                                                {isEdited && <span className="text-[10px] text-gray-400 italic flex items-center gap-0.5"><Pencil size={9} /> edited</span>}
+                                                                <span className="text-xs text-gray-300 ml-auto">
+                                                                    {new Date(notice.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                </span>
+                                                            </div>
+                                                            <h3 className="font-semibold text-gray-900 mb-1.5 text-sm">{notice.title}</h3>
+                                                            <p className="text-sm text-gray-500 line-clamp-2 leading-relaxed">{notice.content}</p>
+                                                            {notice.expires_at && (
+                                                                <p className="mt-2 text-xs text-amber-600">
+                                                                    Active until: {new Date(notice.expires_at).toLocaleDateString()}
+                                                                </p>
+                                                            )}
+                                                            {(notice.attachments?.length > 0) && (
+                                                                <div className="mt-2 flex flex-wrap gap-2">
+                                                                    {notice.attachments.map(att => (
+                                                                        <a key={att.id}
+                                                                            href={authorityService.getNoticeAttachmentByIdUrl(notice.id, att.id)}
+                                                                            target="_blank" rel="noreferrer"
+                                                                            className="inline-flex items-center gap-1.5 text-xs text-srec-primary hover:underline"
+                                                                            onClick={e => e.stopPropagation()}>
+                                                                            <Paperclip size={11} />{att.filename}
+                                                                        </a>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-1 flex-shrink-0">
+                                                            <button
+                                                                onClick={() => handleStartEdit(notice)}
+                                                                className="p-2 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all"
+                                                                title="Edit notice"
+                                                            >
+                                                                <Pencil size={14} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDeactivate(notice.id)}
+                                                                className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                                                title="Delete notice"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                ))
+                                    );
+                                })
                             )}
                         </div>
                     </div>

@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { HelpCircle } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
-import HelpDrawer from './HelpDrawer';
+import { useLocation, useNavigate } from 'react-router-dom';
 
-// Map current pathname to a page key used by HelpDrawer and HelpCenter
+// Map current pathname to a page key used by HelpCenter
 export function getPageKey(pathname) {
   if (pathname === '/' || pathname === '/home') return 'campus-feed';
   if (pathname.startsWith('/posts')) return 'posts';
@@ -16,8 +15,8 @@ export function getPageKey(pathname) {
 }
 
 export default function HelpButton() {
-  const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const pageKey = getPageKey(location.pathname);
   const [visible, setVisible] = useState(true);
   const lastScrollY = useRef(0);
@@ -43,24 +42,24 @@ export default function HelpButton() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  return (
-    <>
-      <button
-        onClick={() => setIsOpen(true)}
-        className={`fixed bottom-20 right-4 md:bottom-5 md:right-5 z-40
-          w-11 h-11 md:w-12 md:h-12
-          rounded-full shadow-lg
-          bg-[#14532D] hover:bg-[#166534]
-          text-white flex items-center justify-center
-          transition-all duration-300
-          hover:scale-110 active:scale-95
-          ${visible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-4 pointer-events-none'}`}
-        aria-label="Open help"
-      >
-        <HelpCircle size={20} />
-      </button>
+  const handleClick = () => {
+    navigate(pageKey ? `/help?from=${pageKey}` : '/help');
+  };
 
-      <HelpDrawer isOpen={isOpen} onClose={() => setIsOpen(false)} pageKey={pageKey} />
-    </>
+  return (
+    <button
+      onClick={handleClick}
+      className={`fixed bottom-20 right-4 md:bottom-5 md:right-5 z-40
+        w-11 h-11 md:w-12 md:h-12
+        rounded-full shadow-lg
+        bg-[#14532D] hover:bg-[#166534]
+        text-white flex items-center justify-center
+        transition-all duration-300
+        hover:scale-110 active:scale-95
+        ${visible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-4 pointer-events-none'}`}
+      aria-label="Open help"
+    >
+      <HelpCircle size={20} />
+    </button>
   );
 }

@@ -59,7 +59,7 @@ function DeadlineChip({ daysRemaining, deadline }) {
 }
 
 // ─────────────────────── PetitionCard ───────────────────────────────────────
-function PetitionCard({ petition, onSign, currentUserRoll, signing }) {
+function PetitionCard({ petition, onSign, currentUserRoll, signing, onOpenDetail }) {
   const {
     signature_count,
     custom_goal,
@@ -114,7 +114,10 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing }) {
   };
 
   return (
-    <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-[0_4px_24px_-4px_rgba(0,0,0,0.08)] overflow-hidden hover:shadow-[0_8px_32px_-4px_rgba(0,0,0,0.12)] hover:-translate-y-0.5 transition-all duration-300">
+    <div
+      onClick={() => onOpenDetail && onOpenDetail(petition)}
+      className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/60 shadow-[0_4px_24px_-4px_rgba(0,0,0,0.08)] overflow-hidden hover:shadow-[0_8px_32px_-4px_rgba(0,0,0,0.12)] hover:-translate-y-0.5 transition-all duration-300 cursor-pointer"
+    >
       {/* Accent top bar */}
       <div className={`h-1 w-full ${accentClass}`} />
 
@@ -206,7 +209,7 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing }) {
 
         {!isClosed && !isOwner && !isExpired && (
           <button
-            onClick={() => onSign(petition.id)}
+            onClick={e => { e.stopPropagation(); onSign(petition.id); }}
             disabled={signing === petition.id}
             className={`w-full py-2.5 rounded-xl text-xs font-bold border transition-all duration-200 ${
               isSigned
@@ -252,6 +255,159 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing }) {
               ? new Date(petition.submitted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
               : ''}
           </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────── PetitionDetailSheet ────────────────────────────────
+function PetitionDetailSheet({ petition, onClose, onSign, currentUserRoll, signing }) {
+  useEffect(() => {
+    const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handleKey);
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', handleKey); document.body.style.overflow = ''; };
+  }, [onClose]);
+
+  if (!petition) return null;
+
+  const {
+    signature_count, custom_goal, milestone_goal, milestones_reached = [],
+    progress_pct, status, days_remaining, deadline, is_extended, authority_response,
+  } = petition;
+
+  const goal = custom_goal || milestone_goal || 50;
+  const isSigned = petition.signed_by_me;
+  const isOwner = petition.created_by_roll_no === currentUserRoll;
+  const isClosed = status === 'Resolved' || status === 'Closed';
+  const isExpired = days_remaining !== null && days_remaining !== undefined && days_remaining <= 0;
+  const goalReached = signature_count >= goal;
+  const accentClass = STATUS_ACCENT[status] || STATUS_ACCENT.Open;
+  const ScopeIcon = SCOPE_ICONS[petition.petition_scope] || Globe;
+
+  return (
+    <div
+      className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg max-h-[92vh] sm:max-h-[88vh] flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center pt-3 pb-0 sm:hidden flex-shrink-0">
+          <div className="w-10 h-1 bg-gray-200 rounded-full" />
+        </div>
+
+        {/* Coloured accent header */}
+        <div className={`h-1.5 w-full ${accentClass} flex-shrink-0`} />
+
+        {/* Header row */}
+        <div className="px-5 pt-4 pb-3 flex-shrink-0 border-b border-gray-100">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_BADGE[status] || STATUS_BADGE.Open}`}>
+                {status}
+              </span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${SCOPE_COLORS[petition.petition_scope] || SCOPE_COLORS.General}`}>
+                <ScopeIcon size={9} />{petition.petition_scope || 'General'}
+              </span>
+              {petition.department_name && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-600 border border-purple-200">
+                  {petition.department_name}
+                </span>
+              )}
+              <DeadlineChip daysRemaining={days_remaining} deadline={deadline} />
+              {is_extended && (
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-green-50 text-green-700 border border-green-200">+4 days</span>
+              )}
+              {goalReached && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <CheckCircle size={9} /> Goal Reached!
+                </span>
+              )}
+            </div>
+            <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 flex-shrink-0 transition-colors">
+              <X size={16} />
+            </button>
+          </div>
+          <h2 className="text-base font-bold text-gray-900 mt-2 leading-snug">{petition.title}</h2>
+          <p className="text-[11px] text-gray-400 mt-1">
+            Representative ·{' '}
+            {petition.submitted_at
+              ? new Date(petition.submitted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+              : ''}
+          </p>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0">
+          {/* Description */}
+          <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{petition.description}</p>
+          </div>
+
+          {/* Progress */}
+          <div>
+            <div className="flex justify-between text-[11px] text-gray-500 mb-1.5">
+              <span><strong className="text-gray-900 text-sm">{signature_count}</strong> / {goal} signatures</span>
+              <span className="font-semibold text-srec-primary">{Math.min(progress_pct || 0, 100)}%</span>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+              <div
+                className={`h-3 rounded-full transition-all duration-700 ${goalReached ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' : 'bg-gradient-to-r from-srec-primary to-emerald-500'}`}
+                style={{ width: `${Math.min(progress_pct || 0, 100)}%` }}
+              />
+            </div>
+            {MILESTONES.some(m => m <= goal * 3) && (
+              <div className="flex gap-1 mt-2 flex-wrap">
+                {MILESTONES.filter(m => m <= goal * 3).map(m => (
+                  <span key={m} className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition-all ${
+                    milestones_reached.includes(m)
+                      ? 'bg-amber-100 text-amber-700 border-amber-300'
+                      : 'bg-gray-50 text-gray-400 border-gray-200'
+                  }`}>
+                    {milestones_reached.includes(m) ? '🏆' : '○'} {m}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Authority response */}
+          {authority_response && (
+            <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-800">
+              <p className="font-bold text-[10px] uppercase tracking-wider text-blue-600 mb-1">Official Response</p>
+              {authority_response}
+            </div>
+          )}
+
+          {/* Sign button */}
+          {!isClosed && !isOwner && !isExpired && (
+            <button
+              onClick={() => { onSign(petition.id); }}
+              disabled={signing === petition.id}
+              className={`w-full py-3 rounded-xl text-sm font-bold border transition-all duration-200 ${
+                isSigned
+                  ? 'bg-srec-primarySoft text-srec-primary border-srec-primaryMuted/40 hover:bg-red-50 hover:text-red-600 hover:border-red-200'
+                  : 'bg-srec-primary text-white border-srec-primary hover:bg-srec-primaryDark shadow-btn active:scale-[0.97]'
+              } disabled:opacity-60`}
+            >
+              {signing === petition.id ? '...' : isSigned ? '✓ Signed — Click to Unsign' : '✍ Sign this Petition'}
+            </button>
+          )}
+          {isExpired && !isClosed && (
+            <div className="w-full py-2.5 rounded-xl text-sm font-medium text-center text-gray-400 bg-gray-50 border border-dashed border-gray-200">
+              This petition has expired
+            </div>
+          )}
+          {isOwner && !isClosed && (
+            <p className="text-center text-xs text-gray-400 py-1">You created this petition</p>
+          )}
+          {isClosed && (
+            <p className="text-center text-xs text-gray-400 py-1">This petition is {status.toLowerCase()}</p>
+          )}
         </div>
       </div>
     </div>
@@ -582,14 +738,8 @@ export default function PetitionsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [signing, setSigning] = useState(null);
   const [repStatus, setRepStatus] = useState(null);
-  const [showInfo, setShowInfo] = useState(() => {
-    try { return localStorage.getItem('cv_petitions_info_seen') !== '1'; } catch { return true; }
-  });
-
-  const dismissInfo = () => {
-    setShowInfo(false);
-    try { localStorage.setItem('cv_petitions_info_seen', '1'); } catch {}
-  };
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [selectedPetition, setSelectedPetition] = useState(null);
 
   const LIMIT = 50;
   const isStudent = user?.role === 'Student';
@@ -700,7 +850,7 @@ export default function PetitionsPage() {
         </div>
 
         {/* Page header */}
-        <div className="mb-5 rounded-2xl bg-gradient-to-br from-srec-primary via-green-800 to-emerald-700 px-5 py-5 shadow-elevated relative overflow-hidden">
+        <div className="mb-5 rounded-2xl bg-gradient-to-br from-srec-primary via-green-800 to-emerald-700 px-5 py-5 shadow-elevated relative">
           <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-white/5 pointer-events-none" />
           <div className="absolute -bottom-10 -right-3 w-24 h-24 rounded-full bg-white/5 pointer-events-none" />
           <div className="flex items-start justify-between">
@@ -717,49 +867,84 @@ export default function PetitionsPage() {
                 </span>
               )}
             </div>
-            {isStudent && isRep && (
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-white/15 hover:bg-white/25 text-white border border-white/20 rounded-xl text-xs font-bold transition-all backdrop-blur-sm flex-shrink-0"
-              >
-                <MessageSquarePlus size={14} />
-                Start Petition
-              </button>
-            )}
-          </div>
-        </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Info icon — who can create */}
+              <div className="relative">
+                {infoOpen && (
+                  <div className="fixed inset-0 z-[59]" onClick={() => setInfoOpen(false)} />
+                )}
+                <button
+                  onClick={() => setInfoOpen(v => !v)}
+                  className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center transition-all backdrop-blur-sm border border-white/20"
+                  title="Who can create petitions?"
+                >
+                  <Info size={14} />
+                </button>
+                {infoOpen && (
+                  <div
+                    className="absolute right-0 top-10 z-[60] w-72 bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 animate-fadeIn"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <button
+                      className="absolute top-2 right-2 text-gray-300 hover:text-gray-500"
+                      onClick={() => setInfoOpen(false)}
+                    >
+                      <X size={14} />
+                    </button>
 
-        {/* Collapsible info section */}
-        <div className="mb-4">
-          <button
-            onClick={() => { setShowInfo(v => !v); if (!showInfo) try { localStorage.removeItem('cv_petitions_info_seen'); } catch {} }}
-            className="w-full flex items-center gap-2 px-3.5 py-2.5 bg-white/80 backdrop-blur-sm border border-white/60 rounded-xl shadow-sm hover:bg-white transition-all group"
-          >
-            <Info size={14} className="text-srec-primary flex-shrink-0" />
-            <span className="text-xs font-semibold text-gray-700 flex-1 text-left">How petitions work</span>
-            <ChevronDown
-              size={14}
-              className={`text-gray-400 transition-transform duration-300 ${showInfo ? 'rotate-180' : ''}`}
-            />
-          </button>
+                    {/* Who can create */}
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-7 h-7 rounded-lg bg-srec-primarySoft flex items-center justify-center flex-shrink-0">
+                        <Lock size={13} className="text-srec-primary" />
+                      </div>
+                      <p className="text-xs font-bold text-gray-800">Who can create petitions?</p>
+                    </div>
+                    <p className="text-[11px] text-gray-600 leading-relaxed mb-3">
+                      Only <strong>Student Representatives</strong> appointed by an authority can launch petitions. Signing and following is open to all students.
+                    </p>
 
-          {showInfo && (
-            <div className="mt-1.5 space-y-2 animate-fadeIn">
-              {isStudent && (
-                <div className="px-1">
-                  <RepresentativeBanner onTryCreate={() => setShowCreateModal(true)} />
-                </div>
-              )}
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-start gap-2">
-                <Flame size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-amber-800">
-                  When a petition hits <strong>50, 100, or 250</strong> signatures, authorities are notified.
-                  Reaching your custom goal notifies all signers, the creator, and relevant admin.
-                  Petitions expire after their deadline (max 15 days).
-                </p>
+                    {/* Current user's rep status */}
+                    {isStudent && repStatus && (
+                      <div className={`rounded-xl px-3 py-2.5 border text-[11px] leading-relaxed ${
+                        repStatus.is_representative && repStatus.can_create
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          : repStatus.is_representative
+                          ? 'bg-amber-50 border-amber-200 text-amber-800'
+                          : 'bg-gray-50 border-gray-200 text-gray-600'
+                      }`}>
+                        {repStatus.is_representative && repStatus.can_create ? (
+                          <>
+                            <span className="font-semibold block mb-0.5">You are a Student Representative</span>
+                            <span>{(repStatus.scopes || [repStatus.scope]).join(' & ')} rep — you can launch petitions on behalf of your peers.{' '}
+                              <button onClick={() => { setInfoOpen(false); setShowCreateModal(true); }} className="underline font-semibold">
+                                Start one now
+                              </button>
+                            </span>
+                          </>
+                        ) : repStatus.is_representative ? (
+                          <>
+                            <span className="font-semibold block mb-0.5">Weekly limit reached</span>
+                            <span>You have created <strong>{repStatus.petitions_this_week ?? 0}</strong> of <strong>{repStatus.weekly_limit ?? 1}</strong> petition{(repStatus.weekly_limit ?? 1) !== 1 ? 's' : ''} this week. Resets in 7 days.</span>
+                          </>
+                        ) : (
+                          <span>You are not currently a Student Representative. Signing is still open to you.</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
+              {isStudent && isRep && (
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-white/15 hover:bg-white/25 text-white border border-white/20 rounded-xl text-xs font-bold transition-all backdrop-blur-sm"
+                >
+                  <MessageSquarePlus size={14} />
+                  Start Petition
+                </button>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
         {/* Ongoing | Closed tab bar */}
@@ -809,6 +994,7 @@ export default function PetitionsPage() {
                   onSign={handleSign}
                   currentUserRoll={user?.roll_no}
                   signing={signing}
+                  onOpenDetail={setSelectedPetition}
                 />
               ))}
             </div>
@@ -843,6 +1029,7 @@ export default function PetitionsPage() {
                         onSign={handleSign}
                         currentUserRoll={user?.roll_no}
                         signing={signing}
+                        onOpenDetail={setSelectedPetition}
                       />
                     ))}
                   </div>
@@ -867,6 +1054,7 @@ export default function PetitionsPage() {
                         onSign={handleSign}
                         currentUserRoll={user?.roll_no}
                         signing={signing}
+                        onOpenDetail={setSelectedPetition}
                       />
                     ))}
                   </div>
@@ -897,6 +1085,24 @@ export default function PetitionsPage() {
         userStayType={user?.stay_type}
         repStatus={repStatus}
       />
+
+      {selectedPetition && (
+        <PetitionDetailSheet
+          petition={selectedPetition}
+          onClose={() => setSelectedPetition(null)}
+          onSign={(id) => {
+            handleSign(id);
+            // update selected petition's sign state
+            setPetitions(prev => prev.map(p => p.id === id
+              ? { ...p, signed_by_me: !p.signed_by_me }
+              : p
+            ));
+            setSelectedPetition(prev => prev ? { ...prev, signed_by_me: !prev.signed_by_me } : null);
+          }}
+          currentUserRoll={user?.roll_no}
+          signing={signing}
+        />
+      )}
 
       <BottomNav />
     </div>

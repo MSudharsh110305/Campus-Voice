@@ -37,15 +37,18 @@ import Changelog from './features/complaints/pages/Changelog';
 import AdminPetitions from './features/admin/pages/AdminPetitions';
 import AdminRepresentatives from './features/admin/pages/AdminRepresentatives';
 import AdminSettings from './features/admin/pages/AdminSettings';
+import AdminNotices from './features/admin/pages/AdminNotices';
 import PetitionsPage from './features/complaints/pages/PetitionsPage';
 import PetitionDetail from './features/complaints/pages/PetitionDetail';
 import AuthorityPetitions from './features/admin/pages/AuthorityPetitions';
 import AuthorityRepresentatives from './features/admin/pages/AuthorityRepresentatives';
 
-/* Show the floating help button only for authenticated users */
+/* Show the floating help button only for authenticated students */
 function GlobalHelpButton() {
   const { user } = useAuth();
   if (!user) return null;
+  const role = user.role?.toLowerCase();
+  if (role === 'admin' || role === 'authority') return null;
   return <HelpButton />;
 }
 
@@ -195,6 +198,7 @@ export default function App() {
           <Route path="petitions" element={<AdminPetitions />} />
           <Route path="representatives" element={<AdminRepresentatives />} />
           <Route path="settings" element={<AdminSettings />} />
+          <Route path="notices" element={<AdminNotices />} />
           <Route path="analytics" element={<Navigate to="/admin" replace />} />
           <Route path="profile" element={<AuthorityProfile noLayout={true} />} />
         </Route>

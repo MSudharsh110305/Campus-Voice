@@ -15,6 +15,7 @@ import {
   UserCheck,
   Megaphone,
   Settings,
+  Bell,
 } from "lucide-react";
 import { useAuth } from '../../../context/AuthContext';
 
@@ -135,6 +136,7 @@ export default function AdminSidebar({ className = "", onClose }) {
           )}
         </div>
 
+        <NavItem path="/admin/notices" icon={Bell} label="Notices" />
         <NavItem path="/admin/settings" icon={Settings} label="Settings" />
         <NavItem path="/admin/profile" icon={UserCog} label="Profile" />
       </nav>

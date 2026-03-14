@@ -238,6 +238,13 @@ const softReset = async (confirmationPhrase) => {
     });
 };
 
+// Admin: get all notices from all authorities (monitoring)
+const getAllNoticesAdmin = async ({ skip = 0, limit = 50, authority_id = null } = {}) => {
+    const params = new URLSearchParams({ skip, limit });
+    if (authority_id) params.append('authority_id', authority_id);
+    return await api(`/admin/notices?${params}`);
+};
+
 // Server-side Export
 const exportData = async (entities, format = 'csv', dateFrom = null, dateTo = null) => {
     const params = new URLSearchParams({ entities: entities.join(','), format });
@@ -281,6 +288,7 @@ const adminService = {
     resetDatabase,
     softReset,
     exportData,
+    getAllNoticesAdmin,
 };
 
 export default adminService;
