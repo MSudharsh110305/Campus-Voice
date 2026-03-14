@@ -9,7 +9,7 @@ services:
     name: campusvoice-api
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt && cd Campus-Voice-SREC-main/frontend && npm install && npm run build
+    buildCommand: pip install -r requirements.txt && cd Campus-Voice-SREC-main/frontend && rm -rf node_modules && npm install --include=dev && node ./node_modules/vite/bin/vite.js build && cd ../..
     startCommand: gunicorn main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
     envVars:
       - key: DATABASE_URL
