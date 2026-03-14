@@ -9,7 +9,7 @@ services:
     name: campusvoice-api
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && cd Campus-Voice-SREC-main/frontend && npm install && npm run build
     startCommand: gunicorn main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
     envVars:
       - key: DATABASE_URL
@@ -23,6 +23,16 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: CORS_ORIGINS
-        value: '["http://localhost:5173","http://192.168.0.108:5173","http://127.0.0.1:5173"]'
+        value: '["https://campus-voice-frontend-k07w.onrender.com","http://localhost:5173","http://localhost:3000"]'
+      - key: FRONTEND_URL
+        value: https://campus-voice-frontend-k07w.onrender.com
+      - key: VAPID_CLAIMS_EMAIL
+        value: admin@srec.ac.in
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VITE_VAPID_PUBLIC_KEY
+        sync: false
       - key: PORT
         value: "10000"
