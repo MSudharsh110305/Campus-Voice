@@ -161,7 +161,9 @@ function PetitionCard({ petition, onSign, currentUserRoll, signing, onOpenDetail
           </div>
         </div>
 
-        <p className="text-xs text-gray-600 mb-3 line-clamp-2">{petition.description}</p>
+        <div className="max-h-14 overflow-y-auto mb-3 pr-1 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
+          <p className="text-xs text-gray-600 leading-relaxed">{petition.description}</p>
+        </div>
 
         {/* Progress bar */}
         <div className="mb-3">
@@ -344,7 +346,7 @@ function PetitionDetailSheet({ petition, onClose, onSign, currentUserRoll, signi
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0">
           {/* Description */}
-          <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+          <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 max-h-40 overflow-y-auto">
             <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{petition.description}</p>
           </div>
 
