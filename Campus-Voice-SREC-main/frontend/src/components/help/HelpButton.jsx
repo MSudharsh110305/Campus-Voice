@@ -19,6 +19,9 @@ export default function HelpButton() {
   const navigate = useNavigate();
   const pageKey = getPageKey(location.pathname);
   const [visible, setVisible] = useState(true);
+
+  // Don't show help button when already on the help page
+  if (location.pathname.startsWith('/help')) return null;
   const lastScrollY = useRef(0);
   const ticking = useRef(false);
 

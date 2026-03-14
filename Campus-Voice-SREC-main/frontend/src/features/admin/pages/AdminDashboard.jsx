@@ -219,17 +219,32 @@ function KPICard({ label, value, icon: Icon, accentColor, sub, onClick }) {
   );
 }
 
-// ── Custom donut label (percentage only, no overlap) ─────────────────────────
-const renderDonutLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
-  if (percent < 0.06) return null;
+// ── Custom donut label — outside the ring with a short connector line ────────
+const renderDonutLabel = ({ cx, cy, midAngle, outerRadius, percent }) => {
+  if (percent < 0.03) return null;
   const RADIAN = Math.PI / 180;
-  const r = innerRadius + (outerRadius - innerRadius) * 0.6;
-  const x = cx + r * Math.cos(-midAngle * RADIAN);
-  const y = cy + r * Math.sin(-midAngle * RADIAN);
+  const cos = Math.cos(-midAngle * RADIAN);
+  const sin = Math.sin(-midAngle * RADIAN);
+  const sx = cx + (outerRadius + 4) * cos;
+  const sy = cy + (outerRadius + 4) * sin;
+  const ex = cx + (outerRadius + 18) * cos;
+  const ey = cy + (outerRadius + 18) * sin;
+  const textAnchor = cos >= 0 ? 'start' : 'end';
   return (
-    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight="600">
-      {`${Math.round(percent * 100)}%`}
-    </text>
+    <g>
+      <line x1={sx} y1={sy} x2={ex} y2={ey} stroke="#9CA3AF" strokeWidth={1} />
+      <text
+        x={ex + (cos >= 0 ? 3 : -3)}
+        y={ey}
+        textAnchor={textAnchor}
+        dominantBaseline="central"
+        fontSize={10}
+        fontWeight="700"
+        fill="#374151"
+      >
+        {`${Math.round(percent * 100)}%`}
+      </text>
+    </g>
   );
 };
 
@@ -462,16 +477,16 @@ export default function AdminDashboard() {
         {/* Category Donut */}
         <Card className="p-5 shadow-sm border border-gray-100">
           <h3 className="text-base font-bold text-gray-900 mb-4">By Category</h3>
-          <div className="h-60 w-full">
+          <div className="h-72 w-full">
             {categoryPieData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
+                <PieChart margin={{ top: 16, right: 30, bottom: 16, left: 30 }}>
                   <Pie
                     data={categoryPieData}
                     cx="50%"
                     cy="45%"
-                    innerRadius={50}
-                    outerRadius={75}
+                    innerRadius={48}
+                    outerRadius={70}
                     paddingAngle={3}
                     dataKey="value"
                     labelLine={false}
