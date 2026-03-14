@@ -882,7 +882,7 @@ export default function PetitionsPage() {
                 </button>
                 {infoOpen && (
                   <div
-                    className="absolute right-0 top-10 z-[60] w-72 bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 animate-fadeIn"
+                    className="fixed inset-x-4 top-1/4 z-[60] w-auto max-w-sm mx-auto bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 animate-fadeIn sm:absolute sm:inset-auto sm:right-0 sm:top-10 sm:w-72"
                     onClick={e => e.stopPropagation()}
                   >
                     <button
