@@ -19,9 +19,6 @@ export default function HelpButton() {
   const navigate = useNavigate();
   const pageKey = getPageKey(location.pathname);
   const [visible, setVisible] = useState(true);
-
-  // Don't show help button when already on the help page
-  if (location.pathname.startsWith('/help')) return null;
   const lastScrollY = useRef(0);
   const ticking = useRef(false);
 
@@ -44,6 +41,9 @@ export default function HelpButton() {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Don't show help button when already on the help page
+  if (location.pathname.startsWith('/help')) return null;
 
   const handleClick = () => {
     navigate(pageKey ? `/help?from=${pageKey}` : '/help');
