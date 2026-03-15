@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Trophy, RotateCcw, X, Wifi, WifiOff } from 'lucide-react';
+import { Trophy, RotateCcw, X } from 'lucide-react';
 import { api } from '../utils/api';
 
 // ── Local cache helpers (offline fallback) ───────────────────────────────────
@@ -285,7 +285,7 @@ export default function OfflineGame({ onClose }) {
       s.obstacles.forEach(o => drawObs(ctx, o));
 
       // HUD
-      const best = Math.max(getScores()[0]?.score ?? 0, s.score);
+      const best = Math.max(getCached()[0]?.score ?? 0, s.score);
       ctx.textAlign = 'right';
       ctx.fillStyle = C.hudMuted;
       ctx.font = '11px monospace';
@@ -344,10 +344,6 @@ export default function OfflineGame({ onClose }) {
         <div className="px-4 pt-3 pb-2 border-b" style={{ borderColor: C.border }}>
           <div className="flex items-center justify-between">
             <h2 className="font-bold text-sm" style={{ color: C.text }}>Campus Dash</h2>
-            <div className="flex items-center gap-1 text-xs" style={{ color: online ? C.hudScore : C.sub }}
-              title={online ? 'Scores synced to server' : 'Offline — scores cached locally'}>
-              {online ? <Wifi size={12} /> : <WifiOff size={12} />}
-            </div>
             {onClose && (
               <button onClick={onClose} className="p-1 rounded-lg hover:opacity-70 transition-opacity"
                 style={{ color: C.sub }}>
@@ -392,12 +388,12 @@ export default function OfflineGame({ onClose }) {
           </div>
         </div>
 
-        {/* Canvas — fills remaining height on mobile, fixed ratio on desktop */}
-        <div className="relative cursor-pointer select-none flex-1 sm:flex-none"
+        {/* Canvas — scales width to container, aspect ratio maintained */}
+        <div className="relative cursor-pointer select-none flex-1"
           onClick={() => { if (phase === 'idle' || phase === 'dead') startGame(); else doJump(); }}>
           <canvas ref={canvasRef} width={CW} height={CH}
-            className="w-full block h-full sm:h-auto"
-            style={{ touchAction: 'none', objectFit: 'contain' }} />
+            className="w-full block"
+            style={{ touchAction: 'none' }} />
 
           {/* Dead overlay */}
           {phase === 'dead' && (
