@@ -145,39 +145,39 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════
-   NEON THEME — black + neon green cyberpunk
+   DARK theme — minimal, professional, Spotify-like
    Applied via html[data-theme="neon"]
    ═══════════════════════════════════════════════════════ */
 
 html[data-theme="neon"] {
   color-scheme: dark;
 
-  /* Backgrounds */
-  --th-bg:           #020406;
-  --th-card:         #060d08;
-  --th-surface:      #040a06;
-  --th-surface2:     #081208;
-  /* Text */
-  --th-txt1:         #e0f8e0;
-  --th-txt2:         #90c890;
-  --th-txt3:         #4a8050;
-  --th-txt4:         #2e5232;
-  --th-txt5:         #1a3020;
-  /* Borders */
-  --th-border:       #0e220e;
-  --th-border-l:     #091608;
+  /* Backgrounds — near-black layered surfaces */
+  --th-bg:           #0f0f0f;
+  --th-card:         #171717;
+  --th-surface:      #1c1c1c;
+  --th-surface2:     #222222;
+  /* Text — white → gray hierarchy, no green tint */
+  --th-txt1:         #f0f0f0;
+  --th-txt2:         #a8a8a8;
+  --th-txt3:         #6e6e6e;
+  --th-txt4:         #4a4a4a;
+  --th-txt5:         #333333;
+  /* Borders — barely-there lines */
+  --th-border:       #2a2a2a;
+  --th-border-l:     #202020;
   /* Inputs */
-  --th-input-bg:     #030806;
-  --th-input-border: #183018;
+  --th-input-bg:     #141414;
+  --th-input-border: #2e2e2e;
   /* Nav */
-  --th-nav-bg:       rgba(2,4,6,0.96);
-  --th-overlay:      rgba(0,2,0,0.85);
-  /* Primary — neon green */
-  --th-primary:      #00ff88;
-  --th-primary-soft: rgba(0,255,136,0.1);
-  --th-primary-text: #00ff88;
-  --th-placeholder:  #2e5232;
-  --th-scrollbar:    #183018;
+  --th-nav-bg:       rgba(15,15,15,0.96);
+  --th-overlay:      rgba(0,0,0,0.75);
+  /* Accent — muted green, used sparingly */
+  --th-primary:      #4ade80;
+  --th-primary-soft: rgba(74,222,128,0.08);
+  --th-primary-text: #4ade80;
+  --th-placeholder:  #4a4a4a;
+  --th-scrollbar:    #2a2a2a;
 }
 
 /* ── Body / root ── */
@@ -190,7 +190,7 @@ html[data-theme="neon"] #root {
 }
 
 /* ── Scrollbar ── */
-html[data-theme="neon"] ::-webkit-scrollbar-thumb { background: var(--th-scrollbar); }
+html[data-theme="neon"] ::-webkit-scrollbar-thumb { background: var(--th-scrollbar); border-radius: 4px; }
 
 /* ── White / card backgrounds ── */
 html[data-theme="neon"] .bg-white {
@@ -224,7 +224,7 @@ html[data-theme="neon"] .text-gray-900 { color: var(--th-txt1) !important; }
 html[data-theme="neon"] .text-gray-800 { color: var(--th-txt1) !important; }
 html[data-theme="neon"] .text-gray-700 { color: var(--th-txt2) !important; }
 html[data-theme="neon"] .text-gray-600 { color: var(--th-txt3) !important; }
-html[data-theme="neon"] .text-gray-500 { color: var(--th-txt4) !important; }
+html[data-theme="neon"] .text-gray-500 { color: var(--th-txt3) !important; }
 html[data-theme="neon"] .text-gray-400 { color: var(--th-txt4) !important; }
 html[data-theme="neon"] .text-gray-300 { color: var(--th-txt5) !important; }
 
@@ -235,10 +235,11 @@ html[data-theme="neon"] .text-srec-textMuted     { color: var(--th-txt3)        
 html[data-theme="neon"] .text-srec-primary       { color: var(--th-primary-text) !important; }
 html[data-theme="neon"] .text-srec-primaryDark   { color: var(--th-primary-text) !important; }
 
-/* ── Background — SREC primary (buttons, badges) ── */
+/* ── Background — SREC primary (buttons, badges) — no glow ── */
 html[data-theme="neon"] .bg-srec-primary {
   background-color: var(--th-primary) !important;
-  box-shadow: 0 0 14px rgba(0,255,136,0.35) !important;
+  box-shadow: none !important;
+  color: #0f0f0f !important;
 }
 
 /* ── Border — SREC primary ── */
@@ -278,33 +279,33 @@ html[data-theme="neon"] .bg-black\/60 {
 /* ── Glass morphism ── */
 html[data-theme="neon"] .glass,
 html[data-theme="neon"] .card-glass {
-  background: rgba(6,13,8,0.92) !important;
+  background: rgba(23,23,23,0.95) !important;
   border-color: var(--th-border) !important;
 }
 
-/* ── Colored tint backgrounds ── */
-html[data-theme="neon"] .bg-amber-50              { background-color: rgba(200,150,0,0.12)  !important; }
-html[data-theme="neon"] .bg-red-50                { background-color: rgba(200,30,30,0.12)  !important; }
+/* ── Colored tint backgrounds — very desaturated ── */
+html[data-theme="neon"] .bg-amber-50              { background-color: rgba(160,120,0,0.12)  !important; }
+html[data-theme="neon"] .bg-red-50                { background-color: rgba(180,30,30,0.12)  !important; }
 html[data-theme="neon"] .bg-green-50,
-html[data-theme="neon"] .bg-emerald-50            { background-color: rgba(0,200,80,0.10)   !important; }
-html[data-theme="neon"] .bg-blue-50               { background-color: rgba(0,180,100,0.10)  !important; }
-html[data-theme="neon"] .bg-purple-50             { background-color: rgba(60,200,80,0.10)  !important; }
-html[data-theme="neon"] .bg-sky-50                { background-color: rgba(0,200,120,0.10)  !important; }
+html[data-theme="neon"] .bg-emerald-50            { background-color: rgba(74,222,128,0.08) !important; }
+html[data-theme="neon"] .bg-blue-50               { background-color: rgba(80,140,200,0.10) !important; }
+html[data-theme="neon"] .bg-purple-50             { background-color: rgba(130,80,200,0.10) !important; }
+html[data-theme="neon"] .bg-sky-50                { background-color: rgba(50,150,200,0.10) !important; }
 
-/* ── Colored text ── */
+/* ── Colored text — muted, readable ── */
 html[data-theme="neon"] .text-amber-600,
-html[data-theme="neon"] .text-amber-700  { color: #e8c040 !important; }
+html[data-theme="neon"] .text-amber-700  { color: #d4a843 !important; }
 html[data-theme="neon"] .text-blue-600,
-html[data-theme="neon"] .text-blue-700   { color: #00e8aa !important; }
+html[data-theme="neon"] .text-blue-700   { color: #60a5fa !important; }
 html[data-theme="neon"] .text-emerald-600,
-html[data-theme="neon"] .text-green-600  { color: #00ff88 !important; }
+html[data-theme="neon"] .text-green-600  { color: #4ade80 !important; }
 html[data-theme="neon"] .text-red-600,
-html[data-theme="neon"] .text-red-700    { color: #ff4466 !important; }
-html[data-theme="neon"] .text-purple-600 { color: #80ff60 !important; }
-html[data-theme="neon"] .text-sky-600    { color: #00e8aa !important; }
+html[data-theme="neon"] .text-red-700    { color: #f87171 !important; }
+html[data-theme="neon"] .text-purple-600 { color: #c084fc !important; }
+html[data-theme="neon"] .text-sky-600    { color: #38bdf8 !important; }
 
-/* ── Neon card subtle glow on hover ── */
+/* ── Hover — subtle lift, no glow ── */
 html[data-theme="neon"] .hover\:shadow-md:hover,
 html[data-theme="neon"] .hover\:shadow-card-hover:hover {
-  box-shadow: 0 0 16px rgba(0,255,136,0.12), 0 4px 12px rgba(0,0,0,0.5) !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5) !important;
 }
