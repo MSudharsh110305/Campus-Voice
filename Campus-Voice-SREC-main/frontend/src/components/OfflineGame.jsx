@@ -384,7 +384,9 @@ export default function OfflineGame({ onClose }) {
     // On portrait mobile CW < GROUND so physH = CW*0.85 (smaller → tighter jump).
     const physH   = Math.min(GROUND, CW * 0.85);
     const JUMP_VY = -(physH * 0.072);
-    const GRAVITY = physH * 0.0045;
+    // Reduced ~4.5% → air time ≈ 33.5 frames (was 32), giving ~5% more horizontal
+    // clearance distance so the player lands safely past the obstacle edge.
+    const GRAVITY = physH * 0.0043;
 
     // Pick backgrounds in sequence; track current + next for mid-run crossfade
     const availBgs  = BG_KEYS.filter(k => bgsRef.current[k]);
@@ -400,7 +402,7 @@ export default function OfflineGame({ onClose }) {
         { x: CW * 0.72, y: CH * 0.07, w: CW * 0.08, h: CH * 0.055, spd: 0.28 },
         { x: CW * 0.50, y: CH * 0.14, w: CW * 0.07, h: CH * 0.05,  spd: 0.35 },
       ],
-      score: 0, speed: CW * 0.006,
+      score: 0, speed: CW * 0.004, // start noticeably slower
       frame: 0, spawn: 80, gOff: 0, dead: false,
       coinsCollected: 0,
       // Background transition state
@@ -454,7 +456,10 @@ export default function OfflineGame({ onClose }) {
       if (s.frame % 3 === 0) s.score++;
 
       // Speed ramp
-      s.speed = s.CW * 0.006 + Math.min(Math.floor(s.score / 150) * s.CW * 0.0008, s.CW * 0.009);
+      // Ramp: +CW*0.0007 every 200 pts, capped at CW*0.011 extra.
+      // Reaches old starting speed (~CW*0.006) around score 600,
+      // peaks at ~CW*0.015 around score 3000+ — smooth slow-to-fast curve.
+      s.speed = s.CW * 0.004 + Math.min(Math.floor(s.score / 200) * s.CW * 0.0007, s.CW * 0.011);
 
       // Physics
       s.vy += s.GRAVITY;
