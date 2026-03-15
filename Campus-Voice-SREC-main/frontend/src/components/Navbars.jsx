@@ -1,8 +1,10 @@
 import React from 'react';
 import { useLocation, Link, useNavigate } from 'react-router-dom';
-import { Bell, User, LogOut } from 'lucide-react';
+import { Bell, User, LogOut, Gamepad2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import { useState } from 'react';
+import OfflineGame from './OfflineGame';
 
 export function TopNav() {
   const { user, logout } = useAuth();
@@ -11,6 +13,7 @@ export function TopNav() {
   const navigate = useNavigate();
   const isAdmin = user?.role === 'Admin';
   const isStudent = user?.role === 'Student';
+  const [showGame, setShowGame] = useState(false);
 
   const initials = user?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'U';
 
@@ -45,6 +48,16 @@ export function TopNav() {
                 )}
               </button>
 
+              {/* Game shortcut */}
+              <button
+                onClick={() => setShowGame(true)}
+                className="p-2 rounded-full hover:bg-srec-primarySoft transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-srec-primary"
+                aria-label="Play game"
+                title="Campus Dash"
+              >
+                <Gamepad2 size={20} className="text-srec-textMuted hover:text-srec-primary transition-colors" />
+              </button>
+
               {/* Profile Avatar with dropdown */}
               <div className="relative group">
                 <button
@@ -75,6 +88,7 @@ export function TopNav() {
         </nav>
       </div>
     </div>
+    {showGame && <OfflineGame onClose={() => setShowGame(false)} />}
   );
 }
 
