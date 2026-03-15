@@ -1,36 +1,34 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Trophy, RotateCcw, X } from 'lucide-react';
+import { Trophy, RotateCcw, X, Wifi, WifiOff } from 'lucide-react';
+import { api } from '../utils/api';
 
-// ── Local leaderboard helpers ────────────────────────────────────────────────
+// ── Local cache helpers (offline fallback) ───────────────────────────────────
 const LS_KEY = 'cv_dash_scores';
+const LS_MY_KEY = 'cv_dash_me';
 
-const getScores = () => {
+const getCached = () => {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    // Sanitise: ensure every entry has name + numeric score
-    return Array.isArray(parsed)
-      ? parsed.filter(e => e && typeof e.score === 'number')
-      : [];
+    return Array.isArray(parsed) ? parsed.filter(e => e && typeof e.score === 'number') : [];
   } catch { return []; }
 };
 
-const saveScore = (name, score) => {
-  const all = getScores();
-  const key = (name || 'Student').trim().toLowerCase();
-  const idx = all.findIndex(e => (e.name || '').trim().toLowerCase() === key);
-  if (idx >= 0) {
-    // Update only if this run is better
-    if (score > all[idx].score) all[idx].score = score;
-  } else {
-    all.push({ name: (name || 'Student').trim(), score });
-  }
-  all.sort((a, b) => b.score - a.score);
-  const top = all.slice(0, 10);
-  try { localStorage.setItem(LS_KEY, JSON.stringify(top)); } catch {}
-  return top;
+const setCached = (board) => {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(board)); } catch {}
+};
+
+// ── DB helpers ───────────────────────────────────────────────────────────────
+const submitScoreDB = async (score) => {
+  try { await api('/game/score', { method: 'POST', body: JSON.stringify({ score }) }); return true; }
+  catch { return false; }
+};
+
+const fetchLeaderboard = async () => {
+  try { return await api('/game/leaderboard'); }
+  catch { return null; }
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -50,12 +48,36 @@ export default function OfflineGame({ onClose }) {
 
   const [phase, setPhase] = useState('idle');   // idle | playing | dead
   const [score, setScore] = useState(0);
-  const [board, setBoard] = useState(getScores);
+  const [board, setBoard] = useState(getCached);
+  const [myBestDB, setMyBestDB] = useState(() => { try { return JSON.parse(localStorage.getItem(LS_MY_KEY)) || null; } catch { return null; } });
+  const [online, setOnline] = useState(navigator.onLine);
 
   const playerName = (() => {
     try { const u = JSON.parse(localStorage.getItem('user')); return u?.name?.split(' ')[0] || 'You'; }
     catch { return 'You'; }
   })();
+
+  // Fetch leaderboard from DB on mount + when coming online
+  useEffect(() => {
+    const load = async () => {
+      const data = await fetchLeaderboard();
+      if (data) {
+        setBoard(data.leaderboard || []);
+        setCached(data.leaderboard || []);
+        if (data.my_best != null) {
+          setMyBestDB({ score: data.my_best, rank: data.my_rank });
+          try { localStorage.setItem(LS_MY_KEY, JSON.stringify({ score: data.my_best, rank: data.my_rank })); } catch {}
+        }
+        setOnline(true);
+      }
+    };
+    load();
+    const onOnline = () => { setOnline(true); load(); };
+    const onOffline = () => setOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); };
+  }, []);
 
   const C = isDark ? {
     bg: '#0d1117', groundFill: '#21262d', groundLine: '#3fb950',
@@ -220,10 +242,23 @@ export default function OfflineGame({ onClose }) {
             s.py + pad < o.y + o.h && s.py + PH - pad > o.y) {
           s.dead = true;
           cancelAnimationFrame(rafRef.current);
-          const lb = saveScore(playerName, s.score);
-          setScore(s.score);
-          setBoard(lb);
+          const finalScore = s.score;
+          setScore(finalScore);
           setPhase('dead');
+          // Save to DB + refresh leaderboard
+          submitScoreDB(finalScore).then(async (saved) => {
+            if (saved) {
+              const data = await fetchLeaderboard();
+              if (data) {
+                setBoard(data.leaderboard || []);
+                setCached(data.leaderboard || []);
+                if (data.my_best != null) {
+                  setMyBestDB({ score: data.my_best, rank: data.my_rank });
+                  try { localStorage.setItem(LS_MY_KEY, JSON.stringify({ score: data.my_best, rank: data.my_rank })); } catch {}
+                }
+              }
+            }
+          });
           return;
         }
       }
@@ -293,21 +328,26 @@ export default function OfflineGame({ onClose }) {
   }, [isDark]); // eslint-disable-line
 
   const highScore = board[0]?.score ?? 0;
-  const myKey = playerName.trim().toLowerCase();
-  const myRank = board.findIndex(e => (e.name || '').trim().toLowerCase() === myKey) + 1;
-  const myBest = myRank > 0 ? board[myRank - 1].score : 0;
+  const myBest = myBestDB?.score ?? 0;
+  const myRank = myBestDB?.rank ?? null;
 
   return (
-    <div className="fixed inset-0 z-[9998] flex flex-col items-center justify-center px-3 py-4"
-      style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.88)' : 'rgba(0,0,0,0.60)' }}>
+    <div className="fixed inset-0 z-[9998] flex flex-col"
+      style={{ backgroundColor: C.cardBg }}>
 
-      <div className="w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl border"
+      <div className="flex flex-col h-full w-full sm:items-center sm:justify-center sm:bg-black/60"
+        style={{}}>
+      <div className="flex flex-col h-full w-full sm:h-auto sm:max-w-2xl sm:rounded-2xl sm:overflow-hidden sm:shadow-2xl sm:border"
         style={{ backgroundColor: C.cardBg, borderColor: C.border }}>
 
         {/* Header */}
         <div className="px-4 pt-3 pb-2 border-b" style={{ borderColor: C.border }}>
           <div className="flex items-center justify-between">
             <h2 className="font-bold text-sm" style={{ color: C.text }}>Campus Dash</h2>
+            <div className="flex items-center gap-1 text-xs" style={{ color: online ? C.hudScore : C.sub }}
+              title={online ? 'Scores synced to server' : 'Offline — scores cached locally'}>
+              {online ? <Wifi size={12} /> : <WifiOff size={12} />}
+            </div>
             {onClose && (
               <button onClick={onClose} className="p-1 rounded-lg hover:opacity-70 transition-opacity"
                 style={{ color: C.sub }}>
@@ -352,12 +392,12 @@ export default function OfflineGame({ onClose }) {
           </div>
         </div>
 
-        {/* Canvas — scales to container width automatically */}
-        <div className="relative cursor-pointer select-none"
+        {/* Canvas — fills remaining height on mobile, fixed ratio on desktop */}
+        <div className="relative cursor-pointer select-none flex-1 sm:flex-none"
           onClick={() => { if (phase === 'idle' || phase === 'dead') startGame(); else doJump(); }}>
           <canvas ref={canvasRef} width={CW} height={CH}
-            className="w-full block"
-            style={{ touchAction: 'none' }} />
+            className="w-full block h-full sm:h-auto"
+            style={{ touchAction: 'none', objectFit: 'contain' }} />
 
           {/* Dead overlay */}
           {phase === 'dead' && (
@@ -380,6 +420,7 @@ export default function OfflineGame({ onClose }) {
           )}
         </div>
 
+      </div>
       </div>
     </div>
   );

@@ -866,6 +866,21 @@ class NoticeAttachment(Base):
         return f"<NoticeAttachment(notice_id={self.notice_id}, filename={self.filename})>"
 
 
+class GameScore(Base):
+    """Best game score per student for Campus Dash leaderboard"""
+    __tablename__ = "game_scores"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    student_roll_no = Column(String(20), ForeignKey("students.roll_no", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    score = Column(Integer, nullable=False, default=0)
+    played_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now())
+
+    student = relationship("Student", foreign_keys=[student_roll_no])
+
+    def __repr__(self):
+        return f"<GameScore(roll_no={self.student_roll_no}, score={self.score})>"
+
+
 # ==================== EXPORT ====================
 
 __all__ = [
@@ -891,4 +906,5 @@ __all__ = [
     "SystemSetting",
     "PushSubscription",
     "NoticeAttachment",
+    "GameScore",
 ]

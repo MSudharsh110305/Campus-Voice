@@ -17,6 +17,7 @@ from .health import router as health_router
 from .petitions import router as petitions_router
 from .auth import router as auth_router
 from .push_notifications import router as push_notifications_router
+from .game import router as game_router
 
 
 def create_api_router() -> tuple[APIRouter, APIRouter]:
@@ -39,6 +40,7 @@ def create_api_router() -> tuple[APIRouter, APIRouter]:
     api_router.include_router(admin_router)
     api_router.include_router(petitions_router)
     api_router.include_router(push_notifications_router)  # POST /api/notifications/push/subscribe
+    api_router.include_router(game_router)               # GET/POST /api/game/leaderboard|score
     
     # Health checks at root level (no /api prefix)
     # This allows /health instead of /api/health
