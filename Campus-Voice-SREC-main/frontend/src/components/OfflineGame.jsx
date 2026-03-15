@@ -1023,7 +1023,8 @@ export default function OfflineGame({ onClose }) {
           onClick={() => setShowShop(false)}
         >
           <div
-            className="w-full max-w-xs rounded-2xl p-4 shadow-2xl"
+            className="w-full max-w-xs rounded-2xl p-4 shadow-2xl flex flex-col"
+            style={{ maxHeight: '88vh' }}
             style={{ backgroundColor: C.cardBg, border: `1px solid ${C.border}` }}
             onClick={e => e.stopPropagation()}
           >
@@ -1042,7 +1043,7 @@ export default function OfflineGame({ onClose }) {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-2 gap-2.5 overflow-y-auto pr-0.5" style={{ maxHeight: '52vh' }}>
               {SKINS.map(sk => {
                 const owned    = ownedSkins.includes(sk.id) || sk.price === 0;
                 const equipped = equippedSkin === sk.id;
