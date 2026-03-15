@@ -10,6 +10,7 @@ const SKINS = [
   { id: 'blue',    name: 'Pink',    spriteBase: 'pink',    idleFrames: 4, runFrames: 6, jumpFrames: 8,  color: '#ec4899', lightColor: '#db2777', price: 100 },
   { id: 'purple',  name: 'Owlet',   spriteBase: 'owlet',   idleFrames: 4, runFrames: 6, jumpFrames: 8,  color: '#6366f1', lightColor: '#4f46e5', price: 250 },
   { id: 'gold',    name: 'Shinobi', spriteBase: 'shinobi', idleFrames: 6, runFrames: 8, jumpFrames: 12, color: '#f59e0b', lightColor: '#d97706', price: 500 },
+  { id: 'samurai', name: 'Samurai', spriteBase: 'samurai', idleFrames: 6, runFrames: 8, jumpFrames: 12, color: '#ef4444', lightColor: '#dc2626', price: 800 },
 ];
 
 // Background keys — fixed sequence: forest → desert → repeat
@@ -614,7 +615,7 @@ export default function OfflineGame({ onClose }) {
       const activeBgKey = (s.bgTransitioning && s.bgAlpha > 0.5) ? s.bgNextKey : s.bgKey;
       const isDesert    = activeBgKey ? DESERT_BG.has(activeBgKey) : false;
 
-      if (bgImg && !_isDark) {
+      if (bgImg) {
         // ── Current background (always full opacity)
         drawBgScrolling(ctx, bgImg, CW, CH, s.bgScrollX);
 
@@ -694,12 +695,12 @@ export default function OfflineGame({ onClose }) {
       const best = getCached()[0]?.score ?? 0;
       const hf = Math.max(9, CW * 0.014);
       ctx.textAlign = 'right';
-      ctx.fillStyle = bgImg && !_isDark ? 'rgba(255,255,255,0.75)' : _C.hudMuted;
+      ctx.fillStyle = bgImg ? 'rgba(255,255,255,0.75)' : _C.hudMuted;
       ctx.font = `${hf}px monospace`;
       ctx.fillText(`HI ${String(best).padStart(5, '0')}`, CW - 10, hf + 6);
-      ctx.fillStyle = bgImg && !_isDark ? '#ffffff' : _C.hudScore;
+      ctx.fillStyle = bgImg ? '#ffffff' : _C.hudScore;
       ctx.font = `bold ${Math.max(13, CW * 0.021)}px monospace`;
-      if (bgImg && !_isDark) { ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 4; }
+      if (bgImg) { ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 4; }
       ctx.fillText(String(s.score).padStart(5, '0'), CW - 10, hf * 2 + 12);
       ctx.shadowBlur = 0;
 
@@ -711,10 +712,10 @@ export default function OfflineGame({ onClose }) {
       ctx.fillStyle = '#f59e0b';
       ctx.beginPath(); ctx.arc(cx2, cy2, cr, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
-      ctx.fillStyle = bgImg && !_isDark ? '#ffffff' : _C.hudScore;
+      ctx.fillStyle = bgImg ? '#ffffff' : _C.hudScore;
       ctx.font = `bold ${Math.max(10, CW * 0.016)}px monospace`;
       ctx.textAlign = 'left';
-      if (bgImg && !_isDark) { ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 3; }
+      if (bgImg) { ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 3; }
       ctx.fillText(s.coinsCollected, cx2 + cr + 4, cy2 + cr * 0.45);
       ctx.shadowBlur = 0;
 
@@ -743,7 +744,7 @@ export default function OfflineGame({ onClose }) {
     const bgImg    = bgKey ? bgsRef.current[bgKey] : null;
     const isDesert = bgKey ? DESERT_BG.has(bgKey) : false;
 
-    if (bgImg && !isDark) {
+    if (bgImg) {
       drawBgScrolling(ctx, bgImg, CW, CH, 0);
       const gOverlay = ctx.createLinearGradient(0, GROUND - 10, 0, CH);
       gOverlay.addColorStop(0, 'rgba(0,0,0,0.0)');
@@ -774,9 +775,9 @@ export default function OfflineGame({ onClose }) {
     }
 
     // "tap to start" text with shadow for visibility over bg
-    const textColor = bgImg && !isDark ? '#ffffff' : C.hudMuted;
+    const textColor = bgImg ? '#ffffff' : C.hudMuted;
     ctx.fillStyle = textColor;
-    if (bgImg && !isDark) { ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 6; }
+    if (bgImg) { ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 6; }
     ctx.font = `${Math.max(12, CW * 0.02)}px monospace`;
     ctx.textAlign = 'center';
     ctx.fillText('tap or press space to start', CW / 2, GROUND * 0.45);

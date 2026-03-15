@@ -1,5 +1,5 @@
-const CACHE_STATIC = 'cv-static-v5';
-const CACHE_API = 'cv-api-v5';
+const CACHE_STATIC = 'cv-static-v6';
+const CACHE_API = 'cv-api-v6';
 
 // Pre-cache list — includes ALL game sprites and backgrounds so the game
 // works completely offline after the first visit with internet.
@@ -11,6 +11,7 @@ const STATIC_ASSETS = [
   '/sprites/pink_run.png',    '/sprites/pink_jump.png',    '/sprites/pink_idle.png',
   '/sprites/owlet_run.png',   '/sprites/owlet_jump.png',   '/sprites/owlet_idle.png',
   '/sprites/shinobi_run.png', '/sprites/shinobi_jump.png', '/sprites/shinobi_idle.png',
+  '/sprites/samurai_run.png', '/sprites/samurai_jump.png', '/sprites/samurai_idle.png',
   // Parallax backgrounds (forest + desert)
   '/backgrounds/bg_h1.png', '/backgrounds/bg_h2.png',
   '/backgrounds/bg_h3.png', '/backgrounds/bg_h4.png',

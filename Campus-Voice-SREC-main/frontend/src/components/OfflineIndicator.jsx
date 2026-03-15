@@ -37,7 +37,7 @@ async function syncPendingScore() {
 // ── Server reachability probe ─────────────────────────────────────────────────
 async function isServerReachable() {
   try {
-    const res = await fetch('/api/health', { method: 'HEAD', cache: 'no-store',
+    const res = await fetch('/api/health', { method: 'GET', cache: 'no-store',
       signal: AbortSignal.timeout(4000) });
     return res.ok || res.status < 500;
   } catch {
