@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { Trophy, RotateCcw, Play, ArrowUp, X } from 'lucide-react';
+import { Trophy, RotateCcw, X } from 'lucide-react';
 
 // ── Local leaderboard helpers ────────────────────────────────────────────────
 const LS_KEY = 'cv_dash_scores';
@@ -271,7 +271,7 @@ export default function OfflineGame({ onClose }) {
     ctx.fillStyle = C.hudMuted;
     ctx.font = '12px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('press SPACE or tap to start', CW / 2, CH / 2 - 10);
+    ctx.fillText('tap to start', CW / 2, CH / 2 - 10);
     ctx.textAlign = 'left';
   }, [phase, isDark]); // eslint-disable-line
 
@@ -283,24 +283,38 @@ export default function OfflineGame({ onClose }) {
   const highScore = board[0]?.score ?? 0;
 
   return (
-    <div className="fixed inset-0 z-[9998] flex flex-col items-center justify-center p-4"
+    <div className="fixed inset-0 z-[9998] flex flex-col items-center justify-center px-3 py-4"
       style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.88)' : 'rgba(0,0,0,0.60)' }}>
 
       <div className="w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl border"
         style={{ backgroundColor: C.cardBg, borderColor: C.border }}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b"
+        <div className="flex items-center justify-between px-4 py-3 border-b"
           style={{ borderColor: C.border }}>
-          <div>
-            <h2 className="font-bold text-sm" style={{ color: C.text }}>Campus Dash</h2>
-            <p className="text-xs" style={{ color: C.sub }}>Server unreachable — play while you wait</p>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="min-w-0">
+              <h2 className="font-bold text-sm" style={{ color: C.text }}>Campus Dash</h2>
+              {/* Leaderboard inline */}
+              {board.length === 0 ? (
+                <p className="text-xs" style={{ color: C.sub }}>No scores yet</p>
+              ) : (
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs" style={{ color: C.sub }}>Top:</span>
+                  {board.slice(0, 5).map((s, i) => (
+                    <span key={i} className="font-mono text-xs font-bold"
+                      style={{ color: i === 0 ? '#f59e0b' : C.hudScore }}>
+                      {s.score}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg"
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg"
               style={{ backgroundColor: isDark ? '#0d1117' : '#f0fdf4', color: C.hudScore }}>
-              <Trophy size={12} />
-              Best: {highScore}
+              <Trophy size={11} /> {highScore}
             </div>
             {onClose && (
               <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
@@ -311,20 +325,20 @@ export default function OfflineGame({ onClose }) {
           </div>
         </div>
 
-        {/* Canvas */}
+        {/* Canvas — scales to container width automatically */}
         <div className="relative cursor-pointer select-none"
           onClick={() => { if (phase === 'idle' || phase === 'dead') startGame(); else doJump(); }}>
           <canvas ref={canvasRef} width={CW} height={CH}
             className="w-full block"
-            style={{ touchAction: 'none', imageRendering: 'pixelated' }} />
+            style={{ touchAction: 'none' }} />
 
           {/* Dead overlay */}
           {phase === 'dead' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2"
               style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}>
-              <p className="text-white font-bold text-xl">Game Over</p>
+              <p className="text-white font-bold text-lg">Game Over</p>
               <p className="text-white/70 text-sm">Score: <span className="font-bold text-white">{score}</span></p>
-              {score === highScore && score > 0 && (
+              {score >= highScore && score > 0 && (
                 <p className="text-xs font-semibold px-3 py-1 rounded-full"
                   style={{ backgroundColor: C.hudScore, color: isDark ? '#0d1117' : '#fff' }}>
                   🏆 New high score!
@@ -339,40 +353,6 @@ export default function OfflineGame({ onClose }) {
           )}
         </div>
 
-        {/* Controls hint + leaderboard */}
-        <div className="flex gap-0 border-t" style={{ borderColor: C.border }}>
-          {/* Controls */}
-          <div className="flex items-center gap-3 px-5 py-3 text-xs border-r" style={{ borderColor: C.border, color: C.sub }}>
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded border font-mono"
-              style={{ borderColor: C.border, backgroundColor: isDark ? '#0d1117' : '#f9fafb' }}>
-              SPACE
-            </span>
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded border"
-              style={{ borderColor: C.border, backgroundColor: isDark ? '#0d1117' : '#f9fafb' }}>
-              <ArrowUp size={11} />
-            </span>
-            <span>or tap — double jump allowed</span>
-          </div>
-
-          {/* Leaderboard */}
-          <div className="flex-1 px-4 py-2 overflow-hidden">
-            <p className="text-xs font-bold mb-1.5" style={{ color: C.sub }}>TOP SCORES</p>
-            {board.length === 0 ? (
-              <p className="text-xs" style={{ color: C.sub }}>No scores yet — be the first!</p>
-            ) : (
-              <div className="flex flex-wrap gap-x-4 gap-y-0.5">
-                {board.slice(0, 5).map((s, i) => (
-                  <div key={i} className="flex items-center gap-1.5 text-xs">
-                    <span style={{ color: C.sub }}>#{i + 1}</span>
-                    <span className="font-mono font-bold" style={{ color: i === 0 ? '#f59e0b' : C.hudScore }}>
-                      {String(s.score).padStart(5, '0')}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
     </div>
   );
