@@ -332,7 +332,7 @@ export default function Profile() {
                   <div className="grid grid-cols-2 gap-3">
                     {[
                       { id: 'light', label: 'Light', desc: 'Default', colors: ['#f5faf5', '#ffffff', '#14532D'] },
-                      { id: 'neon',  label: 'Dark',  desc: 'Minimal', colors: ['#0f0f0f', '#171717', '#4ade80'] },
+                      { id: 'neon',  label: 'Dark',  desc: 'Minimal', colors: ['#0d1117', '#161b22', '#3fb950'] },
                     ].map(t => (
                       <button
                         key={t.id}

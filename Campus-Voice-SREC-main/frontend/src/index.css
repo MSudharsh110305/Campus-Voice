@@ -145,39 +145,42 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════
-   DARK theme — minimal, professional, Spotify-like
+   DARK theme — warm charcoal, GitHub-dark inspired
    Applied via html[data-theme="neon"]
    ═══════════════════════════════════════════════════════ */
 
 html[data-theme="neon"] {
   color-scheme: dark;
 
-  /* Backgrounds — near-black layered surfaces */
-  --th-bg:           #0f0f0f;
-  --th-card:         #171717;
-  --th-surface:      #1c1c1c;
-  --th-surface2:     #222222;
-  /* Text — white → gray hierarchy, no green tint */
-  --th-txt1:         #f0f0f0;
-  --th-txt2:         #a8a8a8;
-  --th-txt3:         #6e6e6e;
-  --th-txt4:         #4a4a4a;
-  --th-txt5:         #333333;
-  /* Borders — barely-there lines */
-  --th-border:       #2a2a2a;
-  --th-border-l:     #202020;
+  /* Backgrounds — warm dark, not pure black */
+  --th-bg:           #0d1117;
+  --th-card:         #161b22;
+  --th-surface:      #1c2128;
+  --th-surface2:     #22272e;
+  /* Text — cool white hierarchy */
+  --th-txt1:         #e6edf3;
+  --th-txt2:         #8b949e;
+  --th-txt3:         #6e7681;
+  --th-txt4:         #484f58;
+  --th-txt5:         #30363d;
+  /* Borders */
+  --th-border:       #30363d;
+  --th-border-l:     #21262d;
   /* Inputs */
-  --th-input-bg:     #141414;
-  --th-input-border: #2e2e2e;
+  --th-input-bg:     #0d1117;
+  --th-input-border: #30363d;
   /* Nav */
-  --th-nav-bg:       rgba(15,15,15,0.96);
-  --th-overlay:      rgba(0,0,0,0.75);
-  /* Accent — muted green, used sparingly */
-  --th-primary:      #4ade80;
-  --th-primary-soft: rgba(74,222,128,0.08);
-  --th-primary-text: #4ade80;
-  --th-placeholder:  #4a4a4a;
-  --th-scrollbar:    #2a2a2a;
+  --th-nav-bg:       rgba(13,17,23,0.96);
+  --th-overlay:      rgba(0,0,0,0.72);
+  /* Accent — muted GitHub green, not glowing */
+  --th-primary:      #3fb950;
+  --th-primary-soft: rgba(63,185,80,0.10);
+  --th-primary-text: #3fb950;
+  --th-placeholder:  #484f58;
+  --th-scrollbar:    #30363d;
+  /* Gradient banner override colors */
+  --th-grad-from:    #162521;
+  --th-grad-to:      #1a2e28;
 }
 
 /* ── Body / root ── */
@@ -239,7 +242,31 @@ html[data-theme="neon"] .text-srec-primaryDark   { color: var(--th-primary-text)
 html[data-theme="neon"] .bg-srec-primary {
   background-color: var(--th-primary) !important;
   box-shadow: none !important;
-  color: #0f0f0f !important;
+  color: #0d1117 !important;
+}
+
+/* ── Gradient banners (hero sections) — dim them significantly ── */
+html[data-theme="neon"] .bg-gradient-to-r,
+html[data-theme="neon"] .bg-gradient-to-br,
+html[data-theme="neon"] .bg-gradient-to-b {
+  background-image: none !important;
+  background-color: var(--th-surface2) !important;
+}
+/* Specifically the srec-primary gradient header strip */
+html[data-theme="neon"] .from-srec-primary,
+html[data-theme="neon"] [class*="from-srec-primary"],
+html[data-theme="neon"] [class*="from-green"],
+html[data-theme="neon"] [class*="to-srec-primaryLight"],
+html[data-theme="neon"] [class*="to-green"] {
+  background-image: none !important;
+  background-color: var(--th-grad-from) !important;
+}
+/* Active tab pill override so it's not glaring */
+html[data-theme="neon"] .bg-srec-primary.text-white,
+html[data-theme="neon"] button.bg-srec-primary {
+  background-color: var(--th-surface2) !important;
+  color: var(--th-primary-text) !important;
+  border: 1px solid var(--th-primary) !important;
 }
 
 /* ── Border — SREC primary ── */
