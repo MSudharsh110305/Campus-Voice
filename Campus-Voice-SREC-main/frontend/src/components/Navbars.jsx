@@ -18,6 +18,7 @@ export function TopNav() {
   const initials = user?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'U';
 
   return (
+    <>
     <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-srec-borderLight shadow-soft">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between min-w-0">
         <Link to={isAdmin ? '/admin' : '/'} className="flex items-center gap-2 sm:gap-2.5 group min-w-0 flex-shrink-0">
@@ -89,6 +90,7 @@ export function TopNav() {
       </div>
     </div>
     {showGame && <OfflineGame onClose={() => setShowGame(false)} />}
+    </>
   );
 }
 
