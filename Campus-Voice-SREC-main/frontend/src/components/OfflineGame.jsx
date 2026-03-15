@@ -516,14 +516,28 @@ export default function OfflineGame({ onClose }) {
         const sizes = allSizes.filter(t => isDesertNow || t.k !== 3);
         const t = sizes[Math.floor(Math.random() * sizes.length)];
         s.obstacles.push({ x: s.CW + 10, y: s.GROUND - t.h, w: t.w, h: t.h, k: t.k, bgType: isDesertNow ? 'desert' : 'forest' });
-        s.spawn = Math.max(42, Math.floor(72 + Math.random() * 62) - Math.floor(s.score / 300) * 5);
 
-        // Coins: after the obstacle, at 30-45% of jump apex (lower = easier to collect on mobile)
-        if (Math.random() < 0.4) {
+        // ── Distance-based spawn interval ───────────────────────────────────────
+        // Old frame-based formula: gap in pixels = frames × speed.
+        // At slow start (CW×0.004) that gap was 295 px — 33% tighter than at
+        // the old starting speed (CW×0.006 = 439 px). Fix: target a consistent
+        // pixel gap regardless of current speed, shrinking slightly as score rises.
+        const minGap       = s.CW * 0.44;   // never closer than 44% of canvas width
+        const maxGap       = s.CW * 0.72;   // up to 72% breathing room
+        const diffReduce   = Math.min(Math.floor(s.score / 400) * s.CW * 0.018, s.CW * 0.12);
+        const gapPx        = (minGap - diffReduce) + Math.random() * (maxGap - minGap);
+        s.spawn = Math.max(32, Math.floor(gapPx / s.speed));
+
+        // ── Coins: easy-to-collect placement ────────────────────────────────────
+        // 45% of coins → near ground (collect while running, no jump needed)
+        // 55% of coins → 15-30% of apex height (brief light hop, easy timing)
+        if (Math.random() < 0.50) {
           const count  = 1 + Math.floor(Math.random() * 3);
-          const startX = s.CW + t.w + s.CW * 0.10;
+          const startX = s.CW + t.w + s.CW * 0.08;
           const apexH  = (s.JUMP_VY * s.JUMP_VY) / (2 * s.GRAVITY);
-          const coinY  = s.GROUND - s.PH - apexH * (0.30 + Math.random() * 0.15);
+          const coinY  = Math.random() < 0.45
+            ? s.GROUND - s.PH * 0.5                                    // ground-level: auto-collect while running
+            : s.GROUND - s.PH - apexH * (0.15 + Math.random() * 0.15); // light hop: 15-30% of apex
           for (let ci = 0; ci < count; ci++) {
             s.coins.push({
               x: startX + ci * s.CW * 0.035,
