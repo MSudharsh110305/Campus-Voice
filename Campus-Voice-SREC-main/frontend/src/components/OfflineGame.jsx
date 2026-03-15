@@ -382,9 +382,10 @@ export default function OfflineGame({ onClose }) {
     const PW       = Math.max(18, CW * 0.034);
     const PLAYER_X = Math.max(55, CW * 0.085);
 
-    // Physics tied to WIDTH so jump height stays proportional regardless of canvas height (mobile fix)
-    const JUMP_VY  = -(CW * 0.038);
-    const GRAVITY  = CW * 0.0032;
+    // Physics tied to GROUND height — consistent visual arc on any screen size.
+    // Single jump reaches ~46% of GROUND; double jump nearly doubles that.
+    const JUMP_VY  = -(GROUND * 0.08);
+    const GRAVITY  = GROUND * 0.007;
 
     // Pick a random background
     const availBgs = BG_KEYS.filter(k => bgsRef.current[k]);
@@ -450,10 +451,11 @@ export default function OfflineGame({ onClose }) {
       // Speed ramp
       s.speed = s.CW * 0.006 + Math.min(Math.floor(s.score / 150) * s.CW * 0.0008, s.CW * 0.009);
 
-      // Physics (width-based: consistent on any screen height)
+      // Physics
       s.vy += s.GRAVITY;
-      s.py  = Math.min(s.py + s.vy, s.GROUND - s.PH);
+      s.py  = Math.max(2, Math.min(s.py + s.vy, s.GROUND - s.PH)); // clamp: never off-screen top
       if (s.py >= s.GROUND - s.PH) { s.py = s.GROUND - s.PH; s.vy = 0; s.jumps = 0; }
+      if (s.py <= 2 && s.vy < 0) s.vy = 0; // kill upward velocity at top boundary
 
       // Background parallax scroll (slow, proportional to speed)
       const bgImg = s.bgKey ? bgsRef.current[s.bgKey] : null;
