@@ -11,9 +11,10 @@ const SKINS = [
   { id: 'gold',    name: 'Shinobi', spriteBase: 'shinobi', idleFrames: 6, runFrames: 8, jumpFrames: 12, color: '#f59e0b', lightColor: '#d97706', price: 500 },
 ];
 
-// Background keys — h=nature/forest, d=desert
+// Background keys — fixed sequence: forest → desert → repeat
 const BG_KEYS   = ['bg_h1', 'bg_h2', 'bg_h3', 'bg_h4', 'bg_d1', 'bg_d2', 'bg_d3', 'bg_d4'];
 const DESERT_BG = new Set(['bg_d1', 'bg_d2', 'bg_d3', 'bg_d4']);
+let bgSequenceIdx = 0; // module-level counter, advances each run
 
 // ── Per-user localStorage helpers ─────────────────────────────────────────────
 const LS_KEY = 'cv_dash_scores';
@@ -64,26 +65,19 @@ function removeWhiteBg(img) {
   } catch { return img; }
 }
 
-// Draw a background image with cover-scaling (fills canvas, centers, crops)
-function drawBgCover(ctx, img, CW, CH, scrollX) {
-  const imgAR = img.width / img.height;
-  const canAR = CW / CH;
-  let sx, sy, sw, sh;
-  if (imgAR > canAR) {
-    // image wider than canvas — fill height, crop/scroll sides
-    sh = img.height;
-    sw = sh * canAR;
-    sy = 0;
-    const maxScroll = img.width - sw;
-    sx = Math.max(0, Math.min(scrollX % (maxScroll + 1), maxScroll));
-  } else {
-    // image taller than canvas — fill width, crop top/bottom
-    sw = img.width;
-    sh = sw / canAR;
-    sx = 0;
-    sy = (img.height - sh) / 2;
+// Draw a background image: scale to fill canvas height, tile infinitely for parallax scroll.
+// scrollX increases each frame — the image seamlessly loops on itself.
+function drawBgScrolling(ctx, img, CW, CH, scrollX) {
+  // Scale so the image fills the full canvas height
+  const scale   = CH / img.height;
+  const scaledW = img.width * scale;           // scaled image width (>= CW for 16:9 on 16:9)
+  const offset  = scrollX % scaledW;           // current scroll position within one tile
+  // First tile
+  ctx.drawImage(img, 0, 0, img.width, img.height, -offset, 0, scaledW, CH);
+  // Second tile — stitched immediately after, makes the loop seamless
+  if (scaledW - offset < CW) {
+    ctx.drawImage(img, 0, 0, img.width, img.height, scaledW - offset, 0, scaledW, CH);
   }
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, CW, CH);
 }
 
 // ── Fallback player (shape-drawn, when sprites not loaded) ────────────────────
@@ -112,11 +106,12 @@ function drawFallbackPlayer(ctx, px, py, PW, PH, frame, color, isDark, GROUND) {
 }
 
 // ── Obstacles ─────────────────────────────────────────────────────────────────
-function drawObstacle(ctx, o, isDark) {
+// bgType: 'forest' | 'desert' | 'dark' — used to pick contrasting colors
+function drawObstacle(ctx, o, isDark, bgType) {
   ctx.save();
   if (o.k === 0) {
-    // Stacked books
-    const cols = isDark ? ['#1f6feb', '#3fb950', '#e67e22'] : ['#1565c0', '#2e7d32', '#f57c00'];
+    // Stacked books — bright primaries, visible on any background
+    const cols = isDark ? ['#1f6feb', '#3fb950', '#e67e22'] : ['#1565c0', '#e53935', '#f57c00'];
     for (let i = 0; i < 3; i++) {
       const bh = Math.floor(o.h / 3) - 1;
       ctx.fillStyle = cols[i];
@@ -136,10 +131,12 @@ function drawObstacle(ctx, o, isDark) {
     ctx.fillRect(o.x + o.w * 0.15, o.y + o.h * 0.52, o.w * 0.7, o.h * 0.13);
     ctx.fillRect(o.x + o.w * 0.25, o.y + o.h * 0.72, o.w * 0.5, o.h * 0.1);
   } else if (o.k === 2) {
-    // Wooden bench
-    ctx.fillStyle = isDark ? '#966c3a' : '#795548';
+    // Bench — teal on desert (brown blends with sand), wood on forest
+    const bMain = bgType === 'desert' ? (isDark ? '#00796b' : '#00897b') : (isDark ? '#966c3a' : '#795548');
+    const bDark = bgType === 'desert' ? (isDark ? '#004d40' : '#00695c') : (isDark ? '#7a5230' : '#5d4037');
+    ctx.fillStyle = bMain;
     ctx.beginPath(); ctx.roundRect(o.x, o.y, o.w, o.h * 0.38, 2); ctx.fill();
-    ctx.fillStyle = isDark ? '#7a5230' : '#5d4037';
+    ctx.fillStyle = bDark;
     ctx.fillRect(o.x + 3, o.y + o.h * 0.36, o.w * 0.22, o.h * 0.64);
     ctx.fillRect(o.x + o.w - o.w * 0.22 - 3, o.y + o.h * 0.36, o.w * 0.22, o.h * 0.64);
   } else if (o.k === 3) {
@@ -174,26 +171,25 @@ function drawObstacle(ctx, o, isDark) {
     ctx.fillStyle = rockSha;
     ctx.beginPath(); ctx.ellipse(o.x + o.w * 0.62, o.y + o.h * 0.68, o.w * 0.22, o.h * 0.14, 0.5, 0, Math.PI * 2); ctx.fill();
   } else if (o.k === 5) {
-    // Barrel
-    ctx.fillStyle = isDark ? '#8d6e3a' : '#795548';
+    // Barrel — red on desert (brown blends with sand), wood-brown on forest
+    const barBody = bgType === 'desert' ? (isDark ? '#b71c1c' : '#c62828') : (isDark ? '#8d6e3a' : '#795548');
+    const barBand = bgType === 'desert' ? (isDark ? '#212121' : '#37474f') : (isDark ? '#30363d' : '#546e7a');
+    ctx.fillStyle = barBody;
     ctx.beginPath(); ctx.roundRect(o.x, o.y, o.w, o.h, 4); ctx.fill();
-    // wood grain
     ctx.strokeStyle = 'rgba(0,0,0,0.15)';
     ctx.lineWidth = 1;
     for (let i = 1; i < 4; i++) {
       ctx.beginPath(); ctx.moveTo(o.x + o.w * i / 4, o.y + 2); ctx.lineTo(o.x + o.w * i / 4, o.y + o.h - 2); ctx.stroke();
     }
-    // metal bands
-    ctx.fillStyle = isDark ? '#30363d' : '#546e7a';
+    ctx.fillStyle = barBand;
     ctx.beginPath(); ctx.roundRect(o.x, o.y + o.h * 0.22, o.w, o.h * 0.10, 1); ctx.fill();
     ctx.beginPath(); ctx.roundRect(o.x, o.y + o.h * 0.68, o.w, o.h * 0.10, 1); ctx.fill();
-    // highlight
     ctx.fillStyle = 'rgba(255,255,255,0.12)';
     ctx.beginPath(); ctx.roundRect(o.x + o.w * 0.1, o.y + 4, o.w * 0.15, o.h - 8, 2); ctx.fill();
   } else if (o.k === 6) {
-    // Spiky fence (3 posts + horizontal rail)
-    const wood = isDark ? '#966c3a' : '#8d6e63';
-    const dark  = isDark ? '#7a5230' : '#6d4c41';
+    // Fence — stone/blue-gray on desert (wood blends with sand), wood on forest
+    const wood = bgType === 'desert' ? (isDark ? '#546e7a' : '#607d8b') : (isDark ? '#966c3a' : '#8d6e63');
+    const dark = bgType === 'desert' ? (isDark ? '#263238' : '#37474f') : (isDark ? '#7a5230' : '#6d4c41');
     const postW = o.w * 0.18;
     const postPositions = [0, 0.41, 0.82];
     ctx.fillStyle = wood;
@@ -382,14 +378,18 @@ export default function OfflineGame({ onClose }) {
     const PW       = Math.max(18, CW * 0.034);
     const PLAYER_X = Math.max(55, CW * 0.085);
 
-    // Physics tied to GROUND height — consistent visual arc on any screen size.
-    // Single jump reaches ~46% of GROUND; double jump nearly doubles that.
-    const JUMP_VY  = -(GROUND * 0.08);
-    const GRAVITY  = GROUND * 0.007;
+    // Cap physics reference by canvas width so portrait-mobile doesn't give huge jumps.
+    // On desktop CW > GROUND so physH = GROUND (unchanged).
+    // On portrait mobile CW < GROUND so physH = CW*0.85 (smaller → tighter jump).
+    const physH   = Math.min(GROUND, CW * 0.85);
+    const JUMP_VY = -(physH * 0.072);
+    const GRAVITY = physH * 0.0045;
 
-    // Pick a random background
-    const availBgs = BG_KEYS.filter(k => bgsRef.current[k]);
-    const bgKey    = availBgs.length > 0 ? availBgs[Math.floor(Math.random() * availBgs.length)] : null;
+    // Pick backgrounds in sequence; track current + next for mid-run crossfade
+    const availBgs  = BG_KEYS.filter(k => bgsRef.current[k]);
+    const bgKey     = availBgs.length > 0 ? availBgs[bgSequenceIdx % availBgs.length] : null;
+    const bgNextKey = availBgs.length > 0 ? availBgs[(bgSequenceIdx + 1) % availBgs.length] : null;
+    bgSequenceIdx++;
 
     stateRef.current = {
       py: GROUND - PH, vy: 0, jumps: 0,
@@ -402,7 +402,11 @@ export default function OfflineGame({ onClose }) {
       score: 0, speed: CW * 0.006,
       frame: 0, spawn: 80, gOff: 0, dead: false,
       coinsCollected: 0,
-      bgKey, bgScrollX: 0,
+      // Background transition state
+      bgKey, bgNextKey,
+      bgScrollX: 0, bgScrollXNext: 0,
+      bgAlpha: 0, bgTransitioning: false,
+      bgTransScore: 250, // first crossfade at score 250
       PH, PW, PLAYER_X, GROUND, CW, CH, JUMP_VY, GRAVITY,
     };
     setScore(0);
@@ -457,50 +461,67 @@ export default function OfflineGame({ onClose }) {
       if (s.py >= s.GROUND - s.PH) { s.py = s.GROUND - s.PH; s.vy = 0; s.jumps = 0; }
       if (s.py <= 2 && s.vy < 0) s.vy = 0; // kill upward velocity at top boundary
 
-      // Background parallax scroll (slow, proportional to speed)
-      const bgImg = s.bgKey ? bgsRef.current[s.bgKey] : null;
-      if (bgImg) {
-        const imgAR = bgImg.width / bgImg.height;
-        const canAR = s.CW / s.CH;
-        if (imgAR > canAR) {
-          const sw = bgImg.height * canAR;
-          const maxScroll = bgImg.width - sw;
-          s.bgScrollX = (s.bgScrollX + s.speed * 0.25) % (maxScroll + 1);
+      // Background transition: start crossfade when score hits threshold
+      if (!s.bgTransitioning && s.score >= s.bgTransScore && s.bgNextKey) {
+        s.bgTransitioning = true;
+        s.bgAlpha = 0;
+      }
+      if (s.bgTransitioning) {
+        s.bgAlpha = Math.min(1, s.bgAlpha + 0.007); // ~143 frames ≈ 2.4s fade
+        if (s.bgAlpha >= 1) {
+          s.bgKey         = s.bgNextKey;
+          s.bgScrollX     = s.bgScrollXNext;
+          bgSequenceIdx++;
+          const allBgs    = BG_KEYS.filter(k => bgsRef.current[k]);
+          s.bgNextKey     = allBgs.length > 0 ? allBgs[bgSequenceIdx % allBgs.length] : s.bgKey;
+          s.bgScrollXNext = 0;
+          s.bgTransitioning = false;
+          s.bgAlpha       = 0;
+          s.bgTransScore += 250;
         }
       }
+
+      // Scroll both current and incoming backgrounds
+      const bgImg     = s.bgKey     ? bgsRef.current[s.bgKey]     : null;
+      const bgNextImg = s.bgNextKey ? bgsRef.current[s.bgNextKey] : null;
+      if (bgImg)     s.bgScrollX     += s.speed * 0.6;
+      if (bgNextImg) s.bgScrollXNext += s.speed * 0.6;
 
       // Clouds
       s.clouds.forEach(c => { c.x -= c.spd; if (c.x + c.w < 0) c.x = s.CW + c.w; });
       s.gOff = (s.gOff + s.speed) % 50;
 
-      // Spawn obstacles (6 types now)
+      // Spawn obstacles — filter set by current background type to avoid color-blending
       s.spawn--;
       if (s.spawn <= 0) {
-        const sizes = [
-          { w: s.CW * 0.026, h: s.CW * 0.058, k: 0 }, // books
-          { w: s.CW * 0.030, h: s.CW * 0.052, k: 1 }, // cone
-          { w: s.CW * 0.044, h: s.CW * 0.038, k: 2 }, // bench
-          { w: s.CW * 0.025, h: s.CW * 0.075, k: 3 }, // cactus (tall)
-          { w: s.CW * 0.050, h: s.CW * 0.044, k: 4 }, // boulder (wide)
-          { w: s.CW * 0.028, h: s.CW * 0.054, k: 5 }, // barrel
-          { w: s.CW * 0.060, h: s.CW * 0.062, k: 6 }, // fence (wide + tall)
+        const allSizes = [
+          { w: s.CW * 0.026, h: s.CW * 0.058, k: 0 }, // books  (bright — fits anywhere)
+          { w: s.CW * 0.030, h: s.CW * 0.052, k: 1 }, // cone   (orange — fits anywhere)
+          { w: s.CW * 0.044, h: s.CW * 0.038, k: 2 }, // bench  (teal on desert, brown on forest)
+          { w: s.CW * 0.025, h: s.CW * 0.075, k: 3 }, // cactus (green — only in desert)
+          { w: s.CW * 0.050, h: s.CW * 0.044, k: 4 }, // boulder (gray — fits anywhere)
+          { w: s.CW * 0.028, h: s.CW * 0.054, k: 5 }, // barrel  (red on desert, brown on forest)
+          { w: s.CW * 0.060, h: s.CW * 0.062, k: 6 }, // fence   (stone on desert, wood on forest)
         ];
+        // Effective bg during transition: use next when >50% faded in
+        const activeBgKey  = (s.bgTransitioning && s.bgAlpha > 0.5) ? s.bgNextKey : s.bgKey;
+        const isDesertNow  = activeBgKey ? DESERT_BG.has(activeBgKey) : false;
+        // Exclude green cactus from forest (would blend with trees)
+        const sizes = allSizes.filter(t => isDesertNow || t.k !== 3);
         const t = sizes[Math.floor(Math.random() * sizes.length)];
-        s.obstacles.push({ x: s.CW + 10, y: s.GROUND - t.h, w: t.w, h: t.h, k: t.k });
+        s.obstacles.push({ x: s.CW + 10, y: s.GROUND - t.h, w: t.w, h: t.h, k: t.k, bgType: isDesertNow ? 'desert' : 'forest' });
         s.spawn = Math.max(42, Math.floor(72 + Math.random() * 62) - Math.floor(s.score / 300) * 5);
 
-        // Coins: spawn AFTER the obstacle at comfortable single-jump height
+        // Coins: after the obstacle, at 30-45% of jump apex (lower = easier to collect on mobile)
         if (Math.random() < 0.4) {
           const count  = 1 + Math.floor(Math.random() * 3);
           const startX = s.CW + t.w + s.CW * 0.10;
-          // Target ~55% of max jump apex — easy single jump
           const apexH  = (s.JUMP_VY * s.JUMP_VY) / (2 * s.GRAVITY);
-          const coinY  = s.GROUND - s.PH - apexH * (0.45 + Math.random() * 0.20);
-          const safeY  = Math.max(s.CH * 0.20, coinY);
+          const coinY  = s.GROUND - s.PH - apexH * (0.30 + Math.random() * 0.15);
           for (let ci = 0; ci < count; ci++) {
             s.coins.push({
               x: startX + ci * s.CW * 0.035,
-              y: safeY,
+              y: coinY,
               r: Math.max(6, s.CW * 0.012),
               collected: false,
             });
@@ -567,13 +588,23 @@ export default function OfflineGame({ onClose }) {
 
       // ── DRAW ──────────────────────────────────────────────────────────────────
       const { CW, CH, GROUND } = s;
-      const isDesert = s.bgKey ? DESERT_BG.has(s.bgKey) : false;
+      // Effective bg type (switches at 50% crossfade for ground color blending)
+      const activeBgKey = (s.bgTransitioning && s.bgAlpha > 0.5) ? s.bgNextKey : s.bgKey;
+      const isDesert    = activeBgKey ? DESERT_BG.has(activeBgKey) : false;
 
       if (bgImg && !_isDark) {
-        // ── Background image (cover-scaled, parallax scroll)
-        drawBgCover(ctx, bgImg, CW, CH, s.bgScrollX);
+        // ── Current background (always full opacity)
+        drawBgScrolling(ctx, bgImg, CW, CH, s.bgScrollX);
 
-        // Ground overlay strip for depth + to show dashes clearly
+        // ── Crossfade: incoming background overlaid with increasing alpha
+        if (s.bgTransitioning && bgNextImg && s.bgAlpha > 0) {
+          ctx.save();
+          ctx.globalAlpha = s.bgAlpha;
+          drawBgScrolling(ctx, bgNextImg, CW, CH, s.bgScrollXNext);
+          ctx.restore();
+        }
+
+        // Ground overlay strip
         const gOverlay = ctx.createLinearGradient(0, GROUND - 10, 0, CH);
         gOverlay.addColorStop(0, 'rgba(0,0,0,0.0)');
         gOverlay.addColorStop(0.3, isDesert ? 'rgba(120,80,20,0.35)' : 'rgba(20,80,20,0.30)');
@@ -581,10 +612,9 @@ export default function OfflineGame({ onClose }) {
         ctx.fillStyle = gOverlay;
         ctx.fillRect(0, GROUND - 10, CW, CH - GROUND + 10);
 
-        // Ground line
+        // Ground line + dashes
         ctx.fillStyle = isDesert ? '#c8a060' : '#2e7d32';
         ctx.fillRect(0, GROUND, CW, 2);
-        // Dashes (movement cue)
         ctx.fillStyle = isDesert ? 'rgba(220,180,100,0.5)' : 'rgba(200,230,200,0.5)';
         for (let x = -s.gOff; x < CW; x += 50) ctx.fillRect(x, GROUND + 6, 26, 2);
       } else {
@@ -623,8 +653,8 @@ export default function OfflineGame({ onClose }) {
         ctx.restore();
       });
 
-      // Obstacles
-      s.obstacles.forEach(o => drawObstacle(ctx, o, _isDark));
+      // Obstacles (each carries its bgType for contrasting colors)
+      s.obstacles.forEach(o => drawObstacle(ctx, o, _isDark, o.bgType || 'forest'));
 
       // Player sprite or fallback
       const inAir   = s.py < s.GROUND - s.PH - 2;
@@ -692,7 +722,7 @@ export default function OfflineGame({ onClose }) {
     const isDesert = bgKey ? DESERT_BG.has(bgKey) : false;
 
     if (bgImg && !isDark) {
-      drawBgCover(ctx, bgImg, CW, CH, 0);
+      drawBgScrolling(ctx, bgImg, CW, CH, 0);
       const gOverlay = ctx.createLinearGradient(0, GROUND - 10, 0, CH);
       gOverlay.addColorStop(0, 'rgba(0,0,0,0.0)');
       gOverlay.addColorStop(0.3, isDesert ? 'rgba(120,80,20,0.35)' : 'rgba(20,80,20,0.30)');
@@ -835,10 +865,11 @@ export default function OfflineGame({ onClose }) {
           ref={containerRef}
           className="relative cursor-pointer select-none flex-1 min-h-0 sm:flex-none"
           style={{
-            // Desktop: force 16:9 so background images aren't distorted
-            aspectRatio: window.innerWidth >= 640 ? '16/9' : undefined,
-            // Mobile: cap height at 75vh so it doesn't dominate the screen
-            maxHeight: window.innerWidth < 640 ? '75vh' : undefined,
+            // Desktop: 16:9 matches the horizontal background images
+            // Mobile: 4:3 prevents the canvas from being too tall (portrait),
+            //   keeping jump height visually proportional and coins reachable
+            aspectRatio: window.innerWidth >= 640 ? '16/9' : '4/3',
+            maxHeight: '70vh',
           }}
           onClick={() => {
             if (showShop) return;
