@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { WifiOff, Loader2, CheckCircle } from 'lucide-react';
+import { WifiOff, Loader2, CheckCircle, Gamepad2 } from 'lucide-react';
 import { getPendingComplaints, deletePendingComplaint } from '../utils/idb';
 import { tokenStorage } from '../utils/api';
+import OfflineGame from './OfflineGame';
 
 export default function OfflineIndicator() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncing, setSyncing] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [justSynced, setJustSynced] = useState(false);
+  const [showGame, setShowGame] = useState(false);
 
   useEffect(() => {
     const handleOnline = async () => {
@@ -69,10 +71,24 @@ export default function OfflineIndicator() {
     : 'bg-gray-900';
 
   return (
-    <div className={`fixed top-0 left-0 right-0 z-[9999] flex items-center justify-center gap-2 py-2 px-4 text-xs font-medium text-white transition-all ${bgClass}`}>
-      {!isOnline && <><WifiOff size={13} /> Offline — draft saved, will submit when connected</>}
-      {isOnline && syncing && <><Loader2 size={13} className="animate-spin" /> Submitting {pendingCount} queued complaint{pendingCount !== 1 ? 's' : ''}…</>}
-      {isOnline && justSynced && <><CheckCircle size={13} /> Queued complaints submitted successfully!</>}
-    </div>
+    <>
+      <div className={`fixed top-0 left-0 right-0 z-[9999] flex items-center justify-center gap-2 py-2 px-4 text-xs font-medium text-white transition-all ${bgClass}`}>
+        {!isOnline && (
+          <>
+            <WifiOff size={13} />
+            <span>Offline — draft saved, will submit when connected</span>
+            <button
+              onClick={() => setShowGame(true)}
+              className="ml-2 flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors text-white text-xs font-semibold"
+            >
+              <Gamepad2 size={11} /> Play
+            </button>
+          </>
+        )}
+        {isOnline && syncing && <><Loader2 size={13} className="animate-spin" /> Submitting {pendingCount} queued complaint{pendingCount !== 1 ? 's' : ''}…</>}
+        {isOnline && justSynced && <><CheckCircle size={13} /> Queued complaints submitted successfully!</>}
+      </div>
+      {showGame && <OfflineGame onClose={() => setShowGame(false)} />}
+    </>
   );
 }

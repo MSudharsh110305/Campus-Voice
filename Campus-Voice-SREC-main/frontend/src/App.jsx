@@ -5,6 +5,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { NotificationProvider } from './context/NotificationContext';
 import HelpButton from './components/help/HelpButton';
 import HelpCenter from './pages/HelpCenter';
+import GamePage from './pages/GamePage';
 import LoginPage from './features/auth/pages/LoginPage';
 import AuthorityLoginPage from './features/auth/pages/AuthorityLoginPage';
 import StudentHome from './features/complaints/pages/StudentHome';
@@ -256,6 +257,7 @@ export default function App() {
         />
         {/* Help Center — accessible to any authenticated user */}
         <Route path="/help" element={<HelpCenter />} />
+        <Route path="/game" element={<GamePage />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
       </NotificationProvider>
