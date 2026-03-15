@@ -7,7 +7,14 @@ const LS_KEY = 'cv_dash_scores';
 const getScores = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; } catch { return []; } };
 const saveScore = (name, score) => {
   const all = getScores();
-  all.push({ name: name || 'Student', score, date: new Date().toLocaleDateString() });
+  const key = (name || 'Student').toLowerCase();
+  // Keep only the best score per player
+  const existing = all.find(e => e.name.toLowerCase() === key);
+  if (existing) {
+    if (score > existing.score) existing.score = score;
+  } else {
+    all.push({ name: name || 'Student', score });
+  }
   all.sort((a, b) => b.score - a.score);
   const top = all.slice(0, 10);
   localStorage.setItem(LS_KEY, JSON.stringify(top));
@@ -356,10 +363,10 @@ export default function OfflineGame({ onClose }) {
               <div className="flex flex-wrap gap-x-4 gap-y-0.5">
                 {board.slice(0, 5).map((s, i) => (
                   <div key={i} className="flex items-center gap-1.5 text-xs">
+                    <span style={{ color: C.sub }}>#{i + 1}</span>
                     <span className="font-mono font-bold" style={{ color: i === 0 ? '#f59e0b' : C.hudScore }}>
                       {String(s.score).padStart(5, '0')}
                     </span>
-                    <span style={{ color: C.sub }}>{s.name}</span>
                   </div>
                 ))}
               </div>
