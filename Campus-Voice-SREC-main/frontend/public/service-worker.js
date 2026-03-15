@@ -1,5 +1,5 @@
-const CACHE_STATIC = 'cv-static-v6';
-const CACHE_API = 'cv-api-v6';
+const CACHE_STATIC = 'cv-static-v7';
+const CACHE_API = 'cv-api-v7';
 
 // Pre-cache list — includes ALL game sprites and backgrounds so the game
 // works completely offline after the first visit with internet.
@@ -12,6 +12,14 @@ const STATIC_ASSETS = [
   '/sprites/owlet_run.png',   '/sprites/owlet_jump.png',   '/sprites/owlet_idle.png',
   '/sprites/shinobi_run.png', '/sprites/shinobi_jump.png', '/sprites/shinobi_idle.png',
   '/sprites/samurai_run.png', '/sprites/samurai_jump.png', '/sprites/samurai_idle.png',
+  // Wraith skins (spritesheets built from PNG sequences)
+  '/sprites/wraith1_run.png', '/sprites/wraith1_jump.png', '/sprites/wraith1_idle.png',
+  '/sprites/wraith2_run.png', '/sprites/wraith2_jump.png', '/sprites/wraith2_idle.png',
+  '/sprites/wraith3_run.png', '/sprites/wraith3_jump.png', '/sprites/wraith3_idle.png',
+  // Gangster skins (top tier)
+  '/sprites/gang1_run.png', '/sprites/gang1_jump.png', '/sprites/gang1_idle.png',
+  '/sprites/gang2_run.png', '/sprites/gang2_jump.png', '/sprites/gang2_idle.png',
+  '/sprites/gang3_run.png', '/sprites/gang3_jump.png', '/sprites/gang3_idle.png',
   // Parallax backgrounds (forest + desert)
   '/backgrounds/bg_h1.png', '/backgrounds/bg_h2.png',
   '/backgrounds/bg_h3.png', '/backgrounds/bg_h4.png',

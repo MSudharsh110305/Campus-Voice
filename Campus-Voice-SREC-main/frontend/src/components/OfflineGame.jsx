@@ -9,8 +9,16 @@ const SKINS = [
   { id: 'default', name: 'Dude',    spriteBase: 'dude',    idleFrames: 4, runFrames: 6, jumpFrames: 8,  color: '#3b82f6', lightColor: '#2563eb', price: 0   },
   { id: 'blue',    name: 'Pink',    spriteBase: 'pink',    idleFrames: 4, runFrames: 6, jumpFrames: 8,  color: '#ec4899', lightColor: '#db2777', price: 100 },
   { id: 'purple',  name: 'Owlet',   spriteBase: 'owlet',   idleFrames: 4, runFrames: 6, jumpFrames: 8,  color: '#6366f1', lightColor: '#4f46e5', price: 250 },
-  { id: 'gold',    name: 'Shinobi', spriteBase: 'shinobi', idleFrames: 6, runFrames: 8, jumpFrames: 12, color: '#f59e0b', lightColor: '#d97706', price: 500 },
-  { id: 'samurai', name: 'Samurai', spriteBase: 'samurai', idleFrames: 6, runFrames: 8, jumpFrames: 12, color: '#ef4444', lightColor: '#dc2626', price: 800 },
+  { id: 'gold',    name: 'Shinobi', spriteBase: 'shinobi', idleFrames: 6,  runFrames: 8,  jumpFrames: 12, color: '#f59e0b', lightColor: '#d97706', price: 500  },
+  { id: 'samurai', name: 'Samurai', spriteBase: 'samurai', idleFrames: 6,  runFrames: 8,  jumpFrames: 12, color: '#ef4444', lightColor: '#dc2626', price: 800  },
+  // ── Wraith skins ──────────────────────────────────────────────────────
+  { id: 'wraith1', name: 'Wraith',   spriteBase: 'wraith1', idleFrames: 12, runFrames: 12, jumpFrames: 12, color: '#7c3aed', lightColor: '#6d28d9', price: 1000 },
+  { id: 'wraith2', name: 'Specter',  spriteBase: 'wraith2', idleFrames: 12, runFrames: 12, jumpFrames: 12, color: '#0891b2', lightColor: '#0e7490', price: 1200 },
+  { id: 'wraith3', name: 'Phantom',  spriteBase: 'wraith3', idleFrames: 12, runFrames: 12, jumpFrames: 12, color: '#475569', lightColor: '#334155', price: 1400 },
+  // ── Gangster skins (top tier) ─────────────────────────────────────────
+  { id: 'gang1',   name: 'Gangster', spriteBase: 'gang1',   idleFrames: 6,  runFrames: 10, jumpFrames: 10, color: '#dc2626', lightColor: '#b91c1c', price: 2000 },
+  { id: 'gang2',   name: 'Don',      spriteBase: 'gang2',   idleFrames: 7,  runFrames: 10, jumpFrames: 10, color: '#92400e', lightColor: '#78350f', price: 2500 },
+  { id: 'gang3',   name: 'Boss',     spriteBase: 'gang3',   idleFrames: 7,  runFrames: 10, jumpFrames: 10, color: '#1e3a8a', lightColor: '#1d4ed8', price: 3000 },
 ];
 
 // Background keys — fixed sequence: forest → desert → repeat
@@ -209,6 +217,66 @@ function drawObstacle(ctx, o, isDark, bgType) {
       ctx.lineTo(px2, o.y + o.h * 0.16);
       ctx.closePath(); ctx.fill();
     });
+  } else if (o.k === 7) {
+    // ── Tall Wall — brick/stone battlement, visible on forest AND desert ──────
+    // High obstacle: requires a committed jump to clear. Appears at score > 1500.
+    const wallBody = isDark ? '#b45309' : '#c0392b'; // warm brick red
+    const wallShad = isDark ? '#78350f' : '#922b21';
+    const wallTop  = isDark ? '#d97706' : '#e74c3c';
+    // Main body
+    ctx.fillStyle = wallBody;
+    ctx.beginPath(); ctx.roundRect(o.x, o.y + o.h * 0.15, o.w, o.h * 0.85, 3); ctx.fill();
+    // Brick rows (dark lines)
+    ctx.strokeStyle = wallShad;
+    ctx.lineWidth = 1;
+    const rows = 4;
+    for (let r = 1; r < rows; r++) {
+      const ly = o.y + o.h * 0.15 + (o.h * 0.85 / rows) * r;
+      ctx.beginPath(); ctx.moveTo(o.x, ly); ctx.lineTo(o.x + o.w, ly); ctx.stroke();
+    }
+    // Alternating vertical brick joints
+    for (let r = 0; r < rows; r++) {
+      const ly = o.y + o.h * 0.15 + (o.h * 0.85 / rows) * r;
+      const offset = (r % 2 === 0) ? o.w * 0.5 : 0;
+      ctx.beginPath(); ctx.moveTo(o.x + offset, ly); ctx.lineTo(o.x + offset, ly + o.h * 0.85 / rows); ctx.stroke();
+    }
+    // Battlements at top (3 crenels)
+    ctx.fillStyle = wallTop;
+    const cw = o.w / 3, ch = o.h * 0.17;
+    for (let c = 0; c < 3; c += 2) { // teeth at 0 and 2 (skip middle gap)
+      ctx.beginPath(); ctx.roundRect(o.x + c * cw, o.y, cw * 0.9, ch, 2); ctx.fill();
+    }
+    // Highlight stripe
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    ctx.beginPath(); ctx.roundRect(o.x + 2, o.y + o.h * 0.18, 3, o.h * 0.80, 1); ctx.fill();
+  } else if (o.k === 8) {
+    // ── Hazard Post — striped warning pole with caution sign ─────────────────
+    // Distinct yellow/black — high contrast on any background.
+    const postW  = o.w * 0.42;
+    const postX  = o.x + (o.w - postW) / 2;
+    const signH  = o.h * 0.32;
+    const signW  = o.w;
+    // Draw hazard-stripe body: alternate yellow and black bands
+    const bands = 5;
+    const bandH = (o.h - signH) / bands;
+    for (let b = 0; b < bands; b++) {
+      ctx.fillStyle = b % 2 === 0 ? (isDark ? '#fbbf24' : '#f59e0b') : (isDark ? '#1c1917' : '#111827');
+      ctx.beginPath();
+      ctx.roundRect(postX, o.y + signH + b * bandH, postW, bandH + 1, b === bands - 1 ? [0,0,2,2] : 0);
+      ctx.fill();
+    }
+    // Caution sign triangle at top
+    ctx.fillStyle = isDark ? '#fcd34d' : '#fbbf24';
+    ctx.beginPath();
+    ctx.moveTo(o.x + signW / 2, o.y);
+    ctx.lineTo(o.x + signW,     o.y + signH);
+    ctx.lineTo(o.x,             o.y + signH);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = isDark ? '#1c1917' : '#111827';
+    // Exclamation mark inside triangle
+    const exX = o.x + signW / 2, exY = o.y + signH * 0.28;
+    ctx.fillRect(exX - 1.5, exY, 3, signH * 0.38);
+    ctx.beginPath(); ctx.arc(exX, exY + signH * 0.50, 2, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
 }
@@ -296,10 +364,19 @@ export default function OfflineGame({ onClose }) {
   // ── Load sprites ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const entries = [
-      ['dude_run', 6], ['dude_jump', 8], ['dude_idle', 4],
-      ['pink_run', 6], ['pink_jump', 8], ['pink_idle', 4],
-      ['owlet_run', 6], ['owlet_jump', 8], ['owlet_idle', 4],
+      ['dude_run', 6],    ['dude_jump', 8],    ['dude_idle', 4],
+      ['pink_run', 6],    ['pink_jump', 8],    ['pink_idle', 4],
+      ['owlet_run', 6],   ['owlet_jump', 8],   ['owlet_idle', 4],
       ['shinobi_run', 8], ['shinobi_jump', 12], ['shinobi_idle', 6],
+      ['samurai_run', 8], ['samurai_jump', 12], ['samurai_idle', 6],
+      // Wraiths — 12-frame spritesheets built from individual PNG sequences
+      ['wraith1_run', 12], ['wraith1_jump', 12], ['wraith1_idle', 12],
+      ['wraith2_run', 12], ['wraith2_jump', 12], ['wraith2_idle', 12],
+      ['wraith3_run', 12], ['wraith3_jump', 12], ['wraith3_idle', 12],
+      // Gangsters — pre-made spritesheets
+      ['gang1_run', 10], ['gang1_jump', 10], ['gang1_idle', 6],
+      ['gang2_run', 10], ['gang2_jump', 10], ['gang2_idle', 7],
+      ['gang3_run', 10], ['gang3_jump', 10], ['gang3_idle', 7],
     ];
     let loaded = 0;
     entries.forEach(([key, frames]) => {
@@ -457,10 +534,11 @@ export default function OfflineGame({ onClose }) {
       if (s.frame % 3 === 0) s.score++;
 
       // Speed ramp
-      // Ramp: +CW*0.0007 every 200 pts, capped at CW*0.011 extra.
-      // Reaches old starting speed (~CW*0.006) around score 600,
-      // peaks at ~CW*0.015 around score 3000+ — smooth slow-to-fast curve.
-      s.speed = s.CW * 0.004 + Math.min(Math.floor(s.score / 200) * s.CW * 0.0007, s.CW * 0.011);
+      // Base CW*0.004 (slow start). +CW*0.0009 every 150 pts, capped at CW*0.018 extra.
+      // Reaches old start speed (~CW*0.006) at score ~300.
+      // Reaches old cap (~CW*0.015 total) at score ~1200.
+      // New max = CW*0.022 at score ~3000 — meaningfully faster end-game.
+      s.speed = s.CW * 0.004 + Math.min(Math.floor(s.score / 150) * s.CW * 0.0009, s.CW * 0.018);
 
       // Physics
       s.vy += s.GRAVITY;
@@ -501,20 +579,28 @@ export default function OfflineGame({ onClose }) {
       // Spawn obstacles — filter set by current background type to avoid color-blending
       s.spawn--;
       if (s.spawn <= 0) {
+        // Apex height in px = JUMP_VY² / (2×GRAVITY). At physH=min(GROUND,CW*0.85):
+        //   apexH ≈ physH * 0.604. Tall obstacles (k=7,8) are 0.115-0.130 × CW,
+        //   well under the apex, but visually imposing — require a committed jump.
         const allSizes = [
-          { w: s.CW * 0.026, h: s.CW * 0.058, k: 0 }, // books  (bright — fits anywhere)
-          { w: s.CW * 0.030, h: s.CW * 0.052, k: 1 }, // cone   (orange — fits anywhere)
-          { w: s.CW * 0.044, h: s.CW * 0.038, k: 2 }, // bench  (teal on desert, brown on forest)
-          { w: s.CW * 0.025, h: s.CW * 0.075, k: 3 }, // cactus (green — only in desert)
+          { w: s.CW * 0.026, h: s.CW * 0.058, k: 0 }, // books   (bright — fits anywhere)
+          { w: s.CW * 0.030, h: s.CW * 0.052, k: 1 }, // cone    (orange — fits anywhere)
+          { w: s.CW * 0.044, h: s.CW * 0.038, k: 2 }, // bench   (teal on desert, brown on forest)
+          { w: s.CW * 0.025, h: s.CW * 0.075, k: 3 }, // cactus  (green — only in desert)
           { w: s.CW * 0.050, h: s.CW * 0.044, k: 4 }, // boulder (gray — fits anywhere)
           { w: s.CW * 0.028, h: s.CW * 0.054, k: 5 }, // barrel  (red on desert, brown on forest)
           { w: s.CW * 0.060, h: s.CW * 0.062, k: 6 }, // fence   (stone on desert, wood on forest)
+          { w: s.CW * 0.022, h: s.CW * 0.130, k: 7 }, // TALL wall — score > 1500 only
+          { w: s.CW * 0.020, h: s.CW * 0.115, k: 8 }, // TALL hazard post — score > 1500 only
         ];
         // Effective bg during transition: use next when >50% faded in
         const activeBgKey  = (s.bgTransitioning && s.bgAlpha > 0.5) ? s.bgNextKey : s.bgKey;
         const isDesertNow  = activeBgKey ? DESERT_BG.has(activeBgKey) : false;
-        // Exclude green cactus from forest (would blend with trees)
-        const sizes = allSizes.filter(t => isDesertNow || t.k !== 3);
+        // Exclude green cactus from forest + tall obstacles until score threshold
+        const sizes = allSizes.filter(t =>
+          (isDesertNow || t.k !== 3) &&
+          ((t.k !== 7 && t.k !== 8) || s.score > 1500)
+        );
         const t = sizes[Math.floor(Math.random() * sizes.length)];
         s.obstacles.push({ x: s.CW + 10, y: s.GROUND - t.h, w: t.w, h: t.h, k: t.k, bgType: isDesertNow ? 'desert' : 'forest' });
 
