@@ -4,20 +4,32 @@ import { Trophy, RotateCcw, X } from 'lucide-react';
 
 // ── Local leaderboard helpers ────────────────────────────────────────────────
 const LS_KEY = 'cv_dash_scores';
-const getScores = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; } catch { return []; } };
+
+const getScores = () => {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    // Sanitise: ensure every entry has name + numeric score
+    return Array.isArray(parsed)
+      ? parsed.filter(e => e && typeof e.score === 'number')
+      : [];
+  } catch { return []; }
+};
+
 const saveScore = (name, score) => {
   const all = getScores();
-  const key = (name || 'Student').toLowerCase();
-  // Keep only the best score per player
-  const existing = all.find(e => e.name.toLowerCase() === key);
-  if (existing) {
-    if (score > existing.score) existing.score = score;
+  const key = (name || 'Student').trim().toLowerCase();
+  const idx = all.findIndex(e => (e.name || '').trim().toLowerCase() === key);
+  if (idx >= 0) {
+    // Update only if this run is better
+    if (score > all[idx].score) all[idx].score = score;
   } else {
-    all.push({ name: name || 'Student', score });
+    all.push({ name: (name || 'Student').trim(), score });
   }
   all.sort((a, b) => b.score - a.score);
   const top = all.slice(0, 10);
-  localStorage.setItem(LS_KEY, JSON.stringify(top));
+  try { localStorage.setItem(LS_KEY, JSON.stringify(top)); } catch {}
   return top;
 };
 
@@ -281,6 +293,9 @@ export default function OfflineGame({ onClose }) {
   }, [isDark]); // eslint-disable-line
 
   const highScore = board[0]?.score ?? 0;
+  const myKey = playerName.trim().toLowerCase();
+  const myRank = board.findIndex(e => (e.name || '').trim().toLowerCase() === myKey) + 1;
+  const myBest = myRank > 0 ? board[myRank - 1].score : 0;
 
   return (
     <div className="fixed inset-0 z-[9998] flex flex-col items-center justify-center px-3 py-4"
@@ -290,37 +305,49 @@ export default function OfflineGame({ onClose }) {
         style={{ backgroundColor: C.cardBg, borderColor: C.border }}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b"
-          style={{ borderColor: C.border }}>
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="min-w-0">
-              <h2 className="font-bold text-sm" style={{ color: C.text }}>Campus Dash</h2>
-              {/* Leaderboard inline */}
-              {board.length === 0 ? (
-                <p className="text-xs" style={{ color: C.sub }}>No scores yet</p>
-              ) : (
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs" style={{ color: C.sub }}>Top:</span>
-                  {board.slice(0, 5).map((s, i) => (
-                    <span key={i} className="font-mono text-xs font-bold"
-                      style={{ color: i === 0 ? '#f59e0b' : C.hudScore }}>
-                      {s.score}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg"
-              style={{ backgroundColor: isDark ? '#0d1117' : '#f0fdf4', color: C.hudScore }}>
-              <Trophy size={11} /> {highScore}
-            </div>
+        <div className="px-4 pt-3 pb-2 border-b" style={{ borderColor: C.border }}>
+          <div className="flex items-center justify-between">
+            <h2 className="font-bold text-sm" style={{ color: C.text }}>Campus Dash</h2>
             {onClose && (
-              <button onClick={onClose} className="p-1.5 rounded-lg hover:opacity-70 transition-opacity"
+              <button onClick={onClose} className="p-1 rounded-lg hover:opacity-70 transition-opacity"
                 style={{ color: C.sub }}>
                 <X size={16} />
               </button>
+            )}
+          </div>
+
+          {/* Stats row */}
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
+            {/* Personal best + rank */}
+            <div className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg"
+              style={{ backgroundColor: isDark ? '#0d1117' : '#f0fdf4' }}>
+              <Trophy size={11} style={{ color: C.hudScore }} />
+              <span style={{ color: C.sub }}>Your best:</span>
+              <span className="font-mono font-bold" style={{ color: C.hudScore }}>
+                {myBest > 0 ? myBest : '—'}
+              </span>
+              {myRank > 0 && (
+                <span className="font-semibold px-1.5 py-0.5 rounded text-[10px]"
+                  style={{
+                    backgroundColor: myRank === 1 ? '#f59e0b22' : isDark ? '#3fb95022' : '#15803d22',
+                    color: myRank === 1 ? '#f59e0b' : C.hudScore,
+                  }}>
+                  #{myRank}
+                </span>
+              )}
+            </div>
+
+            {/* Global top scores */}
+            {board.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs" style={{ color: C.sub }}>Top:</span>
+                {board.slice(0, 5).map((s, i) => (
+                  <span key={i} className="font-mono text-xs font-bold"
+                    style={{ color: i === 0 ? '#f59e0b' : C.hudScore }}>
+                    {s.score}
+                  </span>
+                ))}
+              </div>
             )}
           </div>
         </div>
