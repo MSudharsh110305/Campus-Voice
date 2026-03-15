@@ -578,6 +578,15 @@ async def init_db(retry_attempts: int = 3, retry_delay: int = 5):
                 except Exception as me:
                     logger.debug(f"Migration note (location_verified): {me}")
 
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text(
+                        "ALTER TABLE game_scores ADD COLUMN IF NOT EXISTS coins INTEGER NOT NULL DEFAULT 0"
+                    ))
+                    logger.info("✅ Migration: game_scores.coins column ensured")
+                except Exception as me:
+                    logger.debug(f"Migration note (game_scores coins): {me}")
+
             # Notice multi-file attachments table
             async with engine.begin() as conn:
                 try:

@@ -873,6 +873,7 @@ class GameScore(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     student_roll_no = Column(String(20), ForeignKey("students.roll_no", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     score = Column(Integer, nullable=False, default=0)
+    coins = Column(Integer, nullable=False, default=0)
     played_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now())
 
     student = relationship("Student", foreign_keys=[student_roll_no])
