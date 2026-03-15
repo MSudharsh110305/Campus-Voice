@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from
 import { useTheme } from '../context/ThemeContext';
 import { Trophy, RotateCcw, X, ShoppingBag } from 'lucide-react';
 import { api } from '../utils/api';
+import { savePendingScore } from './OfflineIndicator';
 
 // ── Skins ─────────────────────────────────────────────────────────────────────
 const SKINS = [
@@ -575,6 +576,8 @@ export default function OfflineGame({ onClose }) {
                 }
               }
             } else {
+              // Offline: save to pending queue so OfflineIndicator syncs on reconnect
+              savePendingScore(finalScore, finalCoins);
               setMyCoins(prev => {
                 const nc = prev + finalCoins;
                 try { localStorage.setItem(lsCoinsKey(), String(nc)); } catch {}
@@ -794,16 +797,18 @@ export default function OfflineGame({ onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[9998] flex flex-col sm:items-center sm:justify-center sm:p-6"
+      className="fixed inset-0 z-[9998] flex flex-col justify-end sm:items-center sm:justify-center sm:p-6"
       style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.88)' : 'rgba(0,0,0,0.65)' }}
     >
       {/* Game card — full screen mobile, 16:9 card on desktop */}
+      {/* Mobile: bottom sheet with rounded top corners; Desktop: centered card */}
       <div
-        className="flex flex-col w-full sm:max-w-5xl sm:rounded-2xl sm:overflow-hidden sm:shadow-2xl sm:border"
+        className="flex flex-col w-full rounded-t-2xl overflow-hidden sm:max-w-5xl sm:rounded-2xl sm:shadow-2xl sm:border"
         style={{
           backgroundColor: C.cardBg,
           borderColor: C.border,
-          height: window.innerWidth >= 640 ? 'auto' : '100%',
+          // Mobile: let content determine height (canvas is aspect-ratio constrained)
+          // Desktop: auto based on 16:9 canvas
         }}
       >
         {/* ── Header ── */}

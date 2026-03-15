@@ -1,6 +1,22 @@
-const CACHE_STATIC = 'cv-static-v4';
-const CACHE_API = 'cv-api-v4';
-const STATIC_ASSETS = ['/', '/offline.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/badge-72.png'];
+const CACHE_STATIC = 'cv-static-v5';
+const CACHE_API = 'cv-api-v5';
+
+// Pre-cache list — includes ALL game sprites and backgrounds so the game
+// works completely offline after the first visit with internet.
+const STATIC_ASSETS = [
+  '/', '/offline.html', '/manifest.webmanifest',
+  '/icons/icon-192.png', '/icons/icon-512.png', '/icons/badge-72.png',
+  // Character sprites (transparent-bg tiny heroes + Shinobi)
+  '/sprites/dude_run.png',    '/sprites/dude_jump.png',    '/sprites/dude_idle.png',
+  '/sprites/pink_run.png',    '/sprites/pink_jump.png',    '/sprites/pink_idle.png',
+  '/sprites/owlet_run.png',   '/sprites/owlet_jump.png',   '/sprites/owlet_idle.png',
+  '/sprites/shinobi_run.png', '/sprites/shinobi_jump.png', '/sprites/shinobi_idle.png',
+  // Parallax backgrounds (forest + desert)
+  '/backgrounds/bg_h1.png', '/backgrounds/bg_h2.png',
+  '/backgrounds/bg_h3.png', '/backgrounds/bg_h4.png',
+  '/backgrounds/bg_d1.png', '/backgrounds/bg_d2.png',
+  '/backgrounds/bg_d3.png', '/backgrounds/bg_d4.png',
+];
 
 // --- INSTALL ---
 self.addEventListener('install', (event) => {
