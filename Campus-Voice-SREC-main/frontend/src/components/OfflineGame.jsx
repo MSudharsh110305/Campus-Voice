@@ -3,12 +3,12 @@ import { useTheme } from '../context/ThemeContext';
 import { Trophy, RotateCcw, X, ShoppingBag } from 'lucide-react';
 import { api } from '../utils/api';
 
-// ── Skins ─────────────────────────────────────────────────────────────────────
+// ── Skins (sprite-backed) ──────────────────────────────────────────────────────
 const SKINS = [
-  { id: 'default', name: 'Classic',  color: '#3fb950', lightColor: '#16a34a', price: 0   },
-  { id: 'blue',    name: 'Sprinter', color: '#3b82f6', lightColor: '#2563eb', price: 100 },
-  { id: 'purple',  name: 'Scholar',  color: '#a855f7', lightColor: '#9333ea', price: 250 },
-  { id: 'gold',    name: 'Champ',    color: '#f59e0b', lightColor: '#d97706', price: 500 },
+  { id: 'default', name: 'Dude',    spriteBase: 'dude',    idleFrames: 4, runFrames: 6, jumpFrames: 8, color: '#3b82f6', lightColor: '#2563eb', price: 0   },
+  { id: 'blue',    name: 'Pink',    spriteBase: 'pink',    idleFrames: 4, runFrames: 6, jumpFrames: 8, color: '#ec4899', lightColor: '#db2777', price: 100 },
+  { id: 'purple',  name: 'Owlet',   spriteBase: 'owlet',   idleFrames: 4, runFrames: 6, jumpFrames: 8, color: '#6366f1', lightColor: '#4f46e5', price: 250 },
+  { id: 'gold',    name: 'Shinobi', spriteBase: 'shinobi', idleFrames: 6, runFrames: 8, jumpFrames: 12, color: '#f59e0b', lightColor: '#d97706', price: 500 },
 ];
 
 // ── Per-user localStorage keys ────────────────────────────────────────────────
@@ -44,36 +44,41 @@ const spendCoinsDB = async (amount) => {
   try { await api('/game/spend-coins', { method: 'POST', body: JSON.stringify({ amount }) }); } catch {}
 };
 
-// ── Module-level draw functions (no closure) ──────────────────────────────────
-function drawPlayer(ctx, px, py, PW, PH, frame, color, isDark, GROUND) {
-  const onGround = py >= GROUND - PH - 2;
+// ── Sprite helpers ─────────────────────────────────────────────────────────────
+function removeWhiteBg(img) {
+  try {
+    const oc = new OffscreenCanvas(img.width, img.height);
+    const ctx = oc.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const id = ctx.getImageData(0, 0, img.width, img.height);
+    const d = id.data;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i] > 215 && d[i + 1] > 215 && d[i + 2] > 215) d[i + 3] = 0;
+    }
+    ctx.putImageData(id, 0, 0);
+    return oc;
+  } catch { return img; }
+}
 
-  // shadow
+// ── Fallback player draw (used when sprites not yet loaded) ───────────────────
+function drawFallbackPlayer(ctx, px, py, PW, PH, frame, color, isDark, GROUND) {
+  const onGround = py >= GROUND - PH - 2;
   ctx.fillStyle = 'rgba(0,0,0,0.12)';
   ctx.beginPath();
   ctx.ellipse(px + PW / 2, GROUND + 4, PW * 0.65, 3.5, 0, 0, Math.PI * 2);
   ctx.fill();
-
   ctx.fillStyle = color;
-  // body
   ctx.beginPath(); ctx.roundRect(px, py + PH * 0.38, PW, PH * 0.62, 3); ctx.fill();
-  // head
   ctx.beginPath(); ctx.arc(px + PW * 0.55, py + PH * 0.24, PW * 0.46, 0, Math.PI * 2); ctx.fill();
-
-  // eye
   ctx.fillStyle = isDark ? '#0d1117' : '#ffffff';
   ctx.beginPath(); ctx.arc(px + PW * 0.78, py + PH * 0.19, PW * 0.14, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#111827';
   ctx.beginPath(); ctx.arc(px + PW * 0.81, py + PH * 0.19, PW * 0.085, 0, Math.PI * 2); ctx.fill();
-
-  // mouth
   ctx.strokeStyle = isDark ? '#0d1117' : '#ffffff';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.arc(px + PW * 0.72, py + PH * 0.33, PW * 0.16, 0.1, Math.PI - 0.1);
   ctx.stroke();
-
-  // legs
   ctx.fillStyle = color;
   const swing = onGround ? Math.sin(frame * 0.22) * PH * 0.12 : 0;
   ctx.beginPath(); ctx.roundRect(px + PW * 0.12, py + PH * 0.77, PW * 0.28, PH * 0.23 + swing, 2); ctx.fill();
@@ -83,7 +88,6 @@ function drawPlayer(ctx, px, py, PW, PH, frame, color, isDark, GROUND) {
 function drawObstacle(ctx, o, isDark) {
   ctx.save();
   if (o.k === 0) {
-    // Colorful stacked books
     const cols = isDark ? ['#1f6feb', '#3fb950', '#e67e22'] : ['#1565c0', '#2e7d32', '#f57c00'];
     for (let i = 0; i < 3; i++) {
       const bh = Math.floor(o.h / 3) - 1;
@@ -93,7 +97,6 @@ function drawObstacle(ctx, o, isDark) {
       ctx.fillRect(o.x + 3, o.y + i * (bh + 2) + 3, o.w - 8, 2);
     }
   } else if (o.k === 1) {
-    // Orange traffic cone
     ctx.fillStyle = isDark ? '#e67e22' : '#f57c00';
     ctx.beginPath();
     ctx.moveTo(o.x + o.w / 2, o.y);
@@ -104,7 +107,6 @@ function drawObstacle(ctx, o, isDark) {
     ctx.fillRect(o.x + o.w * 0.15, o.y + o.h * 0.52, o.w * 0.7, o.h * 0.13);
     ctx.fillRect(o.x + o.w * 0.25, o.y + o.h * 0.72, o.w * 0.5, o.h * 0.1);
   } else {
-    // Wooden bench
     ctx.fillStyle = isDark ? '#966c3a' : '#795548';
     ctx.beginPath(); ctx.roundRect(o.x, o.y, o.w, o.h * 0.38, 2); ctx.fill();
     ctx.fillStyle = isDark ? '#7a5230' : '#5d4037';
@@ -112,6 +114,38 @@ function drawObstacle(ctx, o, isDark) {
     ctx.fillRect(o.x + o.w - o.w * 0.22 - 3, o.y + o.h * 0.36, o.w * 0.22, o.h * 0.64);
   }
   ctx.restore();
+}
+
+// ── SkinPreview: canvas showing the first idle frame of a sprite ───────────────
+function SkinPreview({ spriteBase, frameCount, size = 52 }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const img = new Image();
+    let alive = true;
+    img.onload = () => {
+      if (!alive || !ref.current) return;
+      const fw = Math.floor(img.width / frameCount);
+      const ctx = ref.current.getContext('2d');
+      ctx.clearRect(0, 0, size, size);
+      ctx.imageSmoothingEnabled = false;
+      if (spriteBase === 'shinobi') {
+        const processed = removeWhiteBg(img);
+        ctx.drawImage(processed, 0, 0, fw, img.height, 0, 0, size, size);
+      } else {
+        ctx.drawImage(img, 0, 0, fw, img.height, 0, 0, size, size);
+      }
+    };
+    img.src = `/sprites/${spriteBase}_idle.png`;
+    return () => { alive = false; };
+  }, [spriteBase, frameCount, size]);
+  return (
+    <canvas
+      ref={ref}
+      width={size}
+      height={size}
+      style={{ imageRendering: 'pixelated', display: 'block' }}
+    />
+  );
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -123,6 +157,8 @@ export default function OfflineGame({ onClose }) {
   const stateRef     = useRef(null);
   const rafRef       = useRef(null);
   const cvsSizeRef   = useRef({ w: 800, h: 320 });
+  const spritesRef   = useRef({});
+  const [spritesReady, setSpritesReady] = useState(false);
 
   const [phase, setPhase]               = useState('idle');
   const [score, setScore]               = useState(0);
@@ -146,8 +182,8 @@ export default function OfflineGame({ onClose }) {
     try { return JSON.parse(localStorage.getItem(lsOwnedKey()) || '["default"]'); } catch { return ['default']; }
   });
 
-  const skin = SKINS.find(s => s.id === equippedSkin) || SKINS[0];
-  const skinColor = isDark ? skin.color : skin.lightColor;
+  const skinObj   = SKINS.find(s => s.id === equippedSkin) || SKINS[0];
+  const skinColor = isDark ? skinObj.color : skinObj.lightColor;
 
   const C = {
     skyTop:    isDark ? '#0d1117' : '#bbdefb',
@@ -168,7 +204,35 @@ export default function OfflineGame({ onClose }) {
     player: skinColor,
   };
 
-  // Fetch leaderboard on mount / reconnect
+  // ── Load all sprites once ──────────────────────────────────────────────────
+  useEffect(() => {
+    const entries = [
+      ['dude_run',    6], ['dude_jump',    8], ['dude_idle',    4],
+      ['pink_run',    6], ['pink_jump',    8], ['pink_idle',    4],
+      ['owlet_run',   6], ['owlet_jump',   8], ['owlet_idle',   4],
+      ['shinobi_run', 8], ['shinobi_jump', 12], ['shinobi_idle', 6],
+    ];
+    let loaded = 0;
+    entries.forEach(([key, frames]) => {
+      const img = new Image();
+      img.onload = () => {
+        const frameW = Math.floor(img.width / frames);
+        const frameH = img.height;
+        const isShinobi = key.startsWith('shinobi');
+        const src = isShinobi ? removeWhiteBg(img) : img;
+        spritesRef.current[key] = { img: src, frames, frameW, frameH };
+        loaded++;
+        if (loaded === entries.length) setSpritesReady(true);
+      };
+      img.onerror = () => {
+        loaded++;
+        if (loaded === entries.length) setSpritesReady(true);
+      };
+      img.src = `/sprites/${key}.png`;
+    });
+  }, []);
+
+  // ── Fetch leaderboard on mount / reconnect ─────────────────────────────────
   useEffect(() => {
     const load = async () => {
       const data = await fetchLeaderboard();
@@ -190,7 +254,7 @@ export default function OfflineGame({ onClose }) {
     return () => window.removeEventListener('online', load);
   }, []);
 
-  // Canvas resize observer
+  // ── Canvas resize observer ─────────────────────────────────────────────────
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -209,22 +273,22 @@ export default function OfflineGame({ onClose }) {
     return () => obs.disconnect();
   }, []);
 
-  // Start game
+  // ── Start game ─────────────────────────────────────────────────────────────
   const startGame = useCallback(() => {
     if (showShop) return;
     cancelAnimationFrame(rafRef.current);
     const canvas = canvasRef.current;
     const CW = canvas?.width  || cvsSizeRef.current.w;
     const CH = canvas?.height || cvsSizeRef.current.h;
-    const GROUND    = CH - Math.max(28, CH * 0.11);
-    const PH        = Math.max(28, CW * 0.048);
-    const PW        = Math.max(18, CW * 0.034);
-    const PLAYER_X  = Math.max(55, CW * 0.085);
+    const GROUND   = CH - Math.max(28, CH * 0.11);
+    const PH       = Math.max(28, CW * 0.048);
+    const PW       = Math.max(18, CW * 0.034);
+    const PLAYER_X = Math.max(55, CW * 0.085);
     stateRef.current = {
       py: GROUND - PH, vy: 0, jumps: 0,
       obstacles: [], coins: [],
       clouds: [
-        { x: CW * 0.28, y: CH * 0.10, w: CW * 0.11, h: CH * 0.07, spd: 0.5  },
+        { x: CW * 0.28, y: CH * 0.10, w: CW * 0.11, h: CH * 0.07,  spd: 0.5  },
         { x: CW * 0.72, y: CH * 0.07, w: CW * 0.08, h: CH * 0.055, spd: 0.28 },
         { x: CW * 0.50, y: CH * 0.14, w: CW * 0.07, h: CH * 0.05,  spd: 0.35 },
       ],
@@ -244,7 +308,7 @@ export default function OfflineGame({ onClose }) {
     if (s.jumps < 2) { s.vy = -(s.CH * 0.056 + 2); s.jumps++; }
   }, []);
 
-  // Keyboard input
+  // ── Keyboard input ─────────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e) => {
       if (e.code === 'Space' || e.code === 'ArrowUp') {
@@ -257,15 +321,17 @@ export default function OfflineGame({ onClose }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [phase, startGame, doJump]);
 
-  // Game loop
+  // ── Game loop ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (phase !== 'playing') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const s   = stateRef.current;
-    const _isDark = isDark;
-    const _C = { ...C };
+    const _isDark    = isDark;
+    const _C         = { ...C };
+    const _skinBase  = skinObj.spriteBase;
+    const _skinColor = skinColor;
 
     const loop = () => {
       if (s.dead) return;
@@ -298,16 +364,23 @@ export default function OfflineGame({ onClose }) {
         s.obstacles.push({ x: s.CW + 10, y: s.GROUND - t.h, w: t.w, h: t.h, k: t.k });
         s.spawn = Math.max(42, Math.floor(72 + Math.random() * 62) - Math.floor(s.score / 300) * 5);
 
-        // Spawn coin (25% chance, in jump range)
-        if (Math.random() < 0.25) {
+        // Spawn coin trail AFTER the obstacle (easy single-jump height)
+        if (Math.random() < 0.4) {
+          const count = 1 + Math.floor(Math.random() * 3); // 1–3 coins in a trail
+          // Place coins well after the obstacle so the player has cleared it before reaching them
+          const startX = s.CW + t.w + s.CW * 0.10;
+          // Comfortable single-jump arc: 20-30% of jump height above ground
           const jumpH = s.CH * 0.32;
-          const cy = s.GROUND - s.PH - jumpH * (0.3 + Math.random() * 0.55);
-          s.coins.push({
-            x: s.CW + t.w * 0.5 + Math.random() * s.CW * 0.04,
-            y: Math.max(s.GROUND * 0.25, cy),
-            r: Math.max(6, s.CW * 0.011),
-            collected: false,
-          });
+          const coinY = s.GROUND - s.PH - jumpH * (0.20 + Math.random() * 0.18);
+          const safeY = Math.max(s.GROUND * 0.30, coinY);
+          for (let ci = 0; ci < count; ci++) {
+            s.coins.push({
+              x: startX + ci * s.CW * 0.035,
+              y: safeY,
+              r: Math.max(6, s.CW * 0.012),
+              collected: false,
+            });
+          }
         }
       }
 
@@ -368,7 +441,7 @@ export default function OfflineGame({ onClose }) {
         }
       }
 
-      // ── Draw ──────────────────────────────────────────────────────────────
+      // ── Draw ────────────────────────────────────────────────────────────────
       const { CW, CH, GROUND } = s;
 
       // Sky
@@ -412,9 +485,20 @@ export default function OfflineGame({ onClose }) {
         ctx.restore();
       });
 
-      // Obstacles + player
+      // Obstacles
       s.obstacles.forEach(o => drawObstacle(ctx, o, _isDark));
-      drawPlayer(ctx, s.PLAYER_X, s.py, s.PW, s.PH, s.frame, _C.player, _isDark, GROUND);
+
+      // Player — sprite if loaded, else fallback
+      const inAir   = s.py < s.GROUND - s.PH - 2;
+      const animKey = inAir ? `${_skinBase}_jump` : `${_skinBase}_run`;
+      const spr = spritesRef.current[animKey];
+      if (spr) {
+        const fi = Math.floor(s.frame / 4) % spr.frames;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(spr.img, fi * spr.frameW, 0, spr.frameW, spr.frameH, s.PLAYER_X, s.py, s.PH, s.PH);
+      } else {
+        drawFallbackPlayer(ctx, s.PLAYER_X, s.py, s.PW, s.PH, s.frame, _skinColor, _isDark, GROUND);
+      }
 
       // HUD — score (top right)
       const best = getCached()[0]?.score ?? 0;
@@ -428,7 +512,7 @@ export default function OfflineGame({ onClose }) {
       ctx.fillText(String(s.score).padStart(5, '0'), CW - 10, hf * 2 + 12);
 
       // HUD — coin icon + count (top left)
-      const cr = Math.max(5, CW * 0.009);
+      const cr  = Math.max(5, CW * 0.009);
       const cx2 = 10 + cr, cy2 = 10 + cr;
       ctx.save();
       ctx.shadowColor = '#f59e0b'; ctx.shadowBlur = 6;
@@ -445,9 +529,9 @@ export default function OfflineGame({ onClose }) {
 
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [phase, isDark]); // eslint-disable-line
+  }, [phase, isDark, skinObj.spriteBase]); // eslint-disable-line
 
-  // Idle screen draw
+  // ── Idle screen draw ───────────────────────────────────────────────────────
   useEffect(() => {
     if (phase !== 'idle') return;
     const canvas = canvasRef.current;
@@ -468,43 +552,51 @@ export default function OfflineGame({ onClose }) {
     ctx.fillStyle = gGrad; ctx.fillRect(0, GROUND, CW, CH - GROUND);
     ctx.fillStyle = C.groundLine; ctx.fillRect(0, GROUND, CW, 2);
 
-    drawPlayer(ctx, PLAYER_X, GROUND - PH, PW, PH, 0, skinColor, isDark, GROUND);
+    // Draw idle sprite or fallback
+    const idleKey = `${skinObj.spriteBase}_idle`;
+    const spr = spritesRef.current[idleKey];
+    if (spr) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(spr.img, 0, 0, spr.frameW, spr.frameH, PLAYER_X, GROUND - PH, PH, PH);
+    } else {
+      drawFallbackPlayer(ctx, PLAYER_X, GROUND - PH, PW, PH, 0, skinColor, isDark, GROUND);
+    }
 
     ctx.fillStyle = C.hudMuted;
     ctx.font = `${Math.max(12, CW * 0.02)}px monospace`;
     ctx.textAlign = 'center';
     ctx.fillText('tap or press space to start', CW / 2, GROUND * 0.45);
     ctx.textAlign = 'left';
-  }, [phase, isDark, equippedSkin, cvsVersion]); // eslint-disable-line
+  }, [phase, isDark, equippedSkin, cvsVersion, spritesReady]); // eslint-disable-line
 
-  // Shop purchase
-  const buySkin = useCallback(async (s) => {
-    const isOwned = ownedSkins.includes(s.id);
-    if (isOwned || s.price === 0) {
-      setEquippedSkin(s.id);
-      try { localStorage.setItem(lsSkinKey(), s.id); } catch {}
-      setShopMsg(`Equipped ${s.name}!`);
+  // ── Shop purchase ──────────────────────────────────────────────────────────
+  const buySkin = useCallback(async (sk) => {
+    const isOwned = ownedSkins.includes(sk.id) || sk.price === 0;
+    if (isOwned) {
+      setEquippedSkin(sk.id);
+      try { localStorage.setItem(lsSkinKey(), sk.id); } catch {}
+      setShopMsg(`Equipped ${sk.name}!`);
       setTimeout(() => setShopMsg(''), 1800);
       return;
     }
-    if (myCoins < s.price) {
+    if (myCoins < sk.price) {
       setShopMsg('Not enough coins!');
       setTimeout(() => setShopMsg(''), 1800);
       return;
     }
-    const nc = myCoins - s.price;
-    const no = [...ownedSkins, s.id];
-    setMyCoins(nc); setOwnedSkins(no); setEquippedSkin(s.id);
+    const nc = myCoins - sk.price;
+    const no = [...ownedSkins, sk.id];
+    setMyCoins(nc); setOwnedSkins(no); setEquippedSkin(sk.id);
     try { localStorage.setItem(lsCoinsKey(), String(nc)); } catch {}
     try { localStorage.setItem(lsOwnedKey(), JSON.stringify(no)); } catch {}
-    try { localStorage.setItem(lsSkinKey(), s.id); } catch {}
-    await spendCoinsDB(s.price);
-    setShopMsg(`Unlocked & equipped ${s.name}!`);
+    try { localStorage.setItem(lsSkinKey(), sk.id); } catch {}
+    await spendCoinsDB(sk.price);
+    setShopMsg(`Unlocked & equipped ${sk.name}!`);
     setTimeout(() => setShopMsg(''), 1800);
   }, [myCoins, ownedSkins]);
 
-  const myBest   = myBestDB?.score ?? 0;
-  const myRank   = myBestDB?.rank  ?? null;
+  const myBest    = myBestDB?.score ?? 0;
+  const myRank    = myBestDB?.rank  ?? null;
   const highScore = board[0]?.score ?? 0;
 
   return (
@@ -648,9 +740,10 @@ export default function OfflineGame({ onClose }) {
                       borderColor: equipped ? sc : C.border,
                       backgroundColor: equipped ? `${sc}18` : (isDark ? '#0d1117' : '#f9fafb'),
                     }}>
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-md"
-                      style={{ backgroundColor: sc }}>
-                      <span className="text-[10px] text-white font-bold">CV</span>
+                    {/* Sprite preview */}
+                    <div className="w-13 h-13 flex items-center justify-center"
+                      style={{ imageRendering: 'pixelated' }}>
+                      <SkinPreview spriteBase={sk.spriteBase} frameCount={sk.idleFrames} size={52} />
                     </div>
                     <p className="text-xs font-semibold" style={{ color: C.text }}>{sk.name}</p>
                     <p className="text-[10px]" style={{ color: sk.price === 0 ? C.sub : '#d97706' }}>
